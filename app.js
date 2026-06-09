@@ -833,7 +833,8 @@ async function submitAudit() {
     const resp = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(payload) });
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'Error desconocido');
-    setState({ screen: 'success', auditId });
+    console.log('Email status:', data.email);
+    setState({ screen: 'success', auditId, emailStatus: data.email || '' });
   } catch (err) {
     console.error(err);
     alert('Error al enviar: ' + err.message);

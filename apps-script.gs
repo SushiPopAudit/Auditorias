@@ -16,9 +16,9 @@ function doPost(e) {
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_NAME);
       sheet.appendRow([
-        'AuditID','Fecha','Hora','Auditor','Email Auditor','Local','Marca',
+        'AuditID','Fecha','Hora','Auditor','Local','Marca',
         'Categoría','Subcategoría','Control','Importancia',
-        'Explicación','Respuesta','Observación','URL Foto'
+        'Explicación','Respuesta','Observación','URL Foto','Email Auditor'
       ]);
       sheet.getRange(1,1,1,15).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
       sheet.setFrozenRows(1);
@@ -45,10 +45,12 @@ function doPost(e) {
       }
       return [
         data.auditId, data.fecha, data.hora,
-        data.auditor, data.auditorEmail || '',
-        data.local, data.marca,
+        data.auditor,                           // col D
+        data.local,                             // col E  ← igual que antes
+        data.marca,                             // col F  ← igual que antes
         r.categoria, r.subcategoria, r.control, r.importancia,
-        r.explicacion, r.respuesta, r.observacion, fotoURL
+        r.explicacion, r.respuesta, r.observacion, fotoURL,
+        data.auditorEmail || '',                // col O  ← al final (nuevo)
       ];
     });
 
@@ -58,13 +60,18 @@ function doPost(e) {
     }
 
     // Enviar email al local
+    let emailStatus = 'no configurado';
     if (data.emailsLocal && data.emailsLocal.trim()) {
       try {
         enviarEmailAuditoria(data, rows);
-      } catch(mailErr) { console.error('Email error:', mailErr); }
+        emailStatus = 'enviado a ' + data.emailsLocal;
+      } catch(mailErr) {
+        console.error('Email error:', mailErr);
+        emailStatus = 'ERROR: ' + mailErr.message;
+      }
     }
 
-    return jsonResponse({ success: true, auditId: data.auditId, rows: rows.length });
+    return jsonResponse({ success: true, auditId: data.auditId, rows: rows.length, email: emailStatus });
   } catch(err) {
     console.error('Error doPost:', err);
     return jsonResponse({ success: false, error: err.message });
