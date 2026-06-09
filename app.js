@@ -553,15 +553,24 @@ function attachListeners() {
     }
   });
 
-  // Respuestas radio
+  // Respuestas radio — actualizar clases en el lugar, sin reemplazar DOM
   document.querySelectorAll('.answer-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const qid = btn.dataset.qid;
       const val = btn.dataset.val;
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].valor = val;
-      // Re-render solo la tarjeta
-      refreshCard(qid);
+
+      // Limpiar selección en todos los botones de ESTA tarjeta
+      const card = btn.closest('.question-card');
+      card.querySelectorAll('.answer-btn').forEach(b => {
+        b.className = 'answer-btn';
+      });
+      // Marcar el botón clickeado
+      btn.className = 'answer-btn ' + answerClass(val);
+
+      // Actualizar contador de respuestas en el header
+      updateAnswerCounter();
     });
   });
 
@@ -599,7 +608,29 @@ function attachListeners() {
       const dataURL = await compressImage(file, 800, 0.65);
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].foto = { dataURL, name: file.name };
-      refreshCard(qid);
+      // Actualizar solo el botón de foto en el lugar
+      const photoBtn = document.getElementById(`photobtn_${qid}`);
+      if (photoBtn) {
+        photoBtn.className = 'photo-btn has-photo';
+        photoBtn.innerHTML = '📷 Foto tomada ✓';
+      }
+      // Mostrar preview
+      const wrap = document.querySelector(`#photobtn_${qid}`)?.closest('.photo-section');
+      if (wrap && !wrap.querySelector('.photo-preview')) {
+        const previewWrap = document.createElement('div');
+        previewWrap.className = 'photo-preview-wrap';
+        previewWrap.style.display = 'block';
+        previewWrap.style.width = '100%';
+        previewWrap.style.marginTop = '8px';
+        previewWrap.innerHTML = `<img class="photo-preview" src="${dataURL}" alt="foto"><button class="photo-remove" data-qid="${qid}" id="photoremove_${qid}">✕</button>`;
+        wrap.appendChild(previewWrap);
+        previewWrap.querySelector('.photo-remove').addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (state.answers[qid]) delete state.answers[qid].foto;
+          previewWrap.remove();
+          if (photoBtn) { photoBtn.className = 'photo-btn'; photoBtn.innerHTML = '📷 Agregar foto'; }
+        });
+      }
     });
   });
 
@@ -608,7 +639,9 @@ function attachListeners() {
       e.stopPropagation();
       const qid = btn.dataset.qid;
       if (state.answers[qid]) delete state.answers[qid].foto;
-      refreshCard(qid);
+      btn.closest('.photo-preview-wrap')?.remove();
+      const photoBtn = document.getElementById(`photobtn_${qid}`);
+      if (photoBtn) { photoBtn.className = 'photo-btn'; photoBtn.innerHTML = '📷 Agregar foto'; }
     });
   });
 
@@ -661,6 +694,14 @@ function saveCurrentAnswers() {
     if (!state.answers[qid]) state.answers[qid] = {};
     state.answers[qid][field] = ta.value;
   });
+}
+
+function updateAnswerCounter() {
+  const cat = state.categories[state.categoryIndex];
+  if (!cat) return;
+  const answered = cat.questions.filter(q => state.answers[q.id]?.valor).length;
+  const el = document.querySelector('.header-info div:last-child');
+  if (el) el.textContent = `${answered}/${cat.questions.length} resp.`;
 }
 
 function refreshCard(qid) {
