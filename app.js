@@ -304,12 +304,18 @@ function renderQuestionCard(q) {
 
   let inputHtml = '';
   if (type === 'radio') {
-    const btns = options.map(opt => {
+    const radioName = `radio_${q.id}`;
+    const radios = options.map(opt => {
       const isSelected = ans.valor === opt;
-      const cls = isSelected ? answerClass(opt) : '';
-      return `<button class="answer-btn ${cls}" data-qid="${q.id}" data-val="${escHtml(opt)}">${escHtml(opt)}</button>`;
+      const cls = answerClass(opt);
+      return `
+        <label class="answer-label ${isSelected ? cls : ''}" data-cls="${cls}">
+          <input type="radio" name="${radioName}" value="${escHtml(opt)}"
+            data-qid="${q.id}" class="answer-radio" ${isSelected ? 'checked' : ''}>
+          ${escHtml(opt)}
+        </label>`;
     }).join('');
-    inputHtml = `<div class="answer-options">${btns}</div>`;
+    inputHtml = `<div class="answer-options">${radios}</div>`;
   } else if (type === 'number') {
     inputHtml = `
       <div class="number-input-wrap">
@@ -553,23 +559,22 @@ function attachListeners() {
     }
   });
 
-  // Respuestas radio — actualizar clases en el lugar, sin reemplazar DOM
-  document.querySelectorAll('.answer-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const qid = btn.dataset.qid;
-      const val = btn.dataset.val;
+  // Respuestas radio — el browser maneja la exclusión mutua nativamente
+  document.querySelectorAll('.answer-radio').forEach(input => {
+    input.addEventListener('change', () => {
+      const qid = input.dataset.qid;
+      const val = input.value;
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].valor = val;
 
-      // Limpiar selección en todos los botones de ESTA tarjeta
-      const card = btn.closest('.question-card');
-      card.querySelectorAll('.answer-btn').forEach(b => {
-        b.className = 'answer-btn';
+      // Actualizar clases visuales de los labels del mismo grupo
+      const group = document.querySelectorAll(`input[name="radio_${qid}"]`);
+      group.forEach(r => {
+        const lbl = r.closest('.answer-label');
+        if (!lbl) return;
+        lbl.className = 'answer-label' + (r.checked ? ' ' + lbl.dataset.cls : '');
       });
-      // Marcar el botón clickeado
-      btn.className = 'answer-btn ' + answerClass(val);
 
-      // Actualizar contador de respuestas en el header
       updateAnswerCounter();
     });
   });
@@ -683,11 +688,18 @@ function escHtml(str) {
 }
 
 function saveCurrentAnswers() {
-  // Guardar valores actuales de inputs antes de navegar
+  // Radios
+  document.querySelectorAll('.answer-radio:checked').forEach(inp => {
+    const qid = inp.dataset.qid;
+    if (!state.answers[qid]) state.answers[qid] = {};
+    state.answers[qid].valor = inp.value;
+  });
+  // Inputs numéricos y texto
   document.querySelectorAll('.number-input').forEach(inp => {
     if (!state.answers[inp.dataset.qid]) state.answers[inp.dataset.qid] = {};
     state.answers[inp.dataset.qid].valor = inp.value;
   });
+  // Observaciones
   document.querySelectorAll('.observacion-textarea').forEach(ta => {
     const qid = ta.dataset.qid;
     const field = ta.dataset.field || 'observacion';
