@@ -236,6 +236,47 @@ p  { line-height: 1.6; }
 .welcome-btn:active { transform: scale(0.97); }
 
 /* ============================================================
+   QUESTION STEP LABEL
+   ============================================================ */
+.question-step-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+.step-cat-name { font-weight: 400; }
+
+/* ============================================================
+   AUDITOR BADGE (Google login)
+   ============================================================ */
+.auditor-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+}
+.auditor-avatar {
+  width: 36px;
+  height: 36px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.auditor-name  { font-weight: 600; font-size: 0.95rem; }
+.auditor-email { font-size: 0.78rem; color: var(--text-muted); }
+
+/* ============================================================
    SCREEN: SETUP
    ============================================================ */
 .setup-card {

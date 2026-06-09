@@ -2,6 +2,10 @@
 // CONFIGURACIÓN — completar antes de publicar
 // ============================================================
 const CONFIG = {
+  // Google Sign-In Client ID (ver README para obtenerlo)
+  // Si no está configurado, el login es libre (sin Google)
+  googleClientId: 'REEMPLAZAR_CON_GOOGLE_CLIENT_ID',
+
   // URL del CSV de preguntas (hoja MM!) — ya está publicada
   questionsURL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS8b_XMJhcD7LeVKvzOFSXm8pbWfsHCz26YCrH_AZFMVGsP5TYS8va8ianw_PM2qMLEolKonT771_XU/pub?output=csv',
 

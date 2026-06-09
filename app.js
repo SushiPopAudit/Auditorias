@@ -4,19 +4,22 @@
 const state = {
   screen: 'loading',
   allQuestions: [],
-  locales: [],
-  marcas: [],
+  locales: [],       // [{nombre, isCausa, emails}]
+
+  // Auth
+  auditor:      '',
+  auditorEmail: '',
+  googleReady:  false,
 
   // Setup
-  marca: '',
-  local: '',
-  auditor: '',
+  local: null,       // {nombre, isCausa, emails}
   fecha: new Date().toISOString().split('T')[0],
 
   // Audit
-  categories: [],      // [{name, questions:[...]}]
+  categories:    [],
   categoryIndex: 0,
-  answers: {},         // "qId" -> {valor, observacion, foto:{dataURL,name}}
+  questionIndex: 0,  // una pregunta a la vez
+  answers:       {},
 
   // Submit
   submitting: false,
@@ -35,17 +38,26 @@ async function init() {
     ]);
 
     const qRows = parseCSV(questionsText);
-    state.allQuestions = qRows.slice(1).filter(r => r[0]); // skip header, skip empty
+    state.allQuestions = qRows.slice(1).filter(r => r[0]);
 
-    // Marcas únicas
-    state.marcas = [...new Set(state.allQuestions.map(r => r[0]).filter(Boolean))];
-
-    // Locales
     if (localesText) {
-      state.locales = parseCSV(localesText).flat().map(s => s.trim()).filter(Boolean);
-    } else {
-      state.locales = ['(Sin locales cargados)'];
+      const lRows = parseCSV(localesText);
+      // Hoja Locales: A=nombre, B=TRUE si es Causa, C=emails
+      state.locales = lRows.slice(1)
+        .map(r => ({
+          nombre:  (r[0] || '').trim(),
+          isCausa: (r[1] || '').trim().toUpperCase() === 'TRUE',
+          emails:  (r[2] || '').trim(),
+        }))
+        .filter(l => l.nombre);
     }
+
+    if (!state.locales.length) {
+      state.locales = [{ nombre: '(Sin locales cargados)', isCausa: false, emails: '' }];
+    }
+
+    // Google Sign-In
+    initGoogleSignIn();
 
     setState({ screen: 'welcome' });
   } catch (err) {
@@ -61,7 +73,55 @@ async function fetchText(url) {
 }
 
 // ============================================================
-// CSV PARSER (maneja campos entre comillas y saltos de línea)
+// GOOGLE SIGN-IN
+// ============================================================
+function initGoogleSignIn() {
+  if (!CONFIG.googleClientId || CONFIG.googleClientId.startsWith('REEMPLAZAR')) {
+    state.googleReady = false;
+    return;
+  }
+  if (typeof google === 'undefined') {
+    state.googleReady = false;
+    return;
+  }
+  state.googleReady = true;
+  google.accounts.id.initialize({
+    client_id: CONFIG.googleClientId,
+    callback: handleGoogleCredential,
+    auto_select: false,
+    context: 'signin',
+  });
+}
+
+function handleGoogleCredential(response) {
+  try {
+    // Decodificar JWT sin librería externa
+    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    state.auditor      = payload.name  || payload.email;
+    state.auditorEmail = payload.email || '';
+    setState({ screen: 'setup' });
+  } catch (e) {
+    alert('Error al iniciar sesión con Google.');
+  }
+}
+
+function renderGoogleBtn() {
+  if (!state.googleReady) return '';
+  // El SDK de Google renderiza el botón en este div
+  setTimeout(() => {
+    const el = document.getElementById('google-signin-div');
+    if (el && typeof google !== 'undefined') {
+      google.accounts.id.renderButton(el, {
+        theme: 'outline', size: 'large', width: 280,
+        text: 'signin_with', shape: 'rectangular',
+      });
+    }
+  }, 50);
+  return `<div id="google-signin-div" style="margin-bottom:16px"></div>`;
+}
+
+// ============================================================
+// CSV PARSER
 // ============================================================
 function parseCSV(text) {
   const rows = [];
@@ -73,8 +133,8 @@ function parseCSV(text) {
       else if (c === '"')         { inQ = false; }
       else                        { field += c; }
     } else {
-      if      (c === '"')                          { inQ = true; }
-      else if (c === ',')                          { row.push(field.trim()); field = ''; }
+      if      (c === '"')                            { inQ = true; }
+      else if (c === ',')                            { row.push(field.trim()); field = ''; }
       else if (c === '\n' || (c === '\r' && n === '\n')) {
         if (c === '\r') i++;
         row.push(field.trim()); rows.push(row); row = []; field = '';
@@ -88,25 +148,26 @@ function parseCSV(text) {
 // ============================================================
 // PROCESAR PREGUNTAS
 // ============================================================
-function buildCategories(marca) {
-  const qs = state.allQuestions.filter(r =>
-    (r[0] || '').trim().toLowerCase() === marca.trim().toLowerCase()
-  );
+function buildCategories(isCausa) {
+  const qs = state.allQuestions.filter(r => {
+    const m = (r[0] || '').trim();
+    return m === 'Multimarca' || (isCausa && m === 'Causa');
+  });
 
   const map = new Map();
   qs.forEach((r, idx) => {
     const cat = (r[1] || 'Sin categoría').trim();
     if (!map.has(cat)) map.set(cat, []);
     map.get(cat).push({
-      id: `q_${idx}`,
+      id:           `q_${idx}`,
       marca:        r[0] || '',
       categoria:    r[1] || '',
       subcategoria: r[2] || '',
       control:      r[3] || '',
       importancia:  (r[4] || '').trim(),
       explicacion:  r[5] || '',
-      pregunta:     r[6] || '',   // opciones de respuesta
-      imagen:       (r[7] || '').trim().toLowerCase(), // 'si' o vacío
+      pregunta:     r[6] || '',
+      imagen:       (r[7] || '').trim().toLowerCase(),
     });
   });
 
@@ -128,9 +189,9 @@ function parseAnswerType(pregunta) {
 function importanciaClass(imp) {
   const i = (imp || '').toLowerCase();
   if (i === 'critico' || i === 'crítico') return 'critico';
-  if (i === 'alta')   return 'alta';
-  if (i === 'media')  return 'media';
-  if (i === 'baja')   return 'baja';
+  if (i === 'alta')  return 'alta';
+  if (i === 'media') return 'media';
+  if (i === 'baja')  return 'baja';
   return 'media';
 }
 
@@ -143,7 +204,7 @@ function answerClass(option) {
 }
 
 // ============================================================
-// STATE MANAGEMENT
+// STATE
 // ============================================================
 function setState(patch) {
   Object.assign(state, patch);
@@ -151,7 +212,7 @@ function setState(patch) {
 }
 
 // ============================================================
-// RENDER PRINCIPAL
+// RENDER
 // ============================================================
 function render() {
   const app = document.getElementById('app');
@@ -178,14 +239,19 @@ function renderLoading() {
 // PANTALLA: WELCOME
 // ============================================================
 function renderWelcome() {
+  const googleBtn = renderGoogleBtn();
+  const skipBtn = state.googleReady
+    ? '' // Si Google está configurado, solo login con Google
+    : `<button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>`;
+
   return `
     <div class="screen-welcome">
-      <img src="logo.png" alt="Logo POP" class="welcome-logo"
-        onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex'">
-      <div class="welcome-logo-placeholder" id="logo-fallback" style="display:none">🍣</div>
+      <img src="logo.png" alt="Sushi POP" class="welcome-logo"
+        onerror="this.style.display='none'">
       <h1 class="welcome-title">Sistema de Auditorías</h1>
       <p class="welcome-sub">Herramienta para auditores de locales</p>
-      <button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>
+      ${googleBtn}
+      ${skipBtn}
     </div>
   `;
 }
@@ -194,15 +260,20 @@ function renderWelcome() {
 // PANTALLA: SETUP
 // ============================================================
 function renderSetup() {
-  const marcasBtns = state.marcas.map(m => `
-    <button class="marca-btn ${state.marca === m ? 'selected' : ''}" data-marca="${m}">
-      <div class="marca-btn-name">${m}</div>
-    </button>
-  `).join('');
-
   const localesOpts = state.locales.map(l =>
-    `<option value="${escHtml(l)}" ${state.local === l ? 'selected' : ''}>${escHtml(l)}</option>`
+    `<option value="${escHtml(l.nombre)}" ${state.local?.nombre === l.nombre ? 'selected' : ''}>${escHtml(l.nombre)}</option>`
   ).join('');
+
+  const auditorField = state.auditorEmail
+    ? `<div class="auditor-badge">
+         <span class="auditor-avatar">${(state.auditor[0] || '?').toUpperCase()}</span>
+         <div>
+           <div class="auditor-name">${escHtml(state.auditor)}</div>
+           <div class="auditor-email">${escHtml(state.auditorEmail)}</div>
+         </div>
+       </div>`
+    : `<input class="form-control" id="inp-auditor" type="text"
+         placeholder="Tu nombre completo" value="${escHtml(state.auditor)}">`;
 
   return `
     <div class="header">
@@ -215,11 +286,6 @@ function renderSetup() {
 
     <div class="main">
       <div class="setup-card">
-        <h2>Marca</h2>
-        <div class="marca-grid">${marcasBtns}</div>
-      </div>
-
-      <div class="setup-card">
         <h2>Datos de la visita</h2>
 
         <div class="form-group">
@@ -231,9 +297,8 @@ function renderSetup() {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Nombre del auditor</label>
-          <input class="form-control" id="inp-auditor" type="text"
-            placeholder="Tu nombre completo" value="${escHtml(state.auditor)}">
+          <label class="form-label">Auditor</label>
+          ${auditorField}
         </div>
 
         <div class="form-group">
@@ -249,49 +314,54 @@ function renderSetup() {
 }
 
 // ============================================================
-// PANTALLA: AUDITORÍA
+// PANTALLA: AUDITORÍA — UNA PREGUNTA A LA VEZ
 // ============================================================
 function renderAudit() {
-  const cat = state.categories[state.categoryIndex];
-  const total = state.categories.length;
-  const pct = Math.round(((state.categoryIndex) / total) * 100);
-  const isLast = state.categoryIndex === total - 1;
+  const cat      = state.categories[state.categoryIndex];
+  const q        = cat.questions[state.questionIndex];
+  const totalCats = state.categories.length;
+  const totalQsInCat = cat.questions.length;
 
-  const answeredInCat = cat.questions.filter(q => state.answers[q.id]?.valor).length;
-  const totalInCat = cat.questions.length;
+  // Progreso global
+  const allQs = state.categories.flatMap(c => c.questions);
+  const globalIdx = state.categories
+    .slice(0, state.categoryIndex)
+    .reduce((sum, c) => sum + c.questions.length, 0) + state.questionIndex;
+  const pct = Math.round(((globalIdx + 1) / allQs.length) * 100);
 
-  const cards = cat.questions.map(q => renderQuestionCard(q)).join('');
+  const isFirst = state.categoryIndex === 0 && state.questionIndex === 0;
+  const isLast  = state.categoryIndex === totalCats - 1
+               && state.questionIndex === totalQsInCat - 1;
 
   return `
     <div class="header">
-      <button class="header-back" id="btn-back-category">‹</button>
+      <button class="header-back" id="btn-prev-q">‹</button>
       <div style="flex:1">
         <div class="header-title">${escHtml(cat.name)}</div>
-        <div class="header-subtitle">${state.local} · ${state.marca}</div>
+        <div class="header-subtitle">${escHtml(state.local.nombre)}</div>
       </div>
       <div class="header-info">
-        <div style="font-size:0.8rem;color:#94a3b8">${state.categoryIndex + 1} / ${total}</div>
-        <div style="font-size:0.7rem;color:#64748b">${answeredInCat}/${totalInCat} resp.</div>
+        <div style="font-size:0.85rem;color:#fff;font-weight:700">${globalIdx + 1}<span style="color:#94a3b8;font-weight:400"> / ${allQs.length}</span></div>
+        <div style="font-size:0.7rem;color:#64748b">Cat. ${state.categoryIndex + 1}/${totalCats}</div>
       </div>
     </div>
     <div class="progress-bar-wrap">
       <div class="progress-bar-fill" style="width:${pct}%"></div>
     </div>
 
-    <div class="main" style="padding-bottom:80px">
-      <div class="category-header">
-        <div class="category-tag">Categoría ${state.categoryIndex + 1} de ${total}</div>
-        <div class="category-title">${escHtml(cat.name)}</div>
-        <div class="category-count">${totalInCat} puntos a revisar</div>
+    <div class="main" style="padding-bottom:88px">
+      <div class="question-step-label">
+        Pregunta ${state.questionIndex + 1} de ${totalQsInCat}
+        <span class="step-cat-name">· ${escHtml(cat.name)}</span>
       </div>
-      ${cards}
+      ${renderQuestionCard(q)}
     </div>
 
     <div class="nav-footer">
-      ${state.categoryIndex > 0
-        ? `<button class="btn btn-outline" id="btn-prev-cat">← Anterior</button>`
-        : ''}
-      <button class="btn ${isLast ? 'btn-success' : 'btn-primary'}" id="btn-next-cat">
+      ${!isFirst
+        ? `<button class="btn btn-outline" id="btn-prev-q-footer">← Anterior</button>`
+        : `<div></div>`}
+      <button class="btn ${isLast ? 'btn-success' : 'btn-primary'}" id="btn-next-q">
         ${isLast ? 'Ver Resumen →' : 'Siguiente →'}
       </button>
     </div>
@@ -322,28 +392,23 @@ function renderQuestionCard(q) {
     inputHtml = `
       <div class="number-input-wrap">
         <input class="number-input" type="number" step="0.1"
-          id="num_${q.id}" placeholder="0.0"
-          value="${ans.valor || ''}"
+          id="num_${q.id}" placeholder="0.0" value="${ans.valor || ''}"
           data-qid="${q.id}">
         <span class="number-unit">°C</span>
-      </div>
-    `;
+      </div>`;
   } else {
     inputHtml = `
       <textarea class="observacion-textarea" placeholder="Ingresá el valor..."
         data-qid="${q.id}" data-field="valor"
-        style="min-height:48px">${ans.valor || ''}</textarea>
-    `;
+        style="min-height:48px">${ans.valor || ''}</textarea>`;
   }
 
-  const showObservacion = type === 'radio';
-  const obsHtml = showObservacion ? `
+  const obsHtml = type === 'radio' ? `
     <div class="observacion-wrap">
       <span class="observacion-label">Observaciones</span>
       <textarea class="observacion-textarea" placeholder="Observaciones opcionales..."
         data-qid="${q.id}" data-field="observacion">${ans.observacion || ''}</textarea>
-    </div>
-  ` : '';
+    </div>` : '';
 
   const hasPhoto = ans.foto?.dataURL;
   const photoHtml = `
@@ -354,13 +419,12 @@ function renderQuestionCard(q) {
       </button>
       <input type="file" accept="image/*" capture="environment"
         id="fileinput_${q.id}" data-qid="${q.id}" style="display:none">
-      ${hasPhoto ? `
-        <div class="photo-preview-wrap" style="display:block;width:100%;margin-top:8px">
-          <img class="photo-preview" src="${ans.foto.dataURL}" alt="foto">
-          <button class="photo-remove" data-qid="${q.id}" id="photoremove_${q.id}">✕</button>
-        </div>` : ''}
-    </div>
-  `;
+      ${hasPhoto
+        ? `<div class="photo-preview-wrap" style="margin-top:8px">
+             <img class="photo-preview" src="${ans.foto.dataURL}" alt="foto">
+             <button class="photo-remove" data-qid="${q.id}" id="photoremove_${q.id}">✕</button>
+           </div>` : ''}
+    </div>`;
 
   return `
     <div class="question-card imp-${imp}" data-qid="${q.id}">
@@ -373,8 +437,7 @@ function renderQuestionCard(q) {
       ${inputHtml}
       ${obsHtml}
       ${photoHtml}
-    </div>
-  `;
+    </div>`;
 }
 
 // ============================================================
@@ -396,9 +459,9 @@ function renderSummary() {
 
   const criticos = allQs.filter(q => {
     const imp = (q.importancia || '').toLowerCase();
-    const v = (state.answers[q.id]?.valor || '').toLowerCase();
-    return (imp === 'critico' || imp === 'crítico') &&
-      (v.includes('no cumple') || v === 'nocumple' || !v);
+    const v   = (state.answers[q.id]?.valor || '').toLowerCase();
+    return (imp === 'critico' || imp === 'crítico')
+      && (v.includes('no cumple') || v === 'nocumple' || !v);
   });
 
   const desviosHtml = criticos.length ? `
@@ -408,22 +471,25 @@ function renderSummary() {
         <div class="desvio-item">
           <div class="desvio-item-control">${escHtml(q.control)}</div>
           <div class="desvio-item-cat">${escHtml(q.categoria)} › ${escHtml(q.subcategoria)}</div>
-        </div>
-      `).join('')}
+        </div>`).join('')}
     </div>` : '';
 
   const warnHtml = unanswered > 0 ? `
     <div class="incomplete-warning">
-      ⚠ Tenés ${unanswered} ${unanswered === 1 ? 'punto sin responder' : 'puntos sin responder'}.
-      Podés enviar igual, pero quedarán en blanco.
+      ⚠ ${unanswered} ${unanswered === 1 ? 'punto sin responder' : 'puntos sin responder'}.
+      Podés enviar igual.
     </div>` : '';
+
+  const emailInfo = state.local?.emails
+    ? `<p class="text-muted mt-8">📧 Informe se enviará a: <strong>${escHtml(state.local.emails)}</strong></p>`
+    : '';
 
   return `
     <div class="header">
-      <button class="header-back" id="btn-back-audit">‹</button>
+      <button class="header-back" id="btn-back-to-audit">‹</button>
       <div>
         <div class="header-title">Resumen de Auditoría</div>
-        <div class="header-subtitle">${escHtml(state.local)} · ${state.fecha}</div>
+        <div class="header-subtitle">${escHtml(state.local.nombre)} · ${state.fecha}</div>
       </div>
     </div>
     <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:100%"></div></div>
@@ -440,7 +506,7 @@ function renderSummary() {
         </div>
         <div class="stat-card stat-orange">
           <div class="stat-number">${parcial}</div>
-          <div class="stat-label">Cumple Parcial</div>
+          <div class="stat-label">Parcial</div>
         </div>
         <div class="stat-card stat-blue">
           <div class="stat-number">${noAplica}</div>
@@ -453,19 +519,19 @@ function renderSummary() {
 
       <div class="setup-card">
         <h3>Detalle de la visita</h3>
-        <p class="text-muted mt-8">🏪 Local: <strong>${escHtml(state.local)}</strong></p>
-        <p class="text-muted mt-8">🏷 Marca: <strong>${escHtml(state.marca)}</strong></p>
+        <p class="text-muted mt-8">🏪 Local: <strong>${escHtml(state.local.nombre)}</strong></p>
+        <p class="text-muted mt-8">🏷 Marca: <strong>${state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca'}</strong></p>
         <p class="text-muted mt-8">👤 Auditor: <strong>${escHtml(state.auditor)}</strong></p>
         <p class="text-muted mt-8">📅 Fecha: <strong>${state.fecha}</strong></p>
         <p class="text-muted mt-8">📝 Total de puntos: <strong>${allQs.length}</strong></p>
+        ${emailInfo}
       </div>
     </div>
 
     <div class="nav-footer">
-      <button class="btn btn-outline" id="btn-back-audit">← Revisar</button>
-      <button class="btn btn-primary" id="btn-submit">Enviar Auditoría ✓</button>
-    </div>
-  `;
+      <button class="btn btn-outline" id="btn-back-to-audit">← Revisar</button>
+      <button class="btn btn-primary" id="btn-submit">Enviar ✓</button>
+    </div>`;
 }
 
 // ============================================================
@@ -477,10 +543,10 @@ function renderSuccess() {
       <div class="success-icon">✓</div>
       <h1 class="success-title">¡Auditoría enviada!</h1>
       <p class="success-sub">Los datos fueron guardados correctamente.</p>
+      ${state.local?.emails ? `<p class="success-sub" style="font-size:0.85rem">📧 Informe enviado a ${escHtml(state.local.emails)}</p>` : ''}
       <p class="success-id">ID: ${state.auditId}</p>
       <button class="btn btn-primary btn-large" id="btn-new-audit">Nueva Auditoría</button>
-    </div>
-  `;
+    </div>`;
 }
 
 // ============================================================
@@ -492,76 +558,63 @@ function renderError() {
       <h2>Error</h2>
       <p>${escHtml(state.error)}</p>
       <button class="btn btn-primary mt-16" onclick="init()">Reintentar</button>
-    </div>
-  `;
+    </div>`;
 }
 
 // ============================================================
 // EVENT LISTENERS
 // ============================================================
 function attachListeners() {
-  on('btn-go-setup', 'click', () => setState({ screen: 'setup' }));
+  on('btn-go-setup',   'click', () => setState({ screen: 'setup' }));
+  on('btn-back-welcome','click', () => setState({ screen: 'welcome' }));
 
-  on('btn-back-welcome', 'click', () => setState({ screen: 'welcome' }));
+  // Setup — local
+  const selLocal = document.getElementById('sel-local');
+  if (selLocal) {
+    selLocal.addEventListener('change', () => {
+      const nombre = selLocal.value;
+      state.local = state.locales.find(l => l.nombre === nombre) || null;
+    });
+  }
 
-  on('btn-back-audit', 'click', () => {
-    setState({ screen: 'audit', categoryIndex: state.categories.length - 1 });
-  });
+  // Setup — auditor (cuando no hay Google)
+  const inpAuditor = document.getElementById('inp-auditor');
+  if (inpAuditor) inpAuditor.addEventListener('input', () => { state.auditor = inpAuditor.value; });
 
-  // Marcas
-  document.querySelectorAll('.marca-btn').forEach(btn => {
-    btn.addEventListener('click', () => setState({ marca: btn.dataset.marca }));
-  });
+  const inpFecha = document.getElementById('inp-fecha');
+  if (inpFecha) inpFecha.addEventListener('change', () => { state.fecha = inpFecha.value; });
 
-  // Setup inputs (live save to state)
-  onChange('sel-local',    v => { state.local   = v; });
-  onChange('inp-auditor',  v => { state.auditor  = v; });
-  onChange('inp-fecha',    v => { state.fecha    = v; });
-
-  // Iniciar auditoría
   on('btn-start-audit', 'click', () => {
-    // Leer valores actuales antes de validar
-    state.local   = val('sel-local')   || state.local;
-    state.auditor = val('inp-auditor') || state.auditor;
-    state.fecha   = val('inp-fecha')   || state.fecha;
+    // Leer valores actuales
+    if (selLocal)    state.local   = state.locales.find(l => l.nombre === selLocal.value) || state.local;
+    if (inpAuditor)  state.auditor = inpAuditor.value || state.auditor;
+    if (inpFecha)    state.fecha   = inpFecha.value   || state.fecha;
 
-    if (!state.marca)   return alert('Seleccioná una marca.');
     if (!state.local)   return alert('Seleccioná un local.');
     if (!state.auditor) return alert('Ingresá el nombre del auditor.');
 
-    const cats = buildCategories(state.marca);
-    if (!cats.length) return alert('No se encontraron preguntas para esta marca.');
+    const cats = buildCategories(state.local.isCausa);
+    if (!cats.length) return alert('No se encontraron preguntas para este local.');
 
-    setState({ categories: cats, categoryIndex: 0, answers: {}, screen: 'audit' });
+    setState({ categories: cats, categoryIndex: 0, questionIndex: 0, answers: {}, screen: 'audit' });
   });
 
-  // Navegación de categorías
-  on('btn-prev-cat', 'click', () => {
-    saveCurrentAnswers();
-    setState({ categoryIndex: state.categoryIndex - 1 });
+  // Navegación pregunta a pregunta
+  on('btn-next-q', 'click', nextQuestion);
+  on('btn-prev-q', 'click', prevQuestion);
+  on('btn-prev-q-footer', 'click', prevQuestion);
+
+  // Volver al audit desde summary
+  on('btn-back-to-audit', 'click', () => {
+    const last = state.categories[state.categories.length - 1];
+    setState({
+      screen: 'audit',
+      categoryIndex: state.categories.length - 1,
+      questionIndex: last.questions.length - 1,
+    });
   });
 
-  on('btn-next-cat', 'click', () => {
-    saveCurrentAnswers();
-    if (state.categoryIndex < state.categories.length - 1) {
-      setState({ categoryIndex: state.categoryIndex + 1 });
-    } else {
-      setState({ screen: 'summary' });
-    }
-  });
-
-  on('btn-back-category', 'click', () => {
-    saveCurrentAnswers();
-    if (state.categoryIndex > 0) {
-      setState({ categoryIndex: state.categoryIndex - 1 });
-    } else {
-      if (confirm('¿Salir de la auditoría? Se perderá el progreso.')) {
-        setState({ screen: 'setup' });
-      }
-    }
-  });
-
-  // Respuestas radio — el browser maneja la exclusión mutua nativamente
+  // Respuestas radio
   document.querySelectorAll('.answer-radio').forEach(input => {
     input.addEventListener('change', () => {
       const qid = input.dataset.qid;
@@ -569,30 +622,28 @@ function attachListeners() {
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].valor = val;
 
-      // Actualizar clases visuales de los labels del mismo grupo
       const group = document.querySelectorAll(`input[name="radio_${qid}"]`);
       group.forEach(r => {
         const lbl = r.closest('.answer-label');
         if (!lbl) return;
         lbl.className = 'answer-label' + (r.checked ? ' ' + lbl.dataset.cls : '');
       });
-
-      updateAnswerCounter();
     });
   });
 
-  // Inputs numéricos y texto (debounced save)
+  // Inputs numéricos
   document.querySelectorAll('.number-input').forEach(inp => {
-    inp.addEventListener('change', () => {
+    inp.addEventListener('input', () => {
       const qid = inp.dataset.qid;
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].valor = inp.value;
     });
   });
 
+  // Observaciones y campos texto
   document.querySelectorAll('.observacion-textarea').forEach(ta => {
     ta.addEventListener('input', () => {
-      const qid = ta.dataset.qid;
+      const qid   = ta.dataset.qid;
       const field = ta.dataset.field || 'observacion';
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid][field] = ta.value;
@@ -602,39 +653,34 @@ function attachListeners() {
   // Fotos
   document.querySelectorAll('[id^="photobtn_"]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const qid = btn.dataset.qid;
-      document.getElementById(`fileinput_${qid}`)?.click();
+      document.getElementById(`fileinput_${btn.dataset.qid}`)?.click();
     });
   });
 
   document.querySelectorAll('[id^="fileinput_"]').forEach(input => {
     input.addEventListener('change', async () => {
-      const qid = input.dataset.qid;
+      const qid  = input.dataset.qid;
       const file = input.files[0];
       if (!file) return;
       const dataURL = await compressImage(file, 800, 0.65);
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].foto = { dataURL, name: file.name };
-      // Actualizar solo el botón de foto en el lugar
+
       const photoBtn = document.getElementById(`photobtn_${qid}`);
-      if (photoBtn) {
-        photoBtn.className = 'photo-btn has-photo';
-        photoBtn.innerHTML = '📷 Foto tomada ✓';
-      }
-      // Mostrar preview
-      const wrap = document.querySelector(`#photobtn_${qid}`)?.closest('.photo-section');
+      if (photoBtn) { photoBtn.className = 'photo-btn has-photo'; photoBtn.innerHTML = '📷 Foto tomada ✓'; }
+
+      const wrap = photoBtn?.closest('.photo-section');
       if (wrap && !wrap.querySelector('.photo-preview')) {
-        const previewWrap = document.createElement('div');
-        previewWrap.className = 'photo-preview-wrap';
-        previewWrap.style.display = 'block';
-        previewWrap.style.width = '100%';
-        previewWrap.style.marginTop = '8px';
-        previewWrap.innerHTML = `<img class="photo-preview" src="${dataURL}" alt="foto"><button class="photo-remove" data-qid="${qid}" id="photoremove_${qid}">✕</button>`;
-        wrap.appendChild(previewWrap);
-        previewWrap.querySelector('.photo-remove').addEventListener('click', (e) => {
+        const div = document.createElement('div');
+        div.className = 'photo-preview-wrap';
+        div.style.marginTop = '8px';
+        div.innerHTML = `<img class="photo-preview" src="${dataURL}" alt="foto">
+          <button class="photo-remove" data-qid="${qid}" id="photoremove_${qid}">✕</button>`;
+        wrap.appendChild(div);
+        div.querySelector('.photo-remove').addEventListener('click', e => {
           e.stopPropagation();
           if (state.answers[qid]) delete state.answers[qid].foto;
-          previewWrap.remove();
+          div.remove();
           if (photoBtn) { photoBtn.className = 'photo-btn'; photoBtn.innerHTML = '📷 Agregar foto'; }
         });
       }
@@ -642,7 +688,7 @@ function attachListeners() {
   });
 
   document.querySelectorAll('[id^="photoremove_"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', e => {
       e.stopPropagation();
       const qid = btn.dataset.qid;
       if (state.answers[qid]) delete state.answers[qid].foto;
@@ -652,18 +698,64 @@ function attachListeners() {
     });
   });
 
-  // Submit
-  on('btn-submit', 'click', submitAudit);
-
-  // Nueva auditoría
+  on('btn-submit',    'click', submitAudit);
   on('btn-new-audit', 'click', () => {
     Object.assign(state, {
-      screen: 'welcome',
-      marca: '', local: '', auditor: '',
-      categories: [], categoryIndex: 0, answers: {},
-      auditId: '', error: '', submitting: false,
+      screen: 'welcome', local: null,
+      categories: [], categoryIndex: 0, questionIndex: 0,
+      answers: {}, auditId: '', error: '', submitting: false,
     });
+    if (!state.auditorEmail) state.auditor = ''; // limpiar si no es Google
     render();
+  });
+}
+
+// ============================================================
+// NAVEGACIÓN PREGUNTA A PREGUNTA
+// ============================================================
+function nextQuestion() {
+  saveCurrentAnswer();
+  const cat = state.categories[state.categoryIndex];
+  if (state.questionIndex < cat.questions.length - 1) {
+    setState({ questionIndex: state.questionIndex + 1 });
+  } else if (state.categoryIndex < state.categories.length - 1) {
+    setState({ categoryIndex: state.categoryIndex + 1, questionIndex: 0 });
+  } else {
+    setState({ screen: 'summary' });
+  }
+}
+
+function prevQuestion() {
+  saveCurrentAnswer();
+  if (state.questionIndex > 0) {
+    setState({ questionIndex: state.questionIndex - 1 });
+  } else if (state.categoryIndex > 0) {
+    const prev = state.categories[state.categoryIndex - 1];
+    setState({ categoryIndex: state.categoryIndex - 1, questionIndex: prev.questions.length - 1 });
+  } else {
+    if (confirm('¿Salir de la auditoría? Se perderá el progreso no guardado.')) {
+      setState({ screen: 'setup' });
+    }
+  }
+}
+
+function saveCurrentAnswer() {
+  document.querySelectorAll('.answer-radio:checked').forEach(inp => {
+    const qid = inp.dataset.qid;
+    if (!state.answers[qid]) state.answers[qid] = {};
+    state.answers[qid].valor = inp.value;
+  });
+  document.querySelectorAll('.number-input').forEach(inp => {
+    if (!inp.value) return;
+    if (!state.answers[inp.dataset.qid]) state.answers[inp.dataset.qid] = {};
+    state.answers[inp.dataset.qid].valor = inp.value;
+  });
+  document.querySelectorAll('.observacion-textarea').forEach(ta => {
+    if (!ta.value) return;
+    const qid = ta.dataset.qid;
+    const field = ta.dataset.field || 'observacion';
+    if (!state.answers[qid]) state.answers[qid] = {};
+    state.answers[qid][field] = ta.value;
   });
 }
 
@@ -675,110 +767,14 @@ function on(id, event, fn) {
   if (el) el.addEventListener(event, fn);
 }
 
-function onChange(id, fn) {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('change', () => fn(el.value));
-}
-
-function val(id) {
-  const el = document.getElementById(id);
-  return el ? el.value : '';
-}
-
 function escHtml(str) {
   return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function saveCurrentAnswers() {
-  // Radios
-  document.querySelectorAll('.answer-radio:checked').forEach(inp => {
-    const qid = inp.dataset.qid;
-    if (!state.answers[qid]) state.answers[qid] = {};
-    state.answers[qid].valor = inp.value;
-  });
-  // Inputs numéricos y texto
-  document.querySelectorAll('.number-input').forEach(inp => {
-    if (!state.answers[inp.dataset.qid]) state.answers[inp.dataset.qid] = {};
-    state.answers[inp.dataset.qid].valor = inp.value;
-  });
-  // Observaciones
-  document.querySelectorAll('.observacion-textarea').forEach(ta => {
-    const qid = ta.dataset.qid;
-    const field = ta.dataset.field || 'observacion';
-    if (!state.answers[qid]) state.answers[qid] = {};
-    state.answers[qid][field] = ta.value;
-  });
-}
-
-function updateAnswerCounter() {
-  const cat = state.categories[state.categoryIndex];
-  if (!cat) return;
-  const answered = cat.questions.filter(q => state.answers[q.id]?.valor).length;
-  const el = document.querySelector('.header-info div:last-child');
-  if (el) el.textContent = `${answered}/${cat.questions.length} resp.`;
-}
-
-function refreshCard(qid) {
-  const cat = state.categories[state.categoryIndex];
-  if (!cat) return;
-  const q = cat.questions.find(q => q.id === qid);
-  if (!q) return;
-  const existing = document.querySelector(`.question-card[data-qid="${qid}"]`);
-  if (!existing) return;
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = renderQuestionCard(q);
-  const newCard = tempDiv.firstElementChild;
-  existing.replaceWith(newCard);
-  attachCardListeners(newCard, q);
-}
-
-function attachCardListeners(card, q) {
-  card.querySelectorAll('.answer-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const qid = btn.dataset.qid;
-      if (!state.answers[qid]) state.answers[qid] = {};
-      state.answers[qid].valor = btn.dataset.val;
-      refreshCard(qid);
-    });
-  });
-  const photobtn = card.querySelector(`#photobtn_${q.id}`);
-  const fileinput = card.querySelector(`#fileinput_${q.id}`);
-  const removebtn = card.querySelector(`#photoremove_${q.id}`);
-  if (photobtn && fileinput) {
-    photobtn.addEventListener('click', () => fileinput.click());
-    fileinput.addEventListener('change', async () => {
-      const file = fileinput.files[0];
-      if (!file) return;
-      const dataURL = await compressImage(file, 800, 0.65);
-      if (!state.answers[q.id]) state.answers[q.id] = {};
-      state.answers[q.id].foto = { dataURL, name: file.name };
-      refreshCard(q.id);
-    });
-  }
-  if (removebtn) {
-    removebtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (state.answers[q.id]) delete state.answers[q.id].foto;
-      refreshCard(q.id);
-    });
-  }
-  card.querySelectorAll('.observacion-textarea, .number-input').forEach(el => {
-    el.addEventListener('input', () => {
-      const qid = el.dataset.qid;
-      const field = el.dataset.field || (el.classList.contains('number-input') ? 'valor' : 'observacion');
-      if (!state.answers[qid]) state.answers[qid] = {};
-      state.answers[qid][field] = el.value;
-    });
-  });
-}
-
-// ============================================================
-// COMPRIMIR IMAGEN
-// ============================================================
 function compressImage(file, maxWidth, quality) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = e => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -798,9 +794,8 @@ function compressImage(file, maxWidth, quality) {
 // ENVIAR AUDITORÍA
 // ============================================================
 async function submitAudit() {
-  const auditId = `AUD_${state.local.replace(/\s+/g,'_')}_${Date.now()}`;
+  const auditId = `AUD_${state.local.nombre.replace(/\s+/g,'_')}_${Date.now()}`;
 
-  // Construir payload
   const allQs = state.categories.flatMap(c => c.questions);
   const respuestas = allQs.map(q => {
     const ans = state.answers[q.id] || {};
@@ -810,7 +805,7 @@ async function submitAudit() {
       control:      q.control,
       importancia:  q.importancia,
       explicacion:  q.explicacion,
-      respuesta:    ans.valor    || '',
+      respuesta:    ans.valor       || '',
       observacion:  ans.observacion || '',
       fotoBase64:   ans.foto?.dataURL ? ans.foto.dataURL.split(',')[1] : '',
       fotoNombre:   ans.foto?.name   || '',
@@ -819,31 +814,29 @@ async function submitAudit() {
 
   const payload = {
     auditId,
-    fecha:    state.fecha,
-    hora:     new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-    auditor:  state.auditor,
-    local:    state.local,
-    marca:    state.marca,
+    fecha:       state.fecha,
+    hora:        new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+    auditor:     state.auditor,
+    auditorEmail: state.auditorEmail,
+    local:       state.local.nombre,
+    marca:       state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca',
+    emailsLocal: state.local.emails,
     respuestas,
   };
 
-  // Mostrar overlay
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `<div class="spinner"></div><div class="overlay-text">Enviando auditoría...</div>`;
   document.body.appendChild(overlay);
 
   try {
-    const resp = await fetch(CONFIG.appsScriptURL, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    const resp = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(payload) });
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'Error desconocido');
     setState({ screen: 'success', auditId });
   } catch (err) {
     console.error(err);
-    alert('Error al enviar: ' + err.message + '\n\nVerificá la configuración del Apps Script.');
+    alert('Error al enviar: ' + err.message);
   } finally {
     overlay.remove();
   }
