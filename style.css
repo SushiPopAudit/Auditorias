@@ -2,16 +2,16 @@
    VARIABLES
    ============================================================ */
 :root {
-  --bg: #f1f5f9;
+  --bg: #f8f8f8;
   --card: #ffffff;
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --header-bg: #0f172a;
-  --text: #1e293b;
-  --text-muted: #64748b;
-  --border: #e2e8f0;
-  --critico: #dc2626;
-  --critico-bg: #fef2f2;
+  --primary: #e4001b;       /* Rojo POP */
+  --primary-dark: #b80015;
+  --header-bg: #1a1a1a;     /* Negro casi puro */
+  --text: #1a1a1a;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --critico: #e4001b;
+  --critico-bg: #fff1f2;
   --alta: #ea580c;
   --alta-bg: #fff7ed;
   --media: #d97706;
@@ -90,6 +90,12 @@ p  { line-height: 1.6; }
   transition: width 0.4s ease;
 }
 
+/* Tag de categoría con rojo */
+.category-tag {
+  background: #fff1f2 !important;
+  color: var(--primary) !important;
+}
+
 /* ============================================================
    MAIN CONTENT
    ============================================================ */
@@ -161,42 +167,72 @@ p  { line-height: 1.6; }
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  padding: 32px 24px;
-  background: var(--header-bg);
+  padding: 40px 32px;
+  background: #1a1a1a;
   color: #fff;
   text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Acento decorativo rojo arriba */
+.screen-welcome::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--primary);
 }
 
 .welcome-logo {
-  width: 72px;
-  height: 72px;
+  width: 200px;
+  height: auto;
+  margin-bottom: 36px;
+  object-fit: contain;
+}
+
+/* Placeholder si no hay imagen */
+.welcome-logo-placeholder {
+  width: 100px;
+  height: 100px;
   background: var(--primary);
-  border-radius: 20px;
+  border-radius: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24px;
-  font-size: 2rem;
+  margin: 0 auto 36px;
+  font-size: 3rem;
 }
 
-.welcome-title { color: #fff; margin-bottom: 8px; }
-.welcome-sub { color: #94a3b8; margin-bottom: 48px; font-size: 0.95rem; }
+.welcome-title {
+  color: #fff;
+  margin-bottom: 8px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.welcome-sub {
+  color: #9ca3af;
+  margin-bottom: 56px;
+  font-size: 0.9rem;
+}
 
 .welcome-btn {
   background: var(--primary);
   color: #fff;
   border: none;
   padding: 18px 48px;
-  border-radius: 14px;
-  font-size: 1.15rem;
+  border-radius: 12px;
+  font-size: 1.1rem;
   font-weight: 700;
   cursor: pointer;
   width: 100%;
   max-width: 320px;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.01em;
 }
-.welcome-btn:hover { background: var(--primary-dark); }
+.welcome-btn:hover  { background: var(--primary-dark); }
 .welcome-btn:active { transform: scale(0.97); }
 
 /* ============================================================

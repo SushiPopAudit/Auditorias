@@ -180,7 +180,9 @@ function renderLoading() {
 function renderWelcome() {
   return `
     <div class="screen-welcome">
-      <div class="welcome-logo">📋</div>
+      <img src="logo.png" alt="Logo POP" class="welcome-logo"
+        onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex'">
+      <div class="welcome-logo-placeholder" id="logo-fallback" style="display:none">🍣</div>
       <h1 class="welcome-title">Sistema de Auditorías</h1>
       <p class="welcome-sub">Herramienta para auditores de locales</p>
       <button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>
