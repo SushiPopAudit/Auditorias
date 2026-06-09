@@ -85,18 +85,23 @@ function enviarEmailAuditoria(data, rows) {
   const emails = data.emailsLocal.split(',').map(e => e.trim()).filter(Boolean);
   if (!emails.length) return;
 
+  // Estructura de columnas en cada row:
+  // [0]auditId [1]fecha [2]hora [3]auditor [4]local [5]marca
+  // [6]categoria [7]subcategoria [8]control [9]importancia
+  // [10]explicacion [11]respuesta [12]observacion [13]fotoURL [14]auditorEmail
+
   // Estadísticas
-  const respuestas = rows.map(r => r[12]); // columna Respuesta
-  const cumple     = respuestas.filter(r => r === 'Cumple').length;
-  const noCumple   = respuestas.filter(r => (r||'').toLowerCase().includes('no cumple') || r === 'NoCumple').length;
-  const parcial    = respuestas.filter(r => (r||'').toLowerCase().includes('parcial')).length;
+  const respuestas = rows.map(r => (r[11]||'').trim()); // columna Respuesta = índice 11
+  const cumple     = respuestas.filter(r => r.toLowerCase() === 'cumple').length;
+  const noCumple   = respuestas.filter(r => r.toLowerCase().includes('no cumple') || r.toLowerCase() === 'nocumple').length;
+  const parcial    = respuestas.filter(r => r.toLowerCase().includes('parcial')).length;
   const total      = respuestas.filter(r => r).length;
   const pct        = total ? Math.round((cumple / total) * 100) : 0;
 
-  // Desvíos críticos
+  // Desvíos críticos — importancia=[9], respuesta=[11]
   const criticos = rows.filter(r => {
-    const imp = (r[10]||'').toLowerCase();
-    const res = (r[12]||'').toLowerCase();
+    const imp = (r[9]||'').toLowerCase();
+    const res = (r[11]||'').toLowerCase();
     return (imp === 'critico' || imp === 'crítico') && (res.includes('no cumple') || res === 'nocumple');
   });
 
@@ -105,25 +110,25 @@ function enviarEmailAuditoria(data, rows) {
       <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;font-weight:600;color:#e4001b">${r[8]}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #fecdd3">${r[9]}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;color:#e4001b;font-weight:700">No Cumple</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;color:#666">${r[13]||'-'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;color:#666">${r[12]||'-'}</td>
     </tr>`).join('');
 
   // Tabla completa de respuestas
   const filasCompletas = rows.map(r => {
-    const res = (r[12]||'').toLowerCase();
-    const isCritico = ((r[10]||'').toLowerCase() === 'critico' || (r[10]||'').toLowerCase() === 'crítico') && (res.includes('no cumple') || res === 'nocumple');
+    const res = (r[11]||'').toLowerCase();
+    const isCritico = ((r[9]||'').toLowerCase() === 'critico' || (r[9]||'').toLowerCase() === 'crítico') && (res.includes('no cumple') || res === 'nocumple');
     const bgColor = isCritico ? '#fff1f2' : res === 'cumple' ? '#f0fdf4' : '#fff';
     const resColor = isCritico ? '#e4001b' : res === 'cumple' ? '#16a34a' : '#1a1a1a';
     return `
       <tr style="background:${bgColor}">
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#666">${r[6]}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#666">${r[7]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#666">${r[8]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">${r[9]}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">${r[8]}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">
-          <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:${getImpBg(r[10])};color:${getImpColor(r[10])}">${r[10]}</span>
+          <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:${getImpBg(r[9])};color:${getImpColor(r[9])}">${r[9]}</span>
         </td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:600;color:${resColor}">${r[12]||'-'}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#888">${r[13]||'-'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:600;color:${resColor}">${r[11]||'-'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#888">${r[12]||'-'}</td>
       </tr>`;
   }).join('');
 
@@ -230,10 +235,10 @@ function enviarEmailAuditoria(data, rows) {
 </body>
 </html>`;
 
-  MailApp.sendEmail({
-    to:      emails.join(','),
-    subject: `Auditoría ${data.local} — ${data.fecha} (${pct}% cumplimiento)`,
+  GmailApp.sendEmail(emails.join(','), `Auditoría ${data.local} — ${data.fecha} (${pct}% cumplimiento)`, '', {
     htmlBody: htmlBody,
+    name:     'Franquicias POP',
+    from:     'franquicias@sushi-pop.com.ar',
   });
 }
 
@@ -258,13 +263,13 @@ function getImpColor(imp) {
 function colorearDesvios(sheet, rows) {
   const firstRow = sheet.getLastRow() - rows.length + 1;
   rows.forEach((row, i) => {
-    const imp = (row[10]||'').toLowerCase();
-    const res = (row[12]||'').toLowerCase();
+    const imp = (row[9]||'').toLowerCase();   // importancia = índice 9
+    const res = (row[11]||'').toLowerCase();  // respuesta   = índice 11
     const isCrit = imp==='critico'||imp==='crítico';
     const isNC   = res.includes('no cumple')||res==='nocumple';
     if (isCrit && isNC) sheet.getRange(firstRow+i,1,1,15).setBackground('#fff1f2');
     else if (isNC)      sheet.getRange(firstRow+i,1,1,15).setBackground('#fff7ed');
-    else if (res==='cumple') sheet.getRange(firstRow+i,13,1,1).setBackground('#f0fdf4');
+    else if (res==='cumple') sheet.getRange(firstRow+i,12,1,1).setBackground('#f0fdf4'); // col 12 = Respuesta
   });
 }
 
