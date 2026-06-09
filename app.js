@@ -355,7 +355,7 @@ function renderQuestionCard(q) {
   `;
 
   return `
-    <div class="question-card imp-${imp}">
+    <div class="question-card imp-${imp}" data-qid="${q.id}">
       <div class="question-meta">
         <span class="badge badge-${imp}">${q.importancia || 'Media'}</span>
         <span class="question-subcategoria">${escHtml(q.subcategoria)}</span>
@@ -664,25 +664,17 @@ function saveCurrentAnswers() {
 }
 
 function refreshCard(qid) {
-  // Re-render la tarjeta sin re-renderizar toda la pantalla
   const cat = state.categories[state.categoryIndex];
   if (!cat) return;
   const q = cat.questions.find(q => q.id === qid);
   if (!q) return;
+  const existing = document.querySelector(`.question-card[data-qid="${qid}"]`);
+  if (!existing) return;
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = renderQuestionCard(q);
   const newCard = tempDiv.firstElementChild;
-  // Find existing card — buscar por el texto del control
-  const cards = document.querySelectorAll('.question-card');
-  for (const card of cards) {
-    const ctrl = card.querySelector('.question-control');
-    if (ctrl && ctrl.textContent === (q.control || '')) {
-      card.replaceWith(newCard);
-      // Re-attach listeners para la nueva tarjeta
-      attachCardListeners(newCard, q);
-      break;
-    }
-  }
+  existing.replaceWith(newCard);
+  attachCardListeners(newCard, q);
 }
 
 function attachCardListeners(card, q) {
