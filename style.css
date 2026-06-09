@@ -168,8 +168,8 @@ p  { line-height: 1.6; }
   justify-content: center;
   min-height: 100vh;
   padding: 40px 32px;
-  background: #1a1a1a;
-  color: #fff;
+  background: #ffffff;
+  color: #1a1a1a;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -180,7 +180,7 @@ p  { line-height: 1.6; }
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 4px;
+  height: 5px;
   background: var(--primary);
 }
 
@@ -205,14 +205,14 @@ p  { line-height: 1.6; }
 }
 
 .welcome-title {
-  color: #fff;
+  color: #1a1a1a;
   margin-bottom: 8px;
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 .welcome-sub {
-  color: #9ca3af;
+  color: #6b7280;
   margin-bottom: 56px;
   font-size: 0.9rem;
 }
