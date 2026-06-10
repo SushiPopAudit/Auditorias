@@ -715,6 +715,27 @@ select.form-control {
 .success-id    { font-size: 0.8rem; color: #94a3b8; font-family: monospace; margin-bottom: 36px; }
 
 /* ============================================================
+   PUNTAJE CARD
+   ============================================================ */
+.puntaje-card {
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 16px;
+  border: 2px solid transparent;
+}
+.puntaje-emoji  { font-size: 1.5rem; margin-bottom: 4px; }
+.puntaje-pct    { font-size: 2.5rem; font-weight: 900; line-height: 1; }
+.puntaje-nivel  { font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+.puntaje-detalle{ font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+
+.puntaje-excelente    { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
+.puntaje-satisfactorio{ background: #fefce8; border-color: #fde047; color: #ca8a04; }
+.puntaje-mejora       { background: #fff7ed; border-color: #fdba74; color: #ea580c; }
+.puntaje-deficiente   { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+.puntaje-reprobado    { background: #fff1f2; border-color: var(--primary); color: var(--primary); }
+
+/* ============================================================
    LOADING
    ============================================================ */
 .screen-center {

@@ -186,6 +186,51 @@ function parseAnswerType(pregunta) {
   return { type: 'text', options: [] };
 }
 
+// ============================================================
+// SISTEMA DE PUNTOS
+// ============================================================
+function calcularPuntaje(questions, answers) {
+  const maxPts     = { 'critico': 4, 'crítico': 4, 'alta': 3, 'media': 2, 'baja': 1 };
+  const parcialPts = { 'critico': 2, 'crítico': 2, 'alta': 1, 'media': 1, 'baja': 0 };
+
+  let obtenido = 0, posible = 0, reprobado = false;
+
+  questions.forEach(q => {
+    const { type } = parseAnswerType(q.pregunta);
+    if (type !== 'radio') return; // numéricos/texto libre: sin puntaje automático por ahora
+
+    const imp = (q.importancia || '').toLowerCase().trim();
+    const val = (answers[q.id]?.valor || '').toLowerCase().trim();
+    const max = maxPts[imp];
+
+    if (!max) return;                        // importancia desconocida
+    if (!val) return;                        // sin responder
+    if (val.includes('aplica')) return;      // No aplica → excluir del cálculo
+
+    posible += max;
+
+    if (val === 'cumple') {
+      obtenido += max;
+    } else if (val.includes('parcial')) {
+      obtenido += parcialPts[imp] || 0;
+    } else if (val.includes('no cumple') || val === 'nocumple') {
+      if (imp === 'critico' || imp === 'crítico') reprobado = true;
+      // 0 puntos
+    }
+  });
+
+  const pct = posible > 0 ? Math.round((obtenido / posible) * 100) : 0;
+
+  let nivel, nivelClass, nivelEmoji;
+  if (reprobado)    { nivel = 'Reprobado';       nivelClass = 'reprobado';    nivelEmoji = '⛔'; }
+  else if (pct >= 90) { nivel = 'Excelente';     nivelClass = 'excelente';    nivelEmoji = '🟢'; }
+  else if (pct >= 75) { nivel = 'Satisfactorio'; nivelClass = 'satisfactorio';nivelEmoji = '🟡'; }
+  else if (pct >= 60) { nivel = 'Requiere mejora';nivelClass = 'mejora';      nivelEmoji = '🟠'; }
+  else                { nivel = 'Deficiente';    nivelClass = 'deficiente';   nivelEmoji = '🔴'; }
+
+  return { obtenido, posible, pct, reprobado, nivel, nivelClass, nivelEmoji };
+}
+
 function importanciaClass(imp) {
   const i = (imp || '').toLowerCase();
   if (i === 'critico' || i === 'crítico') return 'critico';
@@ -480,9 +525,20 @@ function renderSummary() {
       Podés enviar igual.
     </div>` : '';
 
+  const puntaje = calcularPuntaje(allQs, state.answers);
+
   const emailInfo = state.local?.emails
     ? `<p class="text-muted mt-8">📧 Informe se enviará a: <strong>${escHtml(state.local.emails)}</strong></p>`
     : '';
+
+  const puntajeHtml = `
+    <div class="puntaje-card puntaje-${puntaje.nivelClass}">
+      <div class="puntaje-emoji">${puntaje.nivelEmoji}</div>
+      <div class="puntaje-pct">${puntaje.reprobado ? '⛔' : puntaje.pct + '%'}</div>
+      <div class="puntaje-nivel">${puntaje.nivel}</div>
+      ${!puntaje.reprobado ? `<div class="puntaje-detalle">${puntaje.obtenido} / ${puntaje.posible} pts</div>` : ''}
+      ${puntaje.reprobado ? `<div class="puntaje-detalle">Desvío crítico sin resolver</div>` : ''}
+    </div>`;
 
   return `
     <div class="header">
@@ -495,6 +551,8 @@ function renderSummary() {
     <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:100%"></div></div>
 
     <div class="main" style="padding-bottom:80px">
+      ${puntajeHtml}
+
       <div class="summary-stats">
         <div class="stat-card stat-green">
           <div class="stat-number">${cumple}</div>
@@ -538,10 +596,20 @@ function renderSummary() {
 // PANTALLA: SUCCESS
 // ============================================================
 function renderSuccess() {
+  const p = state.lastPuntaje;
+  const puntajeHtml = p ? `
+    <div class="puntaje-card puntaje-${p.nivelClass}" style="margin:16px 0">
+      <div class="puntaje-emoji">${p.nivelEmoji}</div>
+      <div class="puntaje-pct">${p.reprobado ? '⛔' : p.pct + '%'}</div>
+      <div class="puntaje-nivel">${p.nivel}</div>
+      ${!p.reprobado ? `<div class="puntaje-detalle">${p.obtenido} / ${p.posible} pts</div>` : '<div class="puntaje-detalle">Desvío crítico sin resolver</div>'}
+    </div>` : '';
+
   return `
     <div class="screen-success">
       <div class="success-icon">✓</div>
       <h1 class="success-title">¡Auditoría enviada!</h1>
+      ${puntajeHtml}
       <p class="success-sub">Los datos fueron guardados correctamente.</p>
       ${state.local?.emails ? `<p class="success-sub" style="font-size:0.85rem">📧 Informe enviado a ${escHtml(state.local.emails)}</p>` : ''}
       <p class="success-id">ID: ${state.auditId}</p>
@@ -812,6 +880,9 @@ async function submitAudit() {
     };
   });
 
+  const allQsForScore = state.categories.flatMap(c => c.questions);
+  const puntaje = calcularPuntaje(allQsForScore, state.answers);
+
   const payload = {
     auditId,
     fecha:       state.fecha,
@@ -821,6 +892,7 @@ async function submitAudit() {
     local:       state.local.nombre,
     marca:       state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca',
     emailsLocal: state.local.emails,
+    puntaje:     { pct: puntaje.pct, nivel: puntaje.nivel, obtenido: puntaje.obtenido, posible: puntaje.posible, reprobado: puntaje.reprobado },
     respuestas,
   };
 
@@ -834,7 +906,7 @@ async function submitAudit() {
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'Error desconocido');
     console.log('Email status:', data.email);
-    setState({ screen: 'success', auditId, emailStatus: data.email || '' });
+    setState({ screen: 'success', auditId, emailStatus: data.email || '', lastPuntaje: puntaje });
   } catch (err) {
     console.error(err);
     alert('Error al enviar: ' + err.message);

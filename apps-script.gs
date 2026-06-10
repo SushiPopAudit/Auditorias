@@ -18,9 +18,10 @@ function doPost(e) {
       sheet.appendRow([
         'AuditID','Fecha','Hora','Auditor','Local','Marca',
         'Categoría','Subcategoría','Control','Importancia',
-        'Explicación','Respuesta','Observación','URL Foto','Email Auditor'
+        'Explicación','Respuesta','Observación','URL Foto','Email Auditor',
+        'Puntaje %','Nivel','Reprobado'
       ]);
-      sheet.getRange(1,1,1,15).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+      sheet.getRange(1,1,1,18).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
 
@@ -45,17 +46,20 @@ function doPost(e) {
       }
       return [
         data.auditId, data.fecha, data.hora,
-        data.auditor,                           // col D
-        data.local,                             // col E  ← igual que antes
-        data.marca,                             // col F  ← igual que antes
+        data.auditor,
+        data.local,
+        data.marca,
         r.categoria, r.subcategoria, r.control, r.importancia,
         r.explicacion, r.respuesta, r.observacion, fotoURL,
-        data.auditorEmail || '',                // col O  ← al final (nuevo)
+        data.auditorEmail || '',
+        data.puntaje?.pct    ?? '',             // col P — Puntaje %
+        data.puntaje?.nivel  || '',             // col Q — Nivel
+        data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
       ];
     });
 
     if (rows.length > 0) {
-      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 15).setValues(rows);
+      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 18).setValues(rows);
       colorearDesvios(sheet, rows);
     }
 
@@ -143,6 +147,11 @@ function enviarEmailAuditoria(data, rows) {
     <div style="background:#e4001b;padding:24px 32px;text-align:center">
       <h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditoría</h1>
       <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">${data.local} · ${data.fecha}</p>
+      ${data.puntaje ? `
+      <div style="margin-top:16px;display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:12px 24px">
+        <div style="font-size:36px;font-weight:900;color:#fff">${data.puntaje.reprobado ? '⛔ REPROBADO' : data.puntaje.pct + '%'}</div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.9);font-weight:600;margin-top:2px">${data.puntaje.nivel}${!data.puntaje.reprobado ? ' · ' + data.puntaje.obtenido + '/' + data.puntaje.posible + ' pts' : ''}</div>
+      </div>` : ''}
     </div>
 
     <!-- Datos -->
