@@ -410,7 +410,9 @@ function doGet(e) {
       if (lastRow < 2) return jsonResponse({ success: false, error: 'Sin datos' });
 
       const allData = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
-      const rows    = allData.filter(function(r) { return r[0] === auditId; });
+      const rows    = allData
+        .filter(function(r) { return String(r[0]) === auditId; })
+        .map(function(r) { return r.map(function(v) { return v == null ? '' : String(v); }); });
       if (!rows.length) return jsonResponse({ success: false, error: 'AuditID no encontrado: ' + auditId });
 
       const first = rows[0];
