@@ -174,13 +174,22 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
   const pct      = total ? Math.round(cumple / total * 100) : 0;
 
   // Gráfico torta
+  const chartTotal = cumple + noCumple + parcial;
+  const pCumple   = chartTotal ? Math.round(cumple   / chartTotal * 100) : 0;
+  const pNoCumple = chartTotal ? Math.round(noCumple / chartTotal * 100) : 0;
+  const pParcial  = chartTotal ? Math.round(parcial  / chartTotal * 100) : 0;
   const chartData = JSON.stringify({
-    type:'pie',
-    data:{labels:['Cumple','No Cumple','Parcial'],datasets:[{data:[cumple,noCumple,parcial],backgroundColor:['#16a34a','#e4001b','#d97706'],borderWidth:2,borderColor:'#fff'}]},
-    options:{plugins:{
-      legend:{position:'right',labels:{font:{size:13},padding:16}},
-      datalabels:{color:'#fff',font:{weight:'bold',size:13},formatter:'(v,ctx)=>{const s=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);return s&&v?Math.round(v/s*100)+"%":"";}'}
-    }}
+    type: 'pie',
+    data: {
+      labels: ['Cumple ' + pCumple + '%', 'No Cumple ' + pNoCumple + '%', 'Parcial ' + pParcial + '%'],
+      datasets: [{ data: [cumple, noCumple, parcial], backgroundColor: ['#16a34a','#e4001b','#d97706'], borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: {
+      plugins: {
+        legend: { position: 'right', labels: { fontSize: 13, padding: 16 } },
+        datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, formatter: 'function(v,ctx){var s=ctx.dataset.data.reduce(function(a,b){return a+b;},0);return s&&v?Math.round(v/s*100)+"%":"";}' }
+      }
+    }
   });
   const chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
 
