@@ -616,7 +616,7 @@ function renderSuccess() {
         <div style="background:#fff7ed;border:2px solid #fb923c;border-radius:12px;padding:16px;margin:16px 0;text-align:left">
           <div style="font-size:0.95rem;font-weight:700;color:#c2410c;margin-bottom:8px">🔁 Desvíos reiterados (${state.desviosRepetidos.length})</div>
           <p style="font-size:0.8rem;color:#92400e;margin:0 0 10px">Sin resolver en las últimas 3 auditorías:</p>
-          ${state.desviosRepetidos.map(d => `<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid #fed7aa;color:#1a1a1a"><strong>${escHtml(d.control)}</strong> <span style="color:#92400e">${escHtml(d.categoria)} › ${escHtml(d.subcategoria)}</span></div>`).join('')}
+          ${state.desviosRepetidos.map(d => `<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid #fed7aa;color:#1a1a1a;display:flex;justify-content:space-between;align-items:center"><span><strong>${escHtml(d.control)}</strong> <span style="color:#92400e">${escHtml(d.categoria)} › ${escHtml(d.subcategoria)}</span></span><span style="font-size:0.75rem;font-weight:700;color:${d.repeticiones>=2?'#e4001b':'#ea580c'}">${d.repeticiones>=2?'3 auditorías':'2 auditorías'}</span></div>`).join('')}
         </div>` : ''}
       <p class="success-id">ID: ${state.auditId}</p>
       <button class="btn btn-primary btn-large" id="btn-new-audit">Nueva Auditoría</button>

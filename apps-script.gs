@@ -135,13 +135,13 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
       }
     });
 
-    // Encontrar los que aparecen en las 2 previas Y en la actual
+    // Encontrar los que aparecen en al menos 1 de las 2 previas Y en la actual
     var repetidos = [];
     Object.keys(noCumpleActual).forEach(function(key) {
-      var enAmbas = last2.every(function(id) { return noCumplePrevio[id][key]; });
-      if (enAmbas) {
+      var count = last2.filter(function(id) { return noCumplePrevio[id][key]; }).length;
+      if (count > 0) {
         var r = noCumpleActual[key];
-        repetidos.push({ categoria: r[6], subcategoria: r[7], control: r[8], importancia: r[9] });
+        repetidos.push({ categoria: r[6], subcategoria: r[7], control: r[8], importancia: r[9], repeticiones: count });
       }
     });
 
@@ -177,7 +177,10 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
   const chartData = JSON.stringify({
     type:'pie',
     data:{labels:['Cumple','No Cumple','Parcial'],datasets:[{data:[cumple,noCumple,parcial],backgroundColor:['#16a34a','#e4001b','#d97706'],borderWidth:2,borderColor:'#fff'}]},
-    options:{plugins:{legend:{position:'right',labels:{font:{size:13},padding:16}}}}
+    options:{plugins:{
+      legend:{position:'right',labels:{font:{size:13},padding:16}},
+      datalabels:{color:'#fff',font:{weight:'bold',size:13},formatter:'(v,ctx)=>{const s=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);return s&&v?Math.round(v/s*100)+"%":"";}'}
+    }}
   });
   const chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
 
@@ -269,20 +272,32 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
   if (rep.length) {
     var filasRep = '';
     rep.forEach(function(d) {
+      var rep2 = d.repeticiones >= 2;
+      var repBg    = rep2 ? '#fff1f2' : '#fff7ed';
+      var repBorder= rep2 ? '#fca5a5' : '#fed7aa';
+      var repBadgeBg    = rep2 ? '#e4001b' : '#ea580c';
+      var repLabel = rep2 ? '🔁 Repite en las últimas 3' : '⚠ Repite en auditoría anterior';
       filasRep +=
-        '<tr style="background:#fff7ed">'
-        + '<td style="padding:10px 12px;border-bottom:1px solid #fed7aa;font-weight:600;font-size:13px">' + d.control + '</td>'
-        + '<td style="padding:10px 12px;border-bottom:1px solid #fed7aa;font-size:12px;color:#666">' + d.categoria + ' › ' + d.subcategoria + '</td>'
-        + '<td style="padding:10px 12px;border-bottom:1px solid #fed7aa;font-size:12px;text-align:center">'
+        '<tr style="background:' + repBg + '">'
+        + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-weight:600;font-size:13px">' + d.control + '</td>'
+        + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-size:12px;color:#666">' + d.categoria + ' › ' + d.subcategoria + '</td>'
+        + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-size:12px;text-align:center">'
         + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(d.importancia) + ';color:' + getImpColor(d.importancia) + '">' + d.importancia + '</span>'
+        + '</td>'
+        + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-size:11px;text-align:right;white-space:nowrap">'
+        + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + repBadgeBg + ';color:#fff">' + repLabel + '</span>'
         + '</td></tr>';
     });
     seccionRepetidos =
       '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fffbeb">'
       + '<h2 style="margin:0 0 8px;font-size:15px;color:#c2410c">🔁 Desvíos Reiterados (' + rep.length + ')</h2>'
-      + '<p style="margin:0 0 16px;font-size:13px;color:#92400e">Estos puntos no cumplieron en las últimas <strong>3 auditorías consecutivas</strong>. Requieren atención urgente.</p>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:#92400e">Puntos que no cumplieron en auditorías anteriores y continúan sin corregirse.</p>'
       + '<table style="width:100%;border-collapse:collapse">'
-      + '<tr style="background:#c2410c"><th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Control</th><th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Categoría</th><th style="padding:8px 12px;text-align:center;color:#fff;font-size:12px">Importancia</th></tr>'
+      + '<tr style="background:#c2410c">'
+      + '<th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Control</th>'
+      + '<th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Categoría</th>'
+      + '<th style="padding:8px 12px;text-align:center;color:#fff;font-size:12px">Importancia</th>'
+      + '<th style="padding:8px 12px;text-align:right;color:#fff;font-size:12px">Reincidencia</th></tr>'
       + filasRep
       + '</table></div>';
   }
