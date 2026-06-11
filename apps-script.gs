@@ -85,6 +85,12 @@ function doPost(e) {
 // ============================================================
 // EMAIL HTML AL LOCAL
 // ============================================================
+function driveImgUrl(url) {
+  if (!url) return '';
+  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? 'https://drive.google.com/uc?export=view&id=' + m[1] : url;
+}
+
 function enviarEmailAuditoria(data, rows) {
   const emails = data.emailsLocal.split(',').map(e => e.trim()).filter(Boolean);
   if (!emails.length) return;
@@ -95,44 +101,88 @@ function enviarEmailAuditoria(data, rows) {
   // [10]explicacion [11]respuesta [12]observacion [13]fotoURL [14]auditorEmail
 
   // Estadísticas
-  const respuestas = rows.map(r => (r[11]||'').trim()); // columna Respuesta = índice 11
-  const cumple     = respuestas.filter(r => r.toLowerCase() === 'cumple').length;
-  const noCumple   = respuestas.filter(r => r.toLowerCase().includes('no cumple') || r.toLowerCase() === 'nocumple').length;
-  const parcial    = respuestas.filter(r => r.toLowerCase().includes('parcial')).length;
-  const total      = respuestas.filter(r => r).length;
-  const pct        = total ? Math.round((cumple / total) * 100) : 0;
+  const respuestas = rows.map(r => (r[11]||'').trim());
+  const cumple    = respuestas.filter(r => r.toLowerCase() === 'cumple').length;
+  const noCumple  = respuestas.filter(r => r.toLowerCase().includes('no cumple') || r.toLowerCase() === 'nocumple').length;
+  const parcial   = respuestas.filter(r => r.toLowerCase().includes('parcial')).length;
+  const noAplica  = respuestas.filter(r => r.toLowerCase().includes('aplica')).length;
+  const total     = respuestas.filter(r => r).length;
+  const pct       = total ? Math.round((cumple / total) * 100) : 0;
 
-  // Desvíos críticos — importancia=[9], respuesta=[11]
-  const criticos = rows.filter(r => {
-    const imp = (r[9]||'').toLowerCase();
+  // Gráfico de torta via QuickChart.io
+  const chartConfig = {
+    type: 'pie',
+    data: {
+      labels: ['Cumple', 'No Cumple', 'Parcial'],
+      datasets: [{
+        data: [cumple, noCumple, parcial],
+        backgroundColor: ['#16a34a', '#e4001b', '#d97706'],
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { position: 'right', labels: { font: { size: 13 }, padding: 16 } },
+        datalabels: {
+          color: '#fff',
+          font: { weight: 'bold', size: 13 },
+          formatter: '(v,ctx) => { const t=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0); return t&&v?Math.round(v/t*100)+"%":""; }'
+        }
+      }
+    }
+  };
+  const chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(JSON.stringify(chartConfig)) + '&width=420&height=220&backgroundColor=white';
+
+  // Puntos que NO cumplen (incluye parciales) con sus fotos
+  const noOkRows = rows.filter(r => {
     const res = (r[11]||'').toLowerCase();
-    return (imp === 'critico' || imp === 'crítico') && (res.includes('no cumple') || res === 'nocumple');
+    return res.includes('no cumple') || res === 'nocumple' || res.includes('parcial');
   });
 
-  const filasCriticas = criticos.map(r => `
-    <tr style="background:#fff1f2">
-      <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;font-weight:600;color:#e4001b">${r[8]}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #fecdd3">${r[9]}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;color:#e4001b;font-weight:700">No Cumple</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #fecdd3;color:#666">${r[12]||'-'}</td>
-    </tr>`).join('');
+  const filasNoOk = noOkRows.map(r => {
+    const res = (r[11]||'').toLowerCase();
+    const esCritico = (r[9]||'').toLowerCase().replace('í','i') === 'critico';
+    const esNoCumple = res.includes('no cumple') || res === 'nocumple';
+    const bgRow  = esCritico && esNoCumple ? '#fff1f2' : esNoCumple ? '#fef9f9' : '#fffbeb';
+    const resColor = esNoCumple ? '#e4001b' : '#d97706';
+    const fotoDirecta = driveImgUrl(r[13]);
+    return `
+      <div style="background:${bgRow};border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid ${resColor}">
+        <table style="width:100%;border-collapse:collapse">
+          <tr>
+            <td style="vertical-align:top;width:${fotoDirecta ? '55%' : '100%'}">
+              <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">${r[6]} › ${r[7]}</div>
+              <div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">${r[8]}</div>
+              <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:${getImpBg(r[9])};color:${getImpColor(r[9])};margin-bottom:8px">${r[9]}</span>
+              <div style="font-size:13px;font-weight:700;color:${resColor};margin-bottom:4px">● ${r[11]}</div>
+              ${r[12] ? `<div style="font-size:12px;color:#666;font-style:italic">"${r[12]}"</div>` : ''}
+            </td>
+            ${fotoDirecta ? `
+            <td style="vertical-align:top;padding-left:12px;width:45%">
+              <img src="${fotoDirecta}" alt="Foto" style="width:100%;max-width:200px;border-radius:6px;border:1px solid #e5e7eb">
+            </td>` : ''}
+          </tr>
+        </table>
+      </div>`;
+  }).join('');
 
   // Tabla completa de respuestas
   const filasCompletas = rows.map(r => {
     const res = (r[11]||'').toLowerCase();
-    const isCritico = ((r[9]||'').toLowerCase() === 'critico' || (r[9]||'').toLowerCase() === 'crítico') && (res.includes('no cumple') || res === 'nocumple');
+    const isCritico = (r[9]||'').toLowerCase().replace('í','i') === 'critico' && (res.includes('no cumple') || res === 'nocumple');
     const bgColor = isCritico ? '#fff1f2' : res === 'cumple' ? '#f0fdf4' : '#fff';
     const resColor = isCritico ? '#e4001b' : res === 'cumple' ? '#16a34a' : '#1a1a1a';
     return `
       <tr style="background:${bgColor}">
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#666">${r[6]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#666">${r[7]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">${r[8]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">
-          <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:${getImpBg(r[9])};color:${getImpColor(r[9])}">${r[9]}</span>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#666">${r[6]}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#666">${r[7]}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">${r[8]}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">
+          <span style="display:inline-block;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:700;background:${getImpBg(r[9])};color:${getImpColor(r[9])}">${r[9]}</span>
         </td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:600;color:${resColor}">${r[11]||'-'}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#888">${r[12]||'-'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600;color:${resColor}">${r[11]||'-'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#888">${r[12]||'-'}</td>
       </tr>`;
   }).join('');
 
@@ -149,87 +199,78 @@ function enviarEmailAuditoria(data, rows) {
       <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">${data.local} · ${data.fecha}</p>
       ${data.puntaje ? `
       <div style="margin-top:16px;display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:12px 24px">
-        <div style="font-size:36px;font-weight:900;color:#fff">${data.puntaje.reprobado ? '⛔ REPROBADO' : data.puntaje.pct + '%'}</div>
+        <div style="font-size:40px;font-weight:900;color:#fff">${data.puntaje.reprobado ? '⛔ REPROBADO' : data.puntaje.pct + '%'}</div>
         <div style="font-size:14px;color:rgba(255,255,255,0.9);font-weight:600;margin-top:2px">${data.puntaje.nivel}${!data.puntaje.reprobado ? ' · ' + data.puntaje.obtenido + '/' + data.puntaje.posible + ' pts' : ''}</div>
       </div>` : ''}
     </div>
 
     <!-- Datos -->
-    <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">
+    <div style="padding:20px 32px;border-bottom:1px solid #e5e7eb">
       <table style="width:100%;border-collapse:collapse">
         <tr>
-          <td style="padding:4px 0;color:#666;font-size:14px;width:120px">Local</td>
-          <td style="padding:4px 0;font-weight:600;font-size:14px">${data.local}</td>
-          <td style="padding:4px 0;color:#666;font-size:14px;width:120px">Auditor</td>
-          <td style="padding:4px 0;font-weight:600;font-size:14px">${data.auditor}</td>
+          <td style="padding:3px 0;color:#666;font-size:13px;width:110px">Local</td>
+          <td style="padding:3px 0;font-weight:600;font-size:13px">${data.local}</td>
+          <td style="padding:3px 0;color:#666;font-size:13px;width:110px">Auditor</td>
+          <td style="padding:3px 0;font-weight:600;font-size:13px">${data.auditor}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;color:#666;font-size:14px">Fecha</td>
-          <td style="padding:4px 0;font-weight:600;font-size:14px">${data.fecha} ${data.hora}</td>
-          <td style="padding:4px 0;color:#666;font-size:14px">Marca</td>
-          <td style="padding:4px 0;font-weight:600;font-size:14px">${data.marca}</td>
-        </tr>
-        <tr>
-          <td style="padding:4px 0;color:#666;font-size:14px">ID</td>
-          <td colspan="3" style="padding:4px 0;font-size:12px;color:#999;font-family:monospace">${data.auditId}</td>
+          <td style="padding:3px 0;color:#666;font-size:13px">Fecha</td>
+          <td style="padding:3px 0;font-weight:600;font-size:13px">${data.fecha} ${data.hora}</td>
+          <td style="padding:3px 0;color:#666;font-size:13px">Marca</td>
+          <td style="padding:3px 0;font-weight:600;font-size:13px">${data.marca}</td>
         </tr>
       </table>
     </div>
 
-    <!-- Estadísticas -->
+    <!-- Gráfico + Estadísticas -->
     <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">
-      <h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Resultados</h2>
+      <h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Distribución de Resultados</h2>
+      <div style="text-align:center;margin-bottom:20px">
+        <img src="${chartUrl}" alt="Gráfico de resultados" style="max-width:100%;height:auto">
+      </div>
       <table style="width:100%;border-collapse:collapse;text-align:center">
         <tr>
-          <td style="padding:16px;background:#f0fdf4;border-radius:8px">
-            <div style="font-size:28px;font-weight:800;color:#16a34a">${cumple}</div>
+          <td style="padding:14px 8px;background:#f0fdf4;border-radius:8px">
+            <div style="font-size:26px;font-weight:800;color:#16a34a">${cumple}</div>
             <div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Cumple</div>
           </td>
-          <td style="width:8px"></td>
-          <td style="padding:16px;background:#fff1f2;border-radius:8px">
-            <div style="font-size:28px;font-weight:800;color:#e4001b">${noCumple}</div>
+          <td style="width:6px"></td>
+          <td style="padding:14px 8px;background:#fff1f2;border-radius:8px">
+            <div style="font-size:26px;font-weight:800;color:#e4001b">${noCumple}</div>
             <div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Cumple</div>
           </td>
-          <td style="width:8px"></td>
-          <td style="padding:16px;background:#fffbeb;border-radius:8px">
-            <div style="font-size:28px;font-weight:800;color:#d97706">${parcial}</div>
+          <td style="width:6px"></td>
+          <td style="padding:14px 8px;background:#fffbeb;border-radius:8px">
+            <div style="font-size:26px;font-weight:800;color:#d97706">${parcial}</div>
             <div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Parcial</div>
           </td>
-          <td style="width:8px"></td>
-          <td style="padding:16px;background:#f1f5f9;border-radius:8px">
-            <div style="font-size:28px;font-weight:800;color:#64748b">${pct}%</div>
-            <div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Cumplimiento</div>
+          <td style="width:6px"></td>
+          <td style="padding:14px 8px;background:#f1f5f9;border-radius:8px">
+            <div style="font-size:26px;font-weight:800;color:#64748b">${noAplica}</div>
+            <div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Aplica</div>
           </td>
         </tr>
       </table>
     </div>
 
-    ${criticos.length ? `
-    <!-- Desvíos críticos -->
+    ${noOkRows.length ? `
+    <!-- Puntos que no cumplen -->
     <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">
-      <h2 style="margin:0 0 12px;font-size:15px;color:#e4001b">⚠ Desvíos Críticos (${criticos.length})</h2>
-      <table style="width:100%;border-collapse:collapse">
-        <tr style="background:#1a1a1a">
-          <th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Subcategoría</th>
-          <th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Control</th>
-          <th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Resultado</th>
-          <th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Observación</th>
-        </tr>
-        ${filasCriticas}
-      </table>
+      <h2 style="margin:0 0 16px;font-size:15px;color:#e4001b">⚠ Puntos a Corregir (${noOkRows.length})</h2>
+      ${filasNoOk}
     </div>` : ''}
 
     <!-- Tabla completa -->
     <div style="padding:24px 32px">
-      <h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">Detalle completo</h2>
+      <h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">Detalle Completo</h2>
       <table style="width:100%;border-collapse:collapse">
         <tr style="background:#1a1a1a">
-          <th style="padding:6px 10px;text-align:left;color:#fff;font-size:11px">Categoría</th>
-          <th style="padding:6px 10px;text-align:left;color:#fff;font-size:11px">Subcategoría</th>
-          <th style="padding:6px 10px;text-align:left;color:#fff;font-size:11px">Control</th>
-          <th style="padding:6px 10px;text-align:left;color:#fff;font-size:11px">Importancia</th>
-          <th style="padding:6px 10px;text-align:left;color:#fff;font-size:11px">Resultado</th>
-          <th style="padding:6px 10px;text-align:left;color:#fff;font-size:11px">Observación</th>
+          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Categoría</th>
+          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Subcategoría</th>
+          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Control</th>
+          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Import.</th>
+          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Resultado</th>
+          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Observación</th>
         </tr>
         ${filasCompletas}
       </table>
