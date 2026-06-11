@@ -392,6 +392,54 @@ function colorearDesvios(sheet, rows) {
   });
 }
 
+// ============================================================
+// REENVÍO DE EMAIL POR AUDIT ID
+// ============================================================
+function doGet(e) {
+  const action = e && e.parameter && e.parameter.action;
+
+  if (action === 'reenviar') {
+    const auditId = e.parameter.auditId;
+    if (!auditId) return jsonResponse({ success: false, error: 'Falta auditId' });
+    try {
+      const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = ss.getSheetByName(SHEET_NAME);
+      if (!sheet) return jsonResponse({ success: false, error: 'Hoja no encontrada' });
+
+      const lastRow = sheet.getLastRow();
+      if (lastRow < 2) return jsonResponse({ success: false, error: 'Sin datos' });
+
+      const allData = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+      const rows    = allData.filter(function(r) { return r[0] === auditId; });
+      if (!rows.length) return jsonResponse({ success: false, error: 'AuditID no encontrado: ' + auditId });
+
+      const first = rows[0];
+      const emailDest = e.parameter.email || first[14] || '';
+      if (!emailDest) return jsonResponse({ success: false, error: 'No hay email destino. Pasalo como ?email=xxx@yyy.com' });
+
+      const data = {
+        auditId:      first[0],
+        fecha:        first[1],
+        hora:         first[2],
+        auditor:      first[3],
+        local:        first[4],
+        marca:        first[5],
+        auditorEmail: first[14] || '',
+        emailsLocal:  emailDest,
+        puntaje:      first[15] !== '' ? { pct: first[15], nivel: first[16], obtenido: '', posible: '', reprobado: first[17] === 'Sí' } : null,
+      };
+
+      const desvios = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
+      enviarEmailAuditoria(data, rows, desvios);
+      return jsonResponse({ success: true, message: 'Email reenviado a ' + emailDest, auditId: auditId, rows: rows.length });
+    } catch(err) {
+      return jsonResponse({ success: false, error: err.message });
+    }
+  }
+
+  return jsonResponse({ version: '2026-06-11-v2' });
+}
+
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
