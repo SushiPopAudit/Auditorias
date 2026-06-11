@@ -167,22 +167,36 @@ function enviarEmailAuditoria(data, rows) {
       </div>`;
   }).join('');
 
-  // Tabla completa de respuestas
-  const filasCompletas = rows.map(r => {
-    const res = (r[11]||'').toLowerCase();
-    const isCritico = (r[9]||'').toLowerCase().replace('í','i') === 'critico' && (res.includes('no cumple') || res === 'nocumple');
-    const bgColor = isCritico ? '#fff1f2' : res === 'cumple' ? '#f0fdf4' : '#fff';
-    const resColor = isCritico ? '#e4001b' : res === 'cumple' ? '#16a34a' : '#1a1a1a';
+  // Cumplimiento por categoría
+  const maxPts     = { 'critico': 4, 'crítico': 4, 'alta': 3, 'media': 2, 'baja': 1 };
+  const parcialPts = { 'critico': 2, 'crítico': 2, 'alta': 1, 'media': 1, 'baja': 0 };
+  const catMap = {};
+  rows.forEach(r => {
+    const cat = r[6] || 'Sin categoría';
+    const res = (r[11]||'').toLowerCase().trim();
+    const imp = (r[9]||'').toLowerCase().trim();
+    if (!catMap[cat]) catMap[cat] = { obtenido: 0, posible: 0 };
+    if (res.includes('aplica') || !res) return;
+    const max = maxPts[imp];
+    if (!max) return;
+    catMap[cat].posible += max;
+    if (res === 'cumple')            catMap[cat].obtenido += max;
+    else if (res.includes('parcial')) catMap[cat].obtenido += (parcialPts[imp] || 0);
+  });
+
+  const filasCategorias = Object.entries(catMap).map(([cat, v]) => {
+    const p = v.posible > 0 ? Math.round(v.obtenido / v.posible * 100) : 0;
+    const barColor = p >= 90 ? '#16a34a' : p >= 75 ? '#ca8a04' : p >= 60 ? '#ea580c' : '#e4001b';
     return `
-      <tr style="background:${bgColor}">
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#666">${r[6]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#666">${r[7]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">${r[8]}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">
-          <span style="display:inline-block;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:700;background:${getImpBg(r[9])};color:${getImpColor(r[9])}">${r[9]}</span>
+      <tr>
+        <td style="padding:10px 12px;font-size:13px;font-weight:600;border-bottom:1px solid #f3f4f6">${cat}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;width:55%">
+          <div style="background:#f3f4f6;border-radius:99px;height:10px;overflow:hidden">
+            <div style="background:${barColor};width:${p}%;height:100%;border-radius:99px"></div>
+          </div>
         </td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600;color:${resColor}">${r[11]||'-'}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#888">${r[12]||'-'}</td>
+        <td style="padding:10px 12px;font-size:13px;font-weight:800;color:${barColor};text-align:right;border-bottom:1px solid #f3f4f6;white-space:nowrap">${p}%</td>
+        <td style="padding:10px 12px;font-size:11px;color:#94a3b8;text-align:right;border-bottom:1px solid #f3f4f6;white-space:nowrap">${v.obtenido}/${v.posible} pts</td>
       </tr>`;
   }).join('');
 
@@ -260,19 +274,11 @@ function enviarEmailAuditoria(data, rows) {
       ${filasNoOk}
     </div>` : ''}
 
-    <!-- Tabla completa -->
-    <div style="padding:24px 32px">
-      <h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">Detalle Completo</h2>
+    <!-- Cumplimiento por categoría -->
+    <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">
+      <h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Cumplimiento por Categoría</h2>
       <table style="width:100%;border-collapse:collapse">
-        <tr style="background:#1a1a1a">
-          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Categoría</th>
-          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Subcategoría</th>
-          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Control</th>
-          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Import.</th>
-          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Resultado</th>
-          <th style="padding:6px 8px;text-align:left;color:#fff;font-size:11px">Observación</th>
-        </tr>
-        ${filasCompletas}
+        ${filasCategorias}
       </table>
     </div>
 
