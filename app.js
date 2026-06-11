@@ -612,6 +612,12 @@ function renderSuccess() {
       ${puntajeHtml}
       <p class="success-sub">Los datos fueron guardados correctamente.</p>
       ${state.local?.emails ? `<p class="success-sub" style="font-size:0.85rem">📧 Informe enviado a ${escHtml(state.local.emails)}</p>` : ''}
+      ${state.desviosRepetidos?.length ? `
+        <div style="background:#fff7ed;border:2px solid #fb923c;border-radius:12px;padding:16px;margin:16px 0;text-align:left">
+          <div style="font-size:0.95rem;font-weight:700;color:#c2410c;margin-bottom:8px">🔁 Desvíos reiterados (${state.desviosRepetidos.length})</div>
+          <p style="font-size:0.8rem;color:#92400e;margin:0 0 10px">Sin resolver en las últimas 3 auditorías:</p>
+          ${state.desviosRepetidos.map(d => `<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid #fed7aa;color:#1a1a1a"><strong>${escHtml(d.control)}</strong> <span style="color:#92400e">${escHtml(d.categoria)} › ${escHtml(d.subcategoria)}</span></div>`).join('')}
+        </div>` : ''}
       <p class="success-id">ID: ${state.auditId}</p>
       <button class="btn btn-primary btn-large" id="btn-new-audit">Nueva Auditoría</button>
     </div>`;
@@ -906,7 +912,7 @@ async function submitAudit() {
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'Error desconocido');
     console.log('Email status:', data.email);
-    setState({ screen: 'success', auditId, emailStatus: data.email || '', lastPuntaje: puntaje });
+    setState({ screen: 'success', auditId, emailStatus: data.email || '', lastPuntaje: puntaje, desviosRepetidos: data.desviosRepetidos || [] });
   } catch (err) {
     console.error(err);
     alert('Error al enviar: ' + err.message);

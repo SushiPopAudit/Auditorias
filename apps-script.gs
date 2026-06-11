@@ -63,11 +63,14 @@ function doPost(e) {
       colorearDesvios(sheet, rows);
     }
 
+    // Detectar desvíos repetidos (aparecen en últimas 2 auditorías del mismo local)
+    const desviosRepetidos = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
+
     // Enviar email al local
     let emailStatus = 'no configurado';
     if (data.emailsLocal && data.emailsLocal.trim()) {
       try {
-        enviarEmailAuditoria(data, rows);
+        enviarEmailAuditoria(data, rows, desviosRepetidos);
         emailStatus = 'enviado a ' + data.emailsLocal;
       } catch(mailErr) {
         console.error('Email error:', mailErr);
@@ -75,10 +78,77 @@ function doPost(e) {
       }
     }
 
-    return jsonResponse({ success: true, auditId: data.auditId, rows: rows.length, email: emailStatus });
+    return jsonResponse({ success: true, auditId: data.auditId, rows: rows.length, email: emailStatus, desviosRepetidos: desviosRepetidos });
   } catch(err) {
     console.error('Error doPost:', err);
     return jsonResponse({ success: false, error: err.message });
+  }
+}
+
+// ============================================================
+// DETECCIÓN DE DESVÍOS REPETIDOS
+// ============================================================
+function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
+  try {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+
+    // Leer todas las filas del sheet (sin encabezado)
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+
+    // Filtrar filas del mismo local, excluyendo la auditoría actual
+    // Col A(0)=AuditID, Col E(4)=Local, Col I(8)=Control, Col G(6)=Categoria, Col H(7)=Subcategoria, Col L(11)=Respuesta
+    const rowsLocal = allData.filter(function(r) {
+      return r[4] === local && r[0] !== auditIdActual && r[0];
+    });
+
+    if (!rowsLocal.length) return [];
+
+    // Obtener los últimos 2 AuditIDs distintos (en orden cronológico)
+    var auditIds = [];
+    rowsLocal.forEach(function(r) {
+      if (auditIds.indexOf(r[0]) === -1) auditIds.push(r[0]);
+    });
+    var last2 = auditIds.slice(-2);
+    if (last2.length < 2) return []; // Necesitamos al menos 2 auditorías previas
+
+    // Recolectar No Cumple por cada auditoría previa
+    var noCumplePrevio = {};
+    last2.forEach(function(id) { noCumplePrevio[id] = {}; });
+
+    rowsLocal.forEach(function(r) {
+      if (last2.indexOf(r[0]) === -1) return;
+      var res = (r[11]||'').toLowerCase();
+      if (res.includes('no cumple') || res === 'nocumple') {
+        var key = r[6] + '|' + r[7] + '|' + r[8]; // categoria|subcategoria|control
+        noCumplePrevio[r[0]][key] = true;
+      }
+    });
+
+    // No Cumple en la auditoría actual
+    var noCumpleActual = {};
+    rowsActuales.forEach(function(r) {
+      var res = (r[11]||'').toLowerCase();
+      if (res.includes('no cumple') || res === 'nocumple') {
+        var key = r[6] + '|' + r[7] + '|' + r[8];
+        noCumpleActual[key] = r;
+      }
+    });
+
+    // Encontrar los que aparecen en las 2 previas Y en la actual
+    var repetidos = [];
+    Object.keys(noCumpleActual).forEach(function(key) {
+      var enAmbas = last2.every(function(id) { return noCumplePrevio[id][key]; });
+      if (enAmbas) {
+        var r = noCumpleActual[key];
+        repetidos.push({ categoria: r[6], subcategoria: r[7], control: r[8], importancia: r[9] });
+      }
+    });
+
+    return repetidos;
+  } catch(err) {
+    console.error('Error detectarDesviosRepetidos:', err);
+    return [];
   }
 }
 
@@ -91,7 +161,7 @@ function driveImgUrl(url) {
   return m ? 'https://drive.google.com/uc?export=view&id=' + m[1] : url;
 }
 
-function enviarEmailAuditoria(data, rows) {
+function enviarEmailAuditoria(data, rows, desviosRepetidos) {
   const emails = data.emailsLocal.split(',').map(function(e) { return e.trim(); }).filter(Boolean);
   if (!emails.length) return;
 
@@ -193,6 +263,30 @@ function enviarEmailAuditoria(data, rows) {
       + '</tr>';
   });
 
+  // Desvíos repetidos
+  var seccionRepetidos = '';
+  var rep = desviosRepetidos || [];
+  if (rep.length) {
+    var filasRep = '';
+    rep.forEach(function(d) {
+      filasRep +=
+        '<tr style="background:#fff7ed">'
+        + '<td style="padding:10px 12px;border-bottom:1px solid #fed7aa;font-weight:600;font-size:13px">' + d.control + '</td>'
+        + '<td style="padding:10px 12px;border-bottom:1px solid #fed7aa;font-size:12px;color:#666">' + d.categoria + ' › ' + d.subcategoria + '</td>'
+        + '<td style="padding:10px 12px;border-bottom:1px solid #fed7aa;font-size:12px;text-align:center">'
+        + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(d.importancia) + ';color:' + getImpColor(d.importancia) + '">' + d.importancia + '</span>'
+        + '</td></tr>';
+    });
+    seccionRepetidos =
+      '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fffbeb">'
+      + '<h2 style="margin:0 0 8px;font-size:15px;color:#c2410c">🔁 Desvíos Reiterados (' + rep.length + ')</h2>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:#92400e">Estos puntos no cumplieron en las últimas <strong>3 auditorías consecutivas</strong>. Requieren atención urgente.</p>'
+      + '<table style="width:100%;border-collapse:collapse">'
+      + '<tr style="background:#c2410c"><th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Control</th><th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Categoría</th><th style="padding:8px 12px;text-align:center;color:#fff;font-size:12px">Importancia</th></tr>'
+      + filasRep
+      + '</table></div>';
+  }
+
   // Construir HTML completo
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
     + '<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8f8f8;margin:0;padding:0">'
@@ -225,6 +319,8 @@ function enviarEmailAuditoria(data, rows) {
     + '</tr></table></div>'
 
     + seccionNoOk
+
+    + seccionRepetidos
 
     + '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
     + '<h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Cumplimiento por Categoría</h2>'
