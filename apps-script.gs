@@ -162,6 +162,15 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
 // ============================================================
 function formatFecha(f) {
   if (!f) return '';
+  // Si es un objeto Date (viene de getValues() del sheet)
+  var d = (f instanceof Date) ? f : new Date(f);
+  if (!isNaN(d.getTime())) {
+    var dd   = ('0' + d.getDate()).slice(-2);
+    var mm   = ('0' + (d.getMonth() + 1)).slice(-2);
+    var yyyy = d.getFullYear();
+    return dd + '/' + mm + '/' + yyyy;
+  }
+  // Fallback: string YYYY-MM-DD
   var s = String(f);
   var p = s.split('-');
   return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : s;
@@ -271,31 +280,34 @@ function generarPDF(data, rows, desviosRepetidos, historial) {
 
     doc.saveAndClose();
 
-    // Exportar como PDF
-    var blob = DriveApp.getFileById(doc.getId()).getAs('application/pdf');
-    blob.setName(docTitle + '.pdf');
-
-    // Guardar en subcarpeta "Informes PDF"
+    // Exportar como PDF y guardar en subcarpeta "Informes PDF"
     var pdfUrl = '';
-    if (DRIVE_FOLDER_ID) {
-      try {
-        var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-        var pdfFolders = parentFolder.getFoldersByName('Informes PDF');
-        var pdfFolder = pdfFolders.hasNext() ? pdfFolders.next() : parentFolder.createFolder('Informes PDF');
-        var pdfFile = pdfFolder.createFile(blob);
-        pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-        pdfUrl = pdfFile.getUrl();
-        blob = pdfFile.getAs('application/pdf');
-        blob.setName(docTitle + '.pdf');
-      } catch(driveErr) {
-        console.error('PDF Drive error:', driveErr);
-      }
+    var attachBlob = null;
+    try {
+      var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+      var pdfFolders = parentFolder.getFoldersByName('Informes PDF');
+      var pdfFolder = pdfFolders.hasNext() ? pdfFolders.next() : parentFolder.createFolder('Informes PDF');
+
+      // Exportar el doc como PDF
+      var exportBlob = DriveApp.getFileById(doc.getId()).getAs('application/pdf');
+      exportBlob.setName(docTitle + '.pdf');
+
+      // Guardar en Drive
+      var pdfFile = pdfFolder.createFile(exportBlob);
+      pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      pdfUrl = pdfFile.getUrl();
+
+      // Leer el blob desde el archivo guardado para adjuntar al email
+      attachBlob = pdfFile.getBlob();
+      attachBlob.setName(docTitle + '.pdf');
+    } catch(driveErr) {
+      console.error('PDF Drive error:', driveErr);
     }
 
     // Borrar doc temporal
     try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch(e2) {}
 
-    return { blob: blob, url: pdfUrl, nombre: docTitle + '.pdf' };
+    return { blob: attachBlob, url: pdfUrl, nombre: docTitle + '.pdf' };
   } catch(err) {
     console.error('Error generarPDF:', err);
     return null;
@@ -551,7 +563,7 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
     }
     if (histHtml) {
       seccionHistorial = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f8fafc">'
-        + '<h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">📊 Historial</h2>'
+        + '<h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">Historial</h2>'
         + histHtml + '</div>';
     }
   }
