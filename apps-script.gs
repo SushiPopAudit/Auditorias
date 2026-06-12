@@ -714,7 +714,45 @@ function doGet(e) {
     }
   }
 
-  return jsonResponse({ version: '2026-06-11-v2' });
+  if (action === 'actualizarPuntaje') {
+    var auditId2 = e.parameter.auditId;
+    if (!auditId2) return jsonResponse({ success: false, error: 'Falta auditId' });
+    try {
+      var ss2    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var sheet2 = ss2.getSheetByName(SHEET_NAME);
+      if (!sheet2) return jsonResponse({ success: false, error: 'Hoja no encontrada' });
+
+      var lastRow2 = sheet2.getLastRow();
+      if (lastRow2 < 2) return jsonResponse({ success: false, error: 'Sin datos' });
+
+      var allData2 = sheet2.getRange(2, 1, lastRow2 - 1, 19).getValues();
+      // Encontrar filas del auditId y sus números de fila en el sheet (base 1, +2 por encabezado)
+      var rowIndexes = [];
+      var rowsAudit  = [];
+      allData2.forEach(function(r, i) {
+        if (String(r[0]) === auditId2) {
+          rowIndexes.push(i + 2); // fila real en sheet (1-based + encabezado)
+          rowsAudit.push(r.map(function(v){ return v == null ? '' : String(v); }));
+        }
+      });
+      if (!rowsAudit.length) return jsonResponse({ success: false, error: 'AuditID no encontrado' });
+
+      var puntaje2 = recalcularPuntaje(rowsAudit);
+
+      // Actualizar cols P(16), Q(17), R(18) para cada fila — índice sheet = columna 16,17,18
+      rowIndexes.forEach(function(sheetRow) {
+        sheet2.getRange(sheetRow, 16).setValue(puntaje2.pct);
+        sheet2.getRange(sheetRow, 17).setValue(puntaje2.nivel);
+        sheet2.getRange(sheetRow, 18).setValue(puntaje2.reprobado ? 'Sí' : 'No');
+      });
+
+      return jsonResponse({ success: true, auditId: auditId2, filasActualizadas: rowIndexes.length, puntaje: puntaje2 });
+    } catch(err2) {
+      return jsonResponse({ success: false, error: err2.message });
+    }
+  }
+
+  return jsonResponse({ version: '2026-06-12-v1' });
 }
 
 function jsonResponse(obj) {
