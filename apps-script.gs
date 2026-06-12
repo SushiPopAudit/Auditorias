@@ -226,121 +226,48 @@ function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActu
 // GENERAR PDF
 // ============================================================
 function generarPDF(data, rows, desviosRepetidos, historial) {
-  try {
-    var docTitle = 'Auditoria_' + data.local + '_' + data.fecha + '_' + data.auditId;
-    var doc = DocumentApp.create(docTitle);
-    var body = doc.getBody();
+  var docTitle = 'Auditoria_' + data.local + '_' + data.fecha + '_' + data.auditId;
 
-    body.appendParagraph('INFORME DE AUDITORÍA').setHeading(DocumentApp.ParagraphHeading.HEADING1);
-    body.appendParagraph('Local: ' + data.local);
-    body.appendParagraph('Fecha: ' + formatFecha(data.fecha) + ' ' + (data.hora || ''));
-    body.appendParagraph('Auditor: ' + data.auditor);
-    if (data.acompanante) body.appendParagraph('Acompañante: ' + data.acompanante);
-    body.appendParagraph('Marca: ' + data.marca);
-    if (data.puntaje) {
-      var pLabel = data.puntaje.reprobado ? 'REPROBADO' : data.puntaje.pct + '%';
-      body.appendParagraph('Resultado: ' + pLabel + ' — ' + (data.puntaje.nivel || ''));
-    }
-    body.appendParagraph('');
+  var htmlContent = buildAuditHtml(data, rows, desviosRepetidos, historial, '');
 
-    // Puntos a corregir
-    var noOkRows = rows.filter(function(r) {
-      var v = (r[11]||'').toLowerCase();
-      return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
-    });
-    if (noOkRows.length > 0) {
-      body.appendParagraph('PUNTOS A CORREGIR (' + noOkRows.length + ')').setHeading(DocumentApp.ParagraphHeading.HEADING2);
-      noOkRows.forEach(function(r) {
-        body.appendParagraph(r[8] + ' [' + r[9] + '] — ' + r[11] + (r[12] ? ' · ' + r[12] : ''));
-      });
-      body.appendParagraph('');
-    }
+  var htmlBlob = Utilities.newBlob(htmlContent, 'text/html', docTitle + '.html');
+  var tempFile = DriveApp.createFile(htmlBlob);
+  var pdfBlob = tempFile.getAs('application/pdf');
+  pdfBlob.setName(docTitle + '.pdf');
+  tempFile.setTrashed(true);
 
-    // Desvíos reiterados
-    if (desviosRepetidos && desviosRepetidos.length > 0) {
-      body.appendParagraph('DESVÍOS REITERADOS (' + desviosRepetidos.length + ')').setHeading(DocumentApp.ParagraphHeading.HEADING2);
-      desviosRepetidos.forEach(function(d) {
-        body.appendParagraph(d.control + ' (' + d.categoria + ' › ' + d.subcategoria + ')');
-      });
-      body.appendParagraph('');
-    }
+  var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  var pdfFolders = parentFolder.getFoldersByName('Informes PDF');
+  var pdfFolder = pdfFolders.hasNext() ? pdfFolders.next() : parentFolder.createFolder('Informes PDF');
 
-    // Historial
-    if (historial) {
-      body.appendParagraph('HISTORIAL').setHeading(DocumentApp.ParagraphHeading.HEADING2);
-      if (historial.prevAudit) {
-        var pa = historial.prevAudit;
-        var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
-        body.appendParagraph('Auditoría anterior: ' + formatFecha(pa.fecha) + ' — ' + paLabel);
-      }
-      if (historial.promedioMes !== null) {
-        body.appendParagraph('Promedio del mes (' + historial.auditsMes + ' auditorías): ' + historial.promedioMes + '%');
-      }
-    }
+  var pdfFile = pdfFolder.createFile(pdfBlob);
+  pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var pdfUrl = pdfFile.getUrl();
 
-    doc.saveAndClose();
+  var attachBlob = pdfFile.getBlob();
+  attachBlob.setName(docTitle + '.pdf');
 
-    // Exportar como PDF y guardar en subcarpeta "Informes PDF"
-    var pdfUrl = '';
-    var attachBlob = null;
-    try {
-      var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-      var pdfFolders = parentFolder.getFoldersByName('Informes PDF');
-      var pdfFolder = pdfFolders.hasNext() ? pdfFolders.next() : parentFolder.createFolder('Informes PDF');
-
-      // Exportar el doc como PDF
-      var exportBlob = DriveApp.getFileById(doc.getId()).getAs('application/pdf');
-      exportBlob.setName(docTitle + '.pdf');
-
-      // Guardar en Drive
-      var pdfFile = pdfFolder.createFile(exportBlob);
-      pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      pdfUrl = pdfFile.getUrl();
-
-      // Leer el blob desde el archivo guardado para adjuntar al email
-      attachBlob = pdfFile.getBlob();
-      attachBlob.setName(docTitle + '.pdf');
-    } catch(driveErr) {
-      console.error('PDF Drive error:', driveErr);
-    }
-
-    // Borrar doc temporal
-    try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch(e2) {}
-
-    return { blob: attachBlob, url: pdfUrl, nombre: docTitle + '.pdf' };
-  } catch(err) {
-    console.error('Error generarPDF:', err);
-    return null;
-  }
+  return { blob: attachBlob, url: pdfUrl, nombre: docTitle + '.pdf' };
 }
 
 // ============================================================
-// EMAIL HTML AL LOCAL
+// CONSTRUIR HTML DE AUDITORÍA (usado por email y PDF)
 // ============================================================
-function driveImgUrl(url) {
-  if (!url) return '';
-  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  return m ? 'https://drive.google.com/uc?export=view&id=' + m[1] : url;
-}
-
-function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult) {
-  const emails = data.emailsLocal.split(',').map(function(e) { return e.trim(); }).filter(Boolean);
-  if (!emails.length) return;
-
+function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   // Estadísticas
-  const cumple   = rows.filter(function(r){ return (r[11]||'').toLowerCase() === 'cumple'; }).length;
-  const noCumple = rows.filter(function(r){ var v=(r[11]||'').toLowerCase(); return v.includes('no cumple')||v==='nocumple'; }).length;
-  const parcial  = rows.filter(function(r){ return (r[11]||'').toLowerCase().includes('parcial'); }).length;
-  const noAplica = rows.filter(function(r){ return (r[11]||'').toLowerCase().includes('aplica'); }).length;
-  const total    = rows.filter(function(r){ return r[11]; }).length;
-  const pct      = total ? Math.round(cumple / total * 100) : 0;
+  var cumple   = rows.filter(function(r){ return (r[11]||'').toLowerCase() === 'cumple'; }).length;
+  var noCumple = rows.filter(function(r){ var v=(r[11]||'').toLowerCase(); return v.includes('no cumple')||v==='nocumple'; }).length;
+  var parcial  = rows.filter(function(r){ return (r[11]||'').toLowerCase().includes('parcial'); }).length;
+  var noAplica = rows.filter(function(r){ return (r[11]||'').toLowerCase().includes('aplica'); }).length;
+  var total    = rows.filter(function(r){ return r[11]; }).length;
+  var pct      = total ? Math.round(cumple / total * 100) : 0;
 
   // Gráfico torta
-  const chartTotal = cumple + noCumple + parcial;
-  const pCumple   = chartTotal ? Math.round(cumple   / chartTotal * 100) : 0;
-  const pNoCumple = chartTotal ? Math.round(noCumple / chartTotal * 100) : 0;
-  const pParcial  = chartTotal ? Math.round(parcial  / chartTotal * 100) : 0;
-  const chartData = JSON.stringify({
+  var chartTotal = cumple + noCumple + parcial;
+  var pCumple   = chartTotal ? Math.round(cumple   / chartTotal * 100) : 0;
+  var pNoCumple = chartTotal ? Math.round(noCumple / chartTotal * 100) : 0;
+  var pParcial  = chartTotal ? Math.round(parcial  / chartTotal * 100) : 0;
+  var chartData = JSON.stringify({
     type: 'pie',
     data: {
       labels: ['Cumple ' + pCumple + '%', 'No Cumple ' + pNoCumple + '%', 'Parcial ' + pParcial + '%'],
@@ -353,7 +280,7 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
       }
     }
   });
-  const chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
+  var chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
 
   // ---- 1. HEADER ----
   var fechaHora = formatFecha(data.fecha) + ' - ' + (data.hora || '');
@@ -367,7 +294,8 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
       + '</div>';
   }
 
-  var headerHtml = '<div style="background:#e4001b;padding:24px 32px;text-align:center">'
+  var headerBg = (data.puntaje && data.puntaje.reprobado) ? '#e4001b' : '#16a34a';
+  var headerHtml = '<div style="background:' + headerBg + ';padding:24px 32px;text-align:center">'
     + '<h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditoría</h1>'
     + '<p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">' + data.local + ' · ' + fechaHora + '</p>'
     + puntajeHtml + '</div>';
@@ -420,8 +348,8 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
   }
 
   // ---- 4+5. GRÁFICO Y % POR CATEGORÍA ----
-  const maxPts     = { 'critico':4,'crítico':4,'alta':3,'media':2,'baja':1 };
-  const parcialPts = { 'critico':2,'crítico':2,'alta':1,'media':1,'baja':0 };
+  var maxPts     = { 'critico':4,'crítico':4,'alta':3,'media':2,'baja':1 };
+  var parcialPts = { 'critico':2,'crítico':2,'alta':1,'media':1,'baja':0 };
   var catMap = {};
   rows.forEach(function(r) {
     var cat = r[6] || 'Sin categoría';
@@ -601,8 +529,8 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
 
   // ---- 10. FOOTER ----
   var pdfBtnHtml = '';
-  if (pdfResult && pdfResult.url) {
-    pdfBtnHtml = '<p style="margin:8px 0 0"><a href="' + pdfResult.url + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700">📄 Descargar PDF</a></p>';
+  if (pdfUrl) {
+    pdfBtnHtml = '<p style="margin:8px 0 0"><a href="' + pdfUrl + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700">Descargar PDF</a></p>';
   }
 
   var footerHtml = '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center">'
@@ -611,7 +539,7 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
     + '</div>';
 
   // ---- ARMAR HTML COMPLETO ----
-  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
     + '<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8f8f8;margin:0;padding:0">'
     + '<div style="max-width:700px;margin:0 auto;background:#fff">'
     + headerHtml
@@ -624,6 +552,26 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
     + seccionSistema
     + footerHtml
     + '</div></body></html>';
+}
+
+// ============================================================
+// EMAIL HTML AL LOCAL
+// ============================================================
+function driveImgUrl(url) {
+  if (!url) return '';
+  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? 'https://drive.google.com/uc?export=view&id=' + m[1] : url;
+}
+
+function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult) {
+  const emails = data.emailsLocal.split(',').map(function(e) { return e.trim(); }).filter(Boolean);
+  if (!emails.length) return;
+
+  var cumple = rows.filter(function(r){ return (r[11]||'').toLowerCase() === 'cumple'; }).length;
+  var total  = rows.filter(function(r){ return r[11]; }).length;
+  var pct    = total ? Math.round(cumple / total * 100) : 0;
+
+  var html = buildAuditHtml(data, rows, desviosRepetidos, historial, pdfResult ? pdfResult.url : '');
 
   var emailOpts = {
     htmlBody: html,
