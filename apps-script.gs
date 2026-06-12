@@ -669,6 +669,43 @@ function colorearDesvios(sheet, rows) {
 }
 
 // ============================================================
+// RECALCULAR PUNTAJE DESDE FILAS
+// ============================================================
+function recalcularPuntaje(rows) {
+  var maxPts     = { 'critico':4, 'crítico':4, 'alta':3, 'media':2, 'baja':1 };
+  var parcialPts = { 'critico':2, 'crítico':2, 'alta':1, 'media':1, 'baja':0 };
+  var obtenido = 0, posible = 0, reprobado = false;
+
+  rows.forEach(function(r) {
+    var imp = (r[9]||'').toLowerCase().trim();
+    var res = (r[11]||'').toLowerCase().trim();
+    var max = maxPts[imp];
+    if (!max) return;
+    if (!res || res.includes('aplica')) return;
+    // Solo puntúan preguntas de tipo radio (tienen cumple/no cumple/parcial)
+    if (!res.includes('cumple') && !res.includes('parcial')) return;
+    posible += max;
+    if (res === 'cumple') {
+      obtenido += max;
+    } else if (res.includes('parcial')) {
+      obtenido += parcialPts[imp] || 0;
+    } else if (res.includes('no cumple') || res === 'nocumple') {
+      if (imp === 'critico' || imp === 'crítico') reprobado = true;
+    }
+  });
+
+  var pct = posible > 0 ? Math.round(obtenido / posible * 100) : 0;
+  var nivel, nivelEmoji;
+  if (reprobado)      { nivel = 'Reprobado';     nivelEmoji = '⛔'; }
+  else if (pct >= 90) { nivel = 'Excelente';     nivelEmoji = '🟢'; }
+  else if (pct >= 75) { nivel = 'Satisfactorio'; nivelEmoji = '🟡'; }
+  else if (pct >= 60) { nivel = 'A mejorar';     nivelEmoji = '🟠'; }
+  else                { nivel = 'Deficiente';    nivelEmoji = '🔴'; }
+
+  return { pct: pct, nivel: nivel, obtenido: obtenido, posible: posible, reprobado: reprobado, nivelEmoji: nivelEmoji };
+}
+
+// ============================================================
 // REENVÍO DE EMAIL POR AUDIT ID
 // ============================================================
 function doGet(e) {
@@ -685,7 +722,7 @@ function doGet(e) {
       const lastRow = sheet.getLastRow();
       if (lastRow < 2) return jsonResponse({ success: false, error: 'Sin datos' });
 
-      const allData = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+      const allData = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
       const rows    = allData
         .filter(function(r) { return String(r[0]) === auditId; })
         .map(function(r) { return r.map(function(v) { return v == null ? '' : String(v); }); });
@@ -695,6 +732,9 @@ function doGet(e) {
       const emailDest = e.parameter.email || first[14] || '';
       if (!emailDest) return jsonResponse({ success: false, error: 'No hay email destino. Pasalo como ?email=xxx@yyy.com' });
 
+      // Recalcular puntaje desde las filas actuales (refleja cambios manuales en el sheet)
+      const puntajeRecalc = recalcularPuntaje(rows);
+
       const data = {
         auditId:      first[0],
         fecha:        first[1],
@@ -702,16 +742,25 @@ function doGet(e) {
         auditor:      first[3],
         local:        first[4],
         marca:        first[5],
+        acompanante:  first[18] || '',
         auditorEmail: first[14] || '',
         emailsLocal:  emailDest,
-        puntaje:      first[15] !== '' ? { pct: first[15], nivel: first[16], obtenido: '', posible: '', reprobado: first[17] === 'Sí' } : null,
+        puntaje:      puntajeRecalc,
       };
 
+      var pdfError = null;
+      var pdf = null;
+      try {
+        pdf = generarPDF(data, rows, [], null);
+      } catch(pdfErr) {
+        pdfError = pdfErr.message;
+        console.error('PDF error en reenviar:', pdfErr);
+      }
+
       const desvios = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
-      const hist = calcularHistorial(sheet, data.local, data.auditId, data.fecha, data.puntaje);
-      const pdf  = generarPDF(data, rows, desvios, hist);
+      const hist    = calcularHistorial(sheet, data.local, data.auditId, data.fecha, data.puntaje);
       enviarEmailAuditoria(data, rows, desvios, hist, pdf);
-      return jsonResponse({ success: true, message: 'Email reenviado a ' + emailDest, auditId: auditId, rows: rows.length });
+      return jsonResponse({ success: true, message: 'Email reenviado a ' + emailDest, auditId: auditId, rows: rows.length, puntaje: puntajeRecalc, pdfError: pdfError, pdfUrl: pdf ? pdf.url : null });
     } catch(err) {
       return jsonResponse({ success: false, error: err.message });
     }
