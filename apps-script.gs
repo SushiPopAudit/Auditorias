@@ -19,9 +19,9 @@ function doPost(e) {
         'AuditID','Fecha','Hora','Auditor','Local','Marca',
         'Categoría','Subcategoría','Control','Importancia',
         'Explicación','Respuesta','Observación','URL Foto','Email Auditor',
-        'Puntaje %','Nivel','Reprobado'
+        'Puntaje %','Nivel','Reprobado','Acompañante'
       ]);
-      sheet.getRange(1,1,1,18).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+      sheet.getRange(1,1,1,19).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
 
@@ -55,22 +55,27 @@ function doPost(e) {
         data.puntaje?.pct    ?? '',             // col P — Puntaje %
         data.puntaje?.nivel  || '',             // col Q — Nivel
         data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
+        data.acompanante || '',                 // col S — Acompañante
       ];
     });
 
     if (rows.length > 0) {
-      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 18).setValues(rows);
+      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 19).setValues(rows);
       colorearDesvios(sheet, rows);
     }
 
     // Detectar desvíos repetidos (aparecen en últimas 2 auditorías del mismo local)
     const desviosRepetidos = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
 
+    // Calcular historial y generar PDF
+    const historial = calcularHistorial(sheet, data.local, data.auditId, data.fecha, data.puntaje);
+    const pdfResult = generarPDF(data, rows, desviosRepetidos, historial);
+
     // Enviar email al local
     let emailStatus = 'no configurado';
     if (data.emailsLocal && data.emailsLocal.trim()) {
       try {
-        enviarEmailAuditoria(data, rows, desviosRepetidos);
+        enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult);
         emailStatus = 'enviado a ' + data.emailsLocal;
       } catch(mailErr) {
         console.error('Email error:', mailErr);
@@ -153,6 +158,151 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
 }
 
 // ============================================================
+// HELPER: FORMATEAR FECHA YYYY-MM-DD → DD/MM/AAAA
+// ============================================================
+function formatFecha(f) {
+  if (!f) return '';
+  var s = String(f);
+  var p = s.split('-');
+  return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : s;
+}
+
+// ============================================================
+// HISTORIAL DEL LOCAL
+// ============================================================
+function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActual) {
+  try {
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+
+    var allData = sheet.getRange(2, 1, lastRow - 1, 17).getValues();
+
+    // Filas del mismo local, excluyendo la auditoría actual
+    var rowsLocal = allData.filter(function(col) {
+      return col[4] === local && col[0] !== auditIdActual && col[0];
+    });
+
+    var prevAudit = null;
+    if (rowsLocal.length > 0) {
+      var last = rowsLocal[rowsLocal.length - 1];
+      prevAudit = {
+        pct:       last[15],
+        nivel:     last[16],
+        fecha:     last[1],
+        reprobado: last[17] === 'Sí',
+      };
+    }
+
+    // Promedio del mes (incluye la auditoría actual)
+    var yearMonth = String(fechaActual).substring(0, 7);
+    var rowsMes = rowsLocal.filter(function(col) {
+      return String(col[1]).substring(0, 7) === yearMonth;
+    });
+
+    var pctValues = rowsMes.map(function(col) { return Number(col[15]) || 0; });
+    if (puntajeActual && puntajeActual.pct !== undefined) {
+      pctValues.push(Number(puntajeActual.pct) || 0);
+    }
+    var promedioMes = pctValues.length > 0 ? Math.round(pctValues.reduce(function(a,b){ return a+b; }, 0) / pctValues.length) : null;
+    var auditsMes = pctValues.length;
+
+    return { prevAudit: prevAudit, promedioMes: promedioMes, auditsMes: auditsMes };
+  } catch(err) {
+    console.error('Error calcularHistorial:', err);
+    return null;
+  }
+}
+
+// ============================================================
+// GENERAR PDF
+// ============================================================
+function generarPDF(data, rows, desviosRepetidos, historial) {
+  try {
+    var docTitle = 'Auditoria_' + data.local + '_' + data.fecha + '_' + data.auditId;
+    var doc = DocumentApp.create(docTitle);
+    var body = doc.getBody();
+
+    body.appendParagraph('INFORME DE AUDITORÍA').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+    body.appendParagraph('Local: ' + data.local);
+    body.appendParagraph('Fecha: ' + formatFecha(data.fecha) + ' ' + (data.hora || ''));
+    body.appendParagraph('Auditor: ' + data.auditor);
+    if (data.acompanante) body.appendParagraph('Acompañante: ' + data.acompanante);
+    body.appendParagraph('Marca: ' + data.marca);
+    if (data.puntaje) {
+      var pLabel = data.puntaje.reprobado ? 'REPROBADO' : data.puntaje.pct + '%';
+      body.appendParagraph('Resultado: ' + pLabel + ' — ' + (data.puntaje.nivel || ''));
+    }
+    body.appendParagraph('');
+
+    // Puntos a corregir
+    var noOkRows = rows.filter(function(r) {
+      var v = (r[11]||'').toLowerCase();
+      return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
+    });
+    if (noOkRows.length > 0) {
+      body.appendParagraph('PUNTOS A CORREGIR (' + noOkRows.length + ')').setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      noOkRows.forEach(function(r) {
+        body.appendParagraph(r[8] + ' [' + r[9] + '] — ' + r[11] + (r[12] ? ' · ' + r[12] : ''));
+      });
+      body.appendParagraph('');
+    }
+
+    // Desvíos reiterados
+    if (desviosRepetidos && desviosRepetidos.length > 0) {
+      body.appendParagraph('DESVÍOS REITERADOS (' + desviosRepetidos.length + ')').setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      desviosRepetidos.forEach(function(d) {
+        body.appendParagraph(d.control + ' (' + d.categoria + ' › ' + d.subcategoria + ')');
+      });
+      body.appendParagraph('');
+    }
+
+    // Historial
+    if (historial) {
+      body.appendParagraph('HISTORIAL').setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      if (historial.prevAudit) {
+        var pa = historial.prevAudit;
+        var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
+        body.appendParagraph('Auditoría anterior: ' + formatFecha(pa.fecha) + ' — ' + paLabel);
+      }
+      if (historial.promedioMes !== null) {
+        body.appendParagraph('Promedio del mes (' + historial.auditsMes + ' auditorías): ' + historial.promedioMes + '%');
+      }
+    }
+
+    doc.saveAndClose();
+
+    // Exportar como PDF
+    var blob = DriveApp.getFileById(doc.getId()).getAs('application/pdf');
+    blob.setName(docTitle + '.pdf');
+
+    // Guardar en subcarpeta "Informes PDF"
+    var pdfUrl = '';
+    if (DRIVE_FOLDER_ID) {
+      try {
+        var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+        var pdfFolders = parentFolder.getFoldersByName('Informes PDF');
+        var pdfFolder = pdfFolders.hasNext() ? pdfFolders.next() : parentFolder.createFolder('Informes PDF');
+        var pdfFile = pdfFolder.createFile(blob);
+        pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        pdfUrl = pdfFile.getUrl();
+        blob = pdfFile.getAs('application/pdf');
+        blob.setName(docTitle + '.pdf');
+      } catch(driveErr) {
+        console.error('PDF Drive error:', driveErr);
+      }
+    }
+
+    // Borrar doc temporal
+    try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch(e2) {}
+
+    return { blob: blob, url: pdfUrl, nombre: docTitle + '.pdf' };
+  } catch(err) {
+    console.error('Error generarPDF:', err);
+    return null;
+  }
+}
+
+// ============================================================
 // EMAIL HTML AL LOCAL
 // ============================================================
 function driveImgUrl(url) {
@@ -161,7 +311,7 @@ function driveImgUrl(url) {
   return m ? 'https://drive.google.com/uc?export=view&id=' + m[1] : url;
 }
 
-function enviarEmailAuditoria(data, rows, desviosRepetidos) {
+function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult) {
   const emails = data.emailsLocal.split(',').map(function(e) { return e.trim(); }).filter(Boolean);
   if (!emails.length) return;
 
@@ -193,7 +343,8 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
   });
   const chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
 
-  // Puntaje header
+  // ---- 1. HEADER ----
+  var fechaHora = formatFecha(data.fecha) + ' - ' + (data.hora || '');
   var puntajeHtml = '';
   if (data.puntaje) {
     var pLabel = data.puntaje.reprobado ? 'REPROBADO' : data.puntaje.pct + '%';
@@ -204,45 +355,59 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
       + '</div>';
   }
 
-  // Puntos a corregir (No Cumple + Parcial)
-  const noOkRows = rows.filter(function(r){
-    var v = (r[11]||'').toLowerCase();
-    return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
-  });
+  var headerHtml = '<div style="background:#e4001b;padding:24px 32px;text-align:center">'
+    + '<h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditoría</h1>'
+    + '<p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">' + data.local + ' · ' + fechaHora + '</p>'
+    + puntajeHtml + '</div>';
 
-  var filasNoOkHtml = '';
-  noOkRows.forEach(function(r) {
-    var res        = (r[11]||'').toLowerCase();
-    var esCritico  = (r[9]||'').toLowerCase().replace('í','i') === 'critico';
-    var esNoCumple = res.includes('no cumple') || res === 'nocumple';
-    var bgRow      = (esCritico && esNoCumple) ? '#fff1f2' : esNoCumple ? '#fef9f9' : '#fffbeb';
-    var resColor   = esNoCumple ? '#e4001b' : '#d97706';
-    var fotoDirecta = driveImgUrl(r[13]);
-    var tdWidth    = fotoDirecta ? '55%' : '100%';
-    var obsHtml    = r[12] ? '<div style="font-size:12px;color:#666;font-style:italic">"' + r[12] + '"</div>' : '';
-    var fotoTd     = fotoDirecta
-      ? '<td style="vertical-align:top;padding-left:12px;width:45%"><img src="' + fotoDirecta + '" alt="Foto" style="width:100%;max-width:200px;border-radius:6px;border:1px solid #e5e7eb"></td>'
-      : '';
-    filasNoOkHtml +=
-      '<div style="background:' + bgRow + ';border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid ' + resColor + '">'
-      + '<table style="width:100%;border-collapse:collapse"><tr>'
-      + '<td style="vertical-align:top;width:' + tdWidth + '">'
-      + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
-      + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">' + r[8] + '</div>'
-      + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(r[9]) + ';color:' + getImpColor(r[9]) + ';margin-bottom:8px">' + r[9] + '</span>'
-      + '<div style="font-size:13px;font-weight:700;color:' + resColor + ';margin-bottom:4px">● ' + r[11] + '</div>'
-      + obsHtml
-      + '</td>' + fotoTd + '</tr></table></div>';
-  });
+  // ---- 2. DATOS ----
+  var acompananteRow = data.acompanante
+    ? '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Acompañante</td><td style="padding:3px 0;font-weight:600;font-size:13px" colspan="3">' + data.acompanante + '</td></tr>'
+    : '';
 
-  var seccionNoOk = '';
-  if (noOkRows.length) {
-    seccionNoOk = '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
-      + '<h2 style="margin:0 0 16px;font-size:15px;color:#e4001b">⚠ Puntos a Corregir (' + noOkRows.length + ')</h2>'
-      + filasNoOkHtml + '</div>';
+  var datosHtml = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb">'
+    + '<table style="width:100%;border-collapse:collapse">'
+    + '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Local</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.local + '</td>'
+    + '<td style="padding:3px 0;color:#666;font-size:13px;width:110px">Auditor</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.auditor + '</td></tr>'
+    + acompananteRow
+    + '<tr><td style="padding:3px 0;color:#666;font-size:13px">Fecha</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + formatFecha(data.fecha) + ' ' + (data.hora || '') + '</td>'
+    + '<td style="padding:3px 0;color:#666;font-size:13px">Marca</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.marca + '</td></tr>'
+    + '</table></div>';
+
+  // ---- 3. REPROBADO POR NOTA DE ORO ----
+  var seccionReprobado = '';
+  if (data.puntaje && data.puntaje.reprobado) {
+    var criticosReprobados = rows.filter(function(r) {
+      var imp = (r[9]||'').toLowerCase().replace(/í/g,'i');
+      var res = (r[11]||'').toLowerCase();
+      return (imp === 'critico') && (res.includes('no cumple') || res === 'nocumple');
+    });
+    var filasCrit = '';
+    criticosReprobados.forEach(function(r) {
+      var fotoDirecta = driveImgUrl(r[13]);
+      var tdWidth = fotoDirecta ? '55%' : '100%';
+      var obsHtml = r[12] ? '<div style="font-size:12px;color:#7f1d1d;font-style:italic;margin-top:4px">"' + r[12] + '"</div>' : '';
+      var fotoTd = fotoDirecta
+        ? '<td style="vertical-align:top;padding-left:12px;width:45%"><img src="' + fotoDirecta + '" alt="Foto" style="width:100%;max-width:200px;border-radius:6px;border:1px solid #fca5a5"></td>'
+        : '';
+      filasCrit +=
+        '<div style="background:#fff1f2;border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid #e4001b">'
+        + '<table style="width:100%;border-collapse:collapse"><tr>'
+        + '<td style="vertical-align:top;width:' + tdWidth + '">'
+        + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
+        + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">' + r[8] + '</div>'
+        + '<div style="font-size:13px;font-weight:700;color:#e4001b;margin-bottom:4px">● No Cumple (Crítico)</div>'
+        + obsHtml
+        + '</td>' + fotoTd + '</tr></table></div>';
+    });
+    seccionReprobado =
+      '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fff1f2">'
+      + '<h2 style="margin:0 0 8px;font-size:16px;color:#991b1b">⛔ REPROBADO por Nota de Oro</h2>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:#7f1d1d">La auditoría fue reprobada por incumplimiento de puntos críticos (Nota de Oro):</p>'
+      + filasCrit + '</div>';
   }
 
-  // Cumplimiento por categoría
+  // ---- 4+5. GRÁFICO Y % POR CATEGORÍA ----
   const maxPts     = { 'critico':4,'crítico':4,'alta':3,'media':2,'baja':1 };
   const parcialPts = { 'critico':2,'crítico':2,'alta':1,'media':1,'baja':0 };
   var catMap = {};
@@ -275,17 +440,75 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
       + '</tr>';
   });
 
-  // Desvíos repetidos
+  var seccionGraficoYCat =
+    '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
+    + '<h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Distribución de Resultados</h2>'
+    + '<div style="text-align:center;margin-bottom:20px"><img src="' + chartUrl + '" alt="Grafico" style="max-width:100%;height:auto"></div>'
+    + '<table style="width:100%;border-collapse:collapse;text-align:center"><tr>'
+    + '<td style="padding:14px 8px;background:#f0fdf4;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#16a34a">' + cumple + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Cumple</div></td>'
+    + '<td style="width:6px"></td>'
+    + '<td style="padding:14px 8px;background:#fff1f2;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#e4001b">' + noCumple + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Cumple</div></td>'
+    + '<td style="width:6px"></td>'
+    + '<td style="padding:14px 8px;background:#fffbeb;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#d97706">' + parcial + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Parcial</div></td>'
+    + '<td style="width:6px"></td>'
+    + '<td style="padding:14px 8px;background:#f1f5f9;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#64748b">' + noAplica + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Aplica</div></td>'
+    + '</tr></table>'
+    + '<h3 style="margin:20px 0 12px;font-size:14px;color:#1a1a1a">% por Categoría</h3>'
+    + '<table style="width:100%;border-collapse:collapse">' + filasCatHtml + '</table>'
+    + '</div>';
+
+  // ---- 6. PUNTOS A CORREGIR ----
+  // Si hay reprobado, excluir los críticos que no cumplen (ya mostrados arriba)
+  var noOkRows = rows.filter(function(r){
+    var v = (r[11]||'').toLowerCase();
+    var esCriticoNC = (r[9]||'').toLowerCase().replace(/í/g,'i') === 'critico' && (v.includes('no cumple') || v === 'nocumple');
+    if (data.puntaje && data.puntaje.reprobado && esCriticoNC) return false;
+    return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
+  });
+
+  var filasNoOkHtml = '';
+  noOkRows.forEach(function(r) {
+    var res        = (r[11]||'').toLowerCase();
+    var esCritico  = (r[9]||'').toLowerCase().replace(/í/g,'i') === 'critico';
+    var esNoCumple = res.includes('no cumple') || res === 'nocumple';
+    var bgRow      = (esCritico && esNoCumple) ? '#fff1f2' : esNoCumple ? '#fef9f9' : '#fffbeb';
+    var resColor   = esNoCumple ? '#e4001b' : '#d97706';
+    var fotoDirecta = driveImgUrl(r[13]);
+    var tdWidth    = fotoDirecta ? '55%' : '100%';
+    var obsHtml    = r[12] ? '<div style="font-size:12px;color:#666;font-style:italic">"' + r[12] + '"</div>' : '';
+    var fotoTd     = fotoDirecta
+      ? '<td style="vertical-align:top;padding-left:12px;width:45%"><img src="' + fotoDirecta + '" alt="Foto" style="width:100%;max-width:200px;border-radius:6px;border:1px solid #e5e7eb"></td>'
+      : '';
+    filasNoOkHtml +=
+      '<div style="background:' + bgRow + ';border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid ' + resColor + '">'
+      + '<table style="width:100%;border-collapse:collapse"><tr>'
+      + '<td style="vertical-align:top;width:' + tdWidth + '">'
+      + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
+      + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">' + r[8] + '</div>'
+      + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(r[9]) + ';color:' + getImpColor(r[9]) + ';margin-bottom:8px">' + r[9] + '</span>'
+      + '<div style="font-size:13px;font-weight:700;color:' + resColor + ';margin-bottom:4px">● ' + r[11] + '</div>'
+      + obsHtml
+      + '</td>' + fotoTd + '</tr></table></div>';
+  });
+
+  var seccionNoOk = '';
+  if (noOkRows.length) {
+    seccionNoOk = '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
+      + '<h2 style="margin:0 0 16px;font-size:15px;color:#e4001b">⚠ Puntos a Corregir (' + noOkRows.length + ')</h2>'
+      + filasNoOkHtml + '</div>';
+  }
+
+  // ---- 7. DESVÍOS REITERADOS ----
   var seccionRepetidos = '';
   var rep = desviosRepetidos || [];
   if (rep.length) {
     var filasRep = '';
     rep.forEach(function(d) {
       var rep2 = d.repeticiones >= 2;
-      var repBg    = rep2 ? '#fff1f2' : '#fff7ed';
-      var repBorder= rep2 ? '#fca5a5' : '#fed7aa';
-      var repBadgeBg    = rep2 ? '#e4001b' : '#ea580c';
-      var repLabel = rep2 ? '🔁 Repite en las últimas 3' : '⚠ Repite en auditoría anterior';
+      var repBg        = rep2 ? '#fff1f2' : '#fff7ed';
+      var repBorder    = rep2 ? '#fca5a5' : '#fed7aa';
+      var repBadgeBg   = rep2 ? '#e4001b' : '#ea580c';
+      var repLabel     = rep2 ? '🔁 Repite en las últimas 3' : '⚠ Repite en auditoría anterior';
       filasRep +=
         '<tr style="background:' + repBg + '">'
         + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-weight:600;font-size:13px">' + d.control + '</td>'
@@ -311,54 +534,95 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos) {
       + '</table></div>';
   }
 
-  // Construir HTML completo
+  // ---- 8. HISTORIAL ----
+  var seccionHistorial = '';
+  if (historial) {
+    var histHtml = '';
+    if (historial.prevAudit) {
+      var pa = historial.prevAudit;
+      var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
+      histHtml += '<p style="margin:0 0 8px;font-size:13px;color:#1a1a1a">'
+        + '<strong>Auditoría anterior:</strong> ' + formatFecha(pa.fecha) + ' — ' + paLabel + '</p>';
+    }
+    if (historial.promedioMes !== null) {
+      histHtml += '<p style="margin:0;font-size:13px;color:#1a1a1a">'
+        + '<strong>Promedio del mes (' + historial.auditsMes + ' auditoría' + (historial.auditsMes !== 1 ? 's' : '') + '):</strong> '
+        + historial.promedioMes + '%</p>';
+    }
+    if (histHtml) {
+      seccionHistorial = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f8fafc">'
+        + '<h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">📊 Historial</h2>'
+        + histHtml + '</div>';
+    }
+  }
+
+  // ---- 9. SISTEMA DE PUNTOS ----
+  var seccionSistema =
+    '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f1f5f9">'
+    + '<h2 style="margin:0 0 12px;font-size:14px;color:#475569">Sistema de puntuación</h2>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<tr style="background:#e2e8f0">'
+    + '<th style="padding:6px 10px;text-align:left;color:#334155">Importancia</th>'
+    + '<th style="padding:6px 10px;text-align:center;color:#16a34a">Cumple</th>'
+    + '<th style="padding:6px 10px;text-align:center;color:#d97706">Parcial</th>'
+    + '<th style="padding:6px 10px;text-align:center;color:#e4001b">No Cumple</th>'
+    + '</tr>'
+    + '<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:600">Crítico</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">4 pts</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">2 pts</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">0 pts + REPRUEBA</td></tr>'
+    + '<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:600">Alta</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">3 pts</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">1 pt</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">0 pts</td></tr>'
+    + '<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:600">Media</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">2 pts</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">1 pt</td>'
+    + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">0 pts</td></tr>'
+    + '<tr><td style="padding:6px 10px;font-weight:600">Baja</td>'
+    + '<td style="padding:6px 10px;text-align:center">1 pt</td>'
+    + '<td style="padding:6px 10px;text-align:center">0 pts</td>'
+    + '<td style="padding:6px 10px;text-align:center">0 pts</td></tr>'
+    + '</table>'
+    + '<p style="margin:12px 0 0;font-size:11px;color:#64748b;font-style:italic">Los puntos Críticos (Nota de Oro) reprueban la auditoría automáticamente si no se cumplen, independientemente del puntaje total.</p>'
+    + '</div>';
+
+  // ---- 10. FOOTER ----
+  var pdfBtnHtml = '';
+  if (pdfResult && pdfResult.url) {
+    pdfBtnHtml = '<p style="margin:8px 0 0"><a href="' + pdfResult.url + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700">📄 Descargar PDF</a></p>';
+  }
+
+  var footerHtml = '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center">'
+    + '<p style="margin:0;font-size:12px;color:#999">Sistema de Auditorías · Sushi POP · ' + formatFecha(data.fecha) + '</p>'
+    + pdfBtnHtml
+    + '</div>';
+
+  // ---- ARMAR HTML COMPLETO ----
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
     + '<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8f8f8;margin:0;padding:0">'
     + '<div style="max-width:700px;margin:0 auto;background:#fff">'
-
-    + '<div style="background:#e4001b;padding:24px 32px;text-align:center">'
-    + '<h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditoría</h1>'
-    + '<p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">' + data.local + ' · ' + data.fecha + '</p>'
-    + puntajeHtml + '</div>'
-
-    + '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb">'
-    + '<table style="width:100%;border-collapse:collapse">'
-    + '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Local</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.local + '</td>'
-    + '<td style="padding:3px 0;color:#666;font-size:13px;width:110px">Auditor</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.auditor + '</td></tr>'
-    + '<tr><td style="padding:3px 0;color:#666;font-size:13px">Fecha</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.fecha + ' ' + data.hora + '</td>'
-    + '<td style="padding:3px 0;color:#666;font-size:13px">Marca</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.marca + '</td></tr>'
-    + '</table></div>'
-
-    + '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
-    + '<h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Distribución de Resultados</h2>'
-    + '<div style="text-align:center;margin-bottom:20px"><img src="' + chartUrl + '" alt="Grafico" style="max-width:100%;height:auto"></div>'
-    + '<table style="width:100%;border-collapse:collapse;text-align:center"><tr>'
-    + '<td style="padding:14px 8px;background:#f0fdf4;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#16a34a">' + cumple + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Cumple</div></td>'
-    + '<td style="width:6px"></td>'
-    + '<td style="padding:14px 8px;background:#fff1f2;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#e4001b">' + noCumple + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Cumple</div></td>'
-    + '<td style="width:6px"></td>'
-    + '<td style="padding:14px 8px;background:#fffbeb;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#d97706">' + parcial + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Parcial</div></td>'
-    + '<td style="width:6px"></td>'
-    + '<td style="padding:14px 8px;background:#f1f5f9;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#64748b">' + noAplica + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Aplica</div></td>'
-    + '</tr></table></div>'
-
+    + headerHtml
+    + datosHtml
+    + seccionReprobado
+    + seccionGraficoYCat
     + seccionNoOk
-
     + seccionRepetidos
+    + seccionHistorial
+    + seccionSistema
+    + footerHtml
+    + '</div></body></html>';
 
-    + '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
-    + '<h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Cumplimiento por Categoría</h2>'
-    + '<table style="width:100%;border-collapse:collapse">' + filasCatHtml + '</table></div>'
-
-    + '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center">'
-    + '<p style="margin:0;font-size:12px;color:#999">Sistema de Auditorías · Sushi POP · ' + data.fecha + '</p>'
-    + '</div></div></body></html>';
-
-  GmailApp.sendEmail(emails.join(','), 'Auditoría ' + data.local + ' — ' + data.fecha + ' (' + pct + '% cumplimiento)', '', {
+  var emailOpts = {
     htmlBody: html,
     name:     'Franquicias POP',
     from:     'franquicias@sushi-pop.com.ar',
-  });
+  };
+  if (pdfResult && pdfResult.blob) {
+    emailOpts.attachments = [pdfResult.blob];
+  }
+
+  GmailApp.sendEmail(emails.join(','), 'Auditoría ' + data.local + ' — ' + formatFecha(data.fecha) + ' (' + (data.puntaje && data.puntaje.reprobado ? 'REPROBADO' : pct + '% cumplimiento') + ')', '', emailOpts);
 }
 
 function getImpBg(imp) {
@@ -432,7 +696,9 @@ function doGet(e) {
       };
 
       const desvios = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
-      enviarEmailAuditoria(data, rows, desvios);
+      const hist = calcularHistorial(sheet, data.local, data.auditId, data.fecha, data.puntaje);
+      const pdf  = generarPDF(data, rows, desvios, hist);
+      enviarEmailAuditoria(data, rows, desvios, hist, pdf);
       return jsonResponse({ success: true, message: 'Email reenviado a ' + emailDest, auditId: auditId, rows: rows.length });
     } catch(err) {
       return jsonResponse({ success: false, error: err.message });

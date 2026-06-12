@@ -9,6 +9,7 @@ const state = {
   // Auth
   auditor:      '',
   auditorEmail: '',
+  acompanante:  '',
   googleReady:  false,
 
   // Setup
@@ -347,6 +348,12 @@ function renderSetup() {
         </div>
 
         <div class="form-group">
+          <label class="form-label">Acompañante (opcional)</label>
+          <input class="form-control" id="inp-acompanante" type="text"
+            placeholder="Nombre del acompañante" value="${escHtml(state.acompanante || '')}">
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Fecha de visita</label>
           <input class="form-control" id="inp-fecha" type="date" value="${state.fecha}">
         </div>
@@ -655,14 +662,18 @@ function attachListeners() {
   const inpAuditor = document.getElementById('inp-auditor');
   if (inpAuditor) inpAuditor.addEventListener('input', () => { state.auditor = inpAuditor.value; });
 
+  const inpAcompanante = document.getElementById('inp-acompanante');
+  if (inpAcompanante) inpAcompanante.addEventListener('input', () => { state.acompanante = inpAcompanante.value; });
+
   const inpFecha = document.getElementById('inp-fecha');
   if (inpFecha) inpFecha.addEventListener('change', () => { state.fecha = inpFecha.value; });
 
   on('btn-start-audit', 'click', () => {
     // Leer valores actuales
-    if (selLocal)    state.local   = state.locales.find(l => l.nombre === selLocal.value) || state.local;
-    if (inpAuditor)  state.auditor = inpAuditor.value || state.auditor;
-    if (inpFecha)    state.fecha   = inpFecha.value   || state.fecha;
+    if (selLocal)       state.local       = state.locales.find(l => l.nombre === selLocal.value) || state.local;
+    if (inpAuditor)     state.auditor     = inpAuditor.value     || state.auditor;
+    if (inpAcompanante) state.acompanante = inpAcompanante.value || state.acompanante;
+    if (inpFecha)       state.fecha       = inpFecha.value       || state.fecha;
 
     if (!state.local)   return alert('Seleccioná un local.');
     if (!state.auditor) return alert('Ingresá el nombre del auditor.');
@@ -775,7 +786,7 @@ function attachListeners() {
   on('btn-submit',    'click', submitAudit);
   on('btn-new-audit', 'click', () => {
     Object.assign(state, {
-      screen: 'welcome', local: null,
+      screen: 'welcome', local: null, acompanante: '',
       categories: [], categoryIndex: 0, questionIndex: 0,
       answers: {}, auditId: '', error: '', submitting: false,
     });
@@ -891,14 +902,15 @@ async function submitAudit() {
 
   const payload = {
     auditId,
-    fecha:       state.fecha,
-    hora:        new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-    auditor:     state.auditor,
+    fecha:        state.fecha,
+    hora:         new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+    auditor:      state.auditor,
     auditorEmail: state.auditorEmail,
-    local:       state.local.nombre,
-    marca:       state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca',
-    emailsLocal: state.local.emails,
-    puntaje:     { pct: puntaje.pct, nivel: puntaje.nivel, obtenido: puntaje.obtenido, posible: puntaje.posible, reprobado: puntaje.reprobado },
+    acompanante:  state.acompanante || '',
+    local:        state.local.nombre,
+    marca:        state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca',
+    emailsLocal:  state.local.emails,
+    puntaje:      { pct: puntaje.pct, nivel: puntaje.nivel, obtenido: puntaje.obtenido, posible: puntaje.posible, reprobado: puntaje.reprobado },
     respuestas,
   };
 
