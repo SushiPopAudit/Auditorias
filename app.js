@@ -950,9 +950,12 @@ async function submitAudit() {
   document.body.appendChild(overlay);
 
   try {
-    const resp = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(payload) });
-    const data = await resp.json();
-    if (!data.success) throw new Error(data.error || 'Error desconocido');
+    const resp = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' });
+    // Apps Script redirige el POST — en moviles la respuesta puede no parsearse
+    // aunque la auditoria si llego. Solo fallar si hubo error de red real.
+    let data = { success: true };
+    try { const text = await resp.text(); if (text) data = JSON.parse(text); } catch (_) {}
+    if (data.success === false) throw new Error(data.error || 'Error desconocido');
     console.log('Email status:', data.email);
     setState({ screen: 'success', auditId, emailStatus: data.email || '', lastPuntaje: puntaje, desviosRepetidos: data.desviosRepetidos || [] });
   } catch (err) {
