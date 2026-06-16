@@ -869,7 +869,48 @@ function doGet(e) {
     }
   }
 
-  return jsonResponse({ version: '2026-06-12-v1' });
+  if (action === 'borrarAuditoria') {
+    var auditIdB = e.parameter.auditId;
+    if (!auditIdB) return jsonResponse({ success: false, error: 'Falta auditId' });
+    try {
+      var ssB    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var sheetB = ssB.getSheetByName(SHEET_NAME);
+      if (!sheetB) return jsonResponse({ success: false, error: 'Hoja no encontrada' });
+
+      var lastRowB = sheetB.getLastRow();
+      if (lastRowB < 2) return jsonResponse({ success: false, error: 'Sin datos' });
+
+      var allDataB = sheetB.getRange(2, 1, lastRowB - 1, 1).getValues();
+      // Recolectar índices de filas a borrar (en orden inverso para no alterar posiciones)
+      var toDelete = [];
+      allDataB.forEach(function(r, i) {
+        if (String(r[0]) === auditIdB) toDelete.push(i + 2);
+      });
+      if (!toDelete.length) return jsonResponse({ success: false, error: 'AuditID no encontrado: ' + auditIdB });
+
+      // Borrar de abajo hacia arriba para no desplazar índices
+      for (var d = toDelete.length - 1; d >= 0; d--) {
+        sheetB.deleteRow(toDelete[d]);
+      }
+
+      // Borrar carpeta de Drive si existe
+      var driveMsg = 'no encontrada';
+      try {
+        var parentB = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+        var foldersB = parentB.getFoldersByName(auditIdB);
+        if (foldersB.hasNext()) {
+          foldersB.next().setTrashed(true);
+          driveMsg = 'eliminada';
+        }
+      } catch(driveErrB) { driveMsg = 'error: ' + driveErrB.message; }
+
+      return jsonResponse({ success: true, auditId: auditIdB, filasEliminadas: toDelete.length, carpetaDrive: driveMsg });
+    } catch(errB) {
+      return jsonResponse({ success: false, error: errB.message });
+    }
+  }
+
+  return jsonResponse({ version: '2026-06-16-v1' });
 }
 
 function jsonResponse(obj) {
