@@ -327,6 +327,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       var fotoDirecta = driveImgUrl(r[13]);
       var tdWidth = fotoDirecta ? '55%' : '100%';
       var obsHtml = r[12] ? '<div style="font-size:12px;color:#7f1d1d;font-style:italic;margin-top:4px">"' + r[12] + '"</div>' : '';
+      var explHtmlCrit = r[10] ? '<div style="font-size:12px;color:#666;font-style:italic;margin-bottom:4px">' + r[10] + '</div>' : '';
       var fotoTd = fotoDirecta
         ? '<td style="vertical-align:top;padding-left:12px;width:45%"><img src="' + fotoDirecta + '" alt="Foto" style="width:100%;max-width:200px;border-radius:6px;border:1px solid #fca5a5"></td>'
         : '';
@@ -335,7 +336,8 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
         + '<table style="width:100%;border-collapse:collapse"><tr>'
         + '<td style="vertical-align:top;width:' + tdWidth + '">'
         + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
-        + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">' + r[8] + '</div>'
+        + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:4px">' + r[8] + '</div>'
+        + explHtmlCrit
         + '<div style="font-size:13px;font-weight:700;color:#e4001b;margin-bottom:4px">● No Cumple (Crítico)</div>'
         + obsHtml
         + '</td>' + fotoTd + '</tr></table></div>';
@@ -406,8 +408,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
   });
 
-  var filasNoOkHtml = '';
-  noOkRows.forEach(function(r) {
+  function buildNoOkFila(r) {
     var res        = (r[11]||'').toLowerCase();
     var esCritico  = (r[9]||'').toLowerCase().replace(/í/g,'i') === 'critico';
     var esNoCumple = res.includes('no cumple') || res === 'nocumple';
@@ -416,19 +417,40 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     var fotoDirecta = driveImgUrl(r[13]);
     var tdWidth    = fotoDirecta ? '55%' : '100%';
     var obsHtml    = r[12] ? '<div style="font-size:12px;color:#666;font-style:italic">"' + r[12] + '"</div>' : '';
+    var explHtml2  = r[10] ? '<div style="font-size:12px;color:#666;font-style:italic;margin-bottom:4px">' + r[10] + '</div>' : '';
     var fotoTd     = fotoDirecta
       ? '<td style="vertical-align:top;padding-left:12px;width:45%"><img src="' + fotoDirecta + '" alt="Foto" style="width:100%;max-width:200px;border-radius:6px;border:1px solid #e5e7eb"></td>'
       : '';
-    filasNoOkHtml +=
-      '<div style="background:' + bgRow + ';border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid ' + resColor + '">'
+    return '<div style="background:' + bgRow + ';border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid ' + resColor + '">'
       + '<table style="width:100%;border-collapse:collapse"><tr>'
       + '<td style="vertical-align:top;width:' + tdWidth + '">'
       + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
-      + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">' + r[8] + '</div>'
+      + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:4px">' + r[8] + '</div>'
+      + explHtml2
       + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(r[9]) + ';color:' + getImpColor(r[9]) + ';margin-bottom:8px">' + r[9] + '</span>'
       + '<div style="font-size:13px;font-weight:700;color:' + resColor + ';margin-bottom:4px">● ' + r[11] + '</div>'
       + obsHtml
       + '</td>' + fotoTd + '</tr></table></div>';
+  }
+
+  // Agrupar noOkRows por marca (r[5])
+  var marcasNoOk = [];
+  var noOkByMarca = {};
+  noOkRows.forEach(function(r) {
+    var m = (r[5] || 'Sin marca').trim();
+    if (!noOkByMarca[m]) { noOkByMarca[m] = []; marcasNoOk.push(m); }
+    noOkByMarca[m].push(r);
+  });
+
+  var filasNoOkHtml = '';
+  var mostrarSubtitulo = marcasNoOk.length > 1;
+  marcasNoOk.forEach(function(marca) {
+    if (mostrarSubtitulo) {
+      filasNoOkHtml += '<div style="font-size:13px;font-weight:700;color:#475569;margin:16px 0 8px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;padding-bottom:4px">' + marca + '</div>';
+    }
+    noOkByMarca[marca].forEach(function(r) {
+      filasNoOkHtml += buildNoOkFila(r);
+    });
   });
 
   var seccionNoOk = '';
@@ -530,12 +552,14 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   // ---- 10. FOOTER ----
   var pdfBtnHtml = '';
   if (pdfUrl) {
-    pdfBtnHtml = '<p style="margin:8px 0 0"><a href="' + pdfUrl + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700">Descargar PDF</a></p>';
+    pdfBtnHtml = '<a href="' + pdfUrl + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;margin:4px">Descargar PDF</a>';
   }
+  var verAuditoriaUrl = 'https://script.google.com/macros/s/AKfycbwtsRNwBylKb_Nis4hUXlhj5epPeF7VGgGWSZzzHNAQ7Py00nzPp6g_7D9DsyelOCLB/exec?action=verAuditoria&auditId=' + data.auditId;
+  var verAuditoriaBtnHtml = '<a href="' + verAuditoriaUrl + '" style="display:inline-block;padding:8px 18px;background:#1e40af;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;margin:4px">Ver auditoría completa</a>';
 
   var footerHtml = '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center">'
     + '<p style="margin:0;font-size:12px;color:#999">Sistema de Auditorías · Sushi POP · ' + formatFecha(data.fecha) + '</p>'
-    + pdfBtnHtml
+    + '<p style="margin:8px 0 0">' + pdfBtnHtml + verAuditoriaBtnHtml + '</p>'
     + '</div>';
 
   // ---- ARMAR HTML COMPLETO ----
@@ -711,6 +735,99 @@ function doGet(e) {
       return jsonResponse({ success: true, message: 'Email reenviado a ' + emailDest, auditId: auditId, rows: rows.length, puntaje: puntajeRecalc, pdfError: pdfError, pdfUrl: pdf ? pdf.url : null });
     } catch(err) {
       return jsonResponse({ success: false, error: err.message });
+    }
+  }
+
+  if (action === 'verAuditoria') {
+    var auditIdVer = e.parameter.auditId;
+    if (!auditIdVer) return ContentService.createTextOutput('<h2>Falta auditId</h2>').setMimeType(ContentService.MimeType.HTML);
+    try {
+      var ssVer    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var sheetVer = ssVer.getSheetByName(SHEET_NAME);
+      if (!sheetVer) return ContentService.createTextOutput('<h2>Hoja no encontrada</h2>').setMimeType(ContentService.MimeType.HTML);
+
+      var lastRowVer = sheetVer.getLastRow();
+      if (lastRowVer < 2) return ContentService.createTextOutput('<h2>Sin datos</h2>').setMimeType(ContentService.MimeType.HTML);
+
+      var allDataVer = sheetVer.getRange(2, 1, lastRowVer - 1, 19).getValues();
+      var rowsVer = allDataVer.filter(function(r) { return String(r[0]) === auditIdVer; })
+        .map(function(r) { return r.map(function(v) { return v == null ? '' : String(v); }); });
+      if (!rowsVer.length) return ContentService.createTextOutput('<h2>AuditID no encontrado: ' + auditIdVer + '</h2>').setMimeType(ContentService.MimeType.HTML);
+
+      var firstVer = rowsVer[0];
+      var puntajeVer = recalcularPuntaje(rowsVer);
+
+      // Construir HTML completo con todos los puntos organizados por categoría
+      var catMapVer = {};
+      var catOrderVer = [];
+      rowsVer.forEach(function(r) {
+        var cat = r[6] || 'Sin categoría';
+        if (!catMapVer[cat]) { catMapVer[cat] = []; catOrderVer.push(cat); }
+        catMapVer[cat].push(r);
+      });
+
+      function badgeRes(res) {
+        var r = (res||'').toLowerCase();
+        if (r === 'cumple') return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#d1fae5;color:#065f46">' + res + '</span>';
+        if (r.includes('no cumple') || r === 'nocumple') return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#fff1f2;color:#e4001b">' + res + '</span>';
+        if (r.includes('parcial')) return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#fffbeb;color:#d97706">' + res + '</span>';
+        if (r.includes('aplica')) return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#f1f5f9;color:#64748b">' + res + '</span>';
+        return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#f1f5f9;color:#64748b">' + (res || 'Sin respuesta') + '</span>';
+      }
+
+      var seccionesHtml = '';
+      catOrderVer.forEach(function(cat) {
+        var filasHtml = '';
+        catMapVer[cat].forEach(function(r) {
+          var fotoUrl = driveImgUrl(r[13]);
+          var fotoHtml = fotoUrl ? '<div style="margin-top:8px"><img src="' + fotoUrl + '" alt="Foto" style="max-width:200px;border-radius:6px;border:1px solid #e5e7eb"></div>' : '';
+          var obsHtml2 = r[12] ? '<div style="font-size:12px;color:#666;font-style:italic;margin-top:4px">"' + r[12] + '"</div>' : '';
+          var explHtml3 = r[10] ? '<div style="font-size:12px;color:#888;font-style:italic;margin-bottom:4px">' + r[10] + '</div>' : '';
+          filasHtml +=
+            '<div style="padding:12px 0;border-bottom:1px solid #f3f4f6">'
+            + '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">'
+            + '<div style="flex:1;min-width:200px">'
+            + '<div style="font-size:11px;color:#888;margin-bottom:2px">' + r[7] + '</div>'
+            + '<div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:4px">' + r[8] + '</div>'
+            + explHtml3
+            + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(r[9]) + ';color:' + getImpColor(r[9]) + ';margin-right:6px">' + r[9] + '</span>'
+            + badgeRes(r[11])
+            + obsHtml2
+            + fotoHtml
+            + '</div></div></div>';
+        });
+        seccionesHtml +=
+          '<div style="margin-bottom:24px">'
+          + '<h3 style="margin:0 0 12px;font-size:15px;color:#1a1a1a;padding:10px 16px;background:#f8fafc;border-radius:8px;border-left:4px solid #3b82f6">' + cat + '</h3>'
+          + filasHtml
+          + '</div>';
+      });
+
+      var pLabel = puntajeVer.reprobado ? 'REPROBADO' : puntajeVer.pct + '%';
+      var headerColor = puntajeVer.reprobado ? '#e4001b' : '#16a34a';
+      var htmlVer = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Auditoría ' + firstVer[4] + ' — ' + formatFecha(firstVer[1]) + '</title></head>'
+        + '<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8f8f8;margin:0;padding:0">'
+        + '<div style="max-width:800px;margin:0 auto;background:#fff">'
+        + '<div style="background:' + headerColor + ';padding:24px 32px;text-align:center">'
+        + '<h1 style="color:#fff;margin:0 0 4px;font-size:20px">Auditoría Completa</h1>'
+        + '<p style="color:rgba(255,255,255,0.85);margin:0;font-size:14px">' + firstVer[4] + ' · ' + formatFecha(firstVer[1]) + ' · ' + firstVer[2] + '</p>'
+        + '<div style="margin-top:12px;display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:10px 24px">'
+        + '<div style="font-size:36px;font-weight:900;color:#fff">' + pLabel + '</div>'
+        + '<div style="font-size:13px;color:rgba(255,255,255,0.9)">' + puntajeVer.nivel + ' · ' + puntajeVer.obtenido + '/' + puntajeVer.posible + ' pts</div>'
+        + '</div></div>'
+        + '<div style="padding:16px 32px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#444">'
+        + '<strong>Local:</strong> ' + firstVer[4] + ' &nbsp;|&nbsp; <strong>Auditor:</strong> ' + firstVer[3] + ' &nbsp;|&nbsp; <strong>Marca:</strong> ' + firstVer[5]
+        + (firstVer[18] ? ' &nbsp;|&nbsp; <strong>Acompañante:</strong> ' + firstVer[18] : '')
+        + '</div>'
+        + '<div style="padding:24px 32px">' + seccionesHtml + '</div>'
+        + '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#999">'
+        + 'Sistema de Auditorías · Sushi POP · ID: ' + auditIdVer
+        + '</div>'
+        + '</div></body></html>';
+
+      return ContentService.createTextOutput(htmlVer).setMimeType(ContentService.MimeType.HTML);
+    } catch(errVer) {
+      return ContentService.createTextOutput('<h2>Error: ' + errVer.message + '</h2>').setMimeType(ContentService.MimeType.HTML);
     }
   }
 

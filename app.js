@@ -424,7 +424,7 @@ function renderQuestionCard(q) {
   const imp = importanciaClass(q.importancia);
   const ans = state.answers[q.id] || {};
   const { type, options } = parseAnswerType(q.pregunta);
-  const needsPhoto = q.imagen === 'si';
+  const needsPhoto = q.imagen === 'si' || q.imagen === 'obligatorio';
 
   let inputHtml = '';
   if (type === 'radio') {
@@ -444,6 +444,7 @@ function renderQuestionCard(q) {
     inputHtml = `
       <div class="number-input-wrap">
         <input class="number-input" type="number" step="0.1"
+          inputmode="numeric" pattern="[0-9.,]*"
           id="num_${q.id}" placeholder="0.0" value="${ans.valor || ''}"
           data-qid="${q.id}">
         <span class="number-unit">°C</span>
@@ -455,20 +456,27 @@ function renderQuestionCard(q) {
         style="min-height:48px">${ans.valor || ''}</textarea>`;
   }
 
+  const selectedVal = (ans.valor || '').toLowerCase();
+  const obsRequired = selectedVal === 'no cumple' || selectedVal.includes('parcial');
   const obsHtml = type === 'radio' ? `
     <div class="observacion-wrap">
-      <span class="observacion-label">Observaciones</span>
-      <textarea class="observacion-textarea" placeholder="Observaciones opcionales..."
-        data-qid="${q.id}" data-field="observacion">${ans.observacion || ''}</textarea>
+      <span class="observacion-label">Observaciones${obsRequired ? ' <span style="color:#e4001b;font-weight:700">* Requerida</span>' : ''}</span>
+      <textarea class="observacion-textarea" placeholder="${obsRequired ? '* Observación requerida...' : 'Observaciones opcionales...'}"
+        data-qid="${q.id}" data-field="observacion"
+        style="${obsRequired ? 'border:2px solid #e4001b;' : ''}">${ans.observacion || ''}</textarea>
     </div>` : '';
 
   const hasPhoto = ans.foto?.dataURL;
+  const photoReqLabel = needsPhoto && !hasPhoto
+    ? '<div style="font-size:12px;color:#e4001b;font-weight:700;margin-top:4px">* Foto requerida</div>'
+    : '';
   const photoHtml = `
     <div class="photo-section">
       <button class="photo-btn ${needsPhoto ? 'required' : ''} ${hasPhoto ? 'has-photo' : ''}"
         data-qid="${q.id}" id="photobtn_${q.id}">
         📷 ${hasPhoto ? 'Foto tomada ✓' : needsPhoto ? 'Foto requerida *' : 'Agregar foto'}
       </button>
+      ${photoReqLabel}
       <input type="file" accept="image/*" capture="environment"
         id="fileinput_${q.id}" data-qid="${q.id}" style="display:none">
       ${hasPhoto
@@ -800,6 +808,27 @@ function attachListeners() {
 // ============================================================
 function nextQuestion() {
   saveCurrentAnswer();
+
+  // Validar observación obligatoria (No cumple o parcial)
+  const cat0 = state.categories[state.categoryIndex];
+  const q0   = cat0.questions[state.questionIndex];
+  const ans0 = state.answers[q0.id] || {};
+  const val0 = (ans0.valor || '').toLowerCase();
+  if (val0 === 'no cumple' || val0.includes('parcial')) {
+    if (!(ans0.observacion || '').trim()) {
+      alert('La observación es obligatoria cuando la respuesta es "No cumple" o parcial.');
+      return;
+    }
+  }
+
+  // Validar foto obligatoria
+  if (q0.imagen === 'si' || q0.imagen === 'obligatorio') {
+    if (!ans0.foto?.dataURL) {
+      alert('La foto es obligatoria para esta pregunta.');
+      return;
+    }
+  }
+
   const cat = state.categories[state.categoryIndex];
   if (state.questionIndex < cat.questions.length - 1) {
     setState({ questionIndex: state.questionIndex + 1 });
