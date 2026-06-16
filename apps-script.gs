@@ -229,6 +229,7 @@ function generarPDF(data, rows, desviosRepetidos, historial) {
   var docTitle = 'Auditoria_' + data.local + '_' + data.fecha + '_' + data.auditId;
 
   var htmlContent = buildAuditHtml(data, rows, desviosRepetidos, historial, '');
+  htmlContent = embedDriveImagesAsBase64(htmlContent); // embeber fotos para que aparezcan en el PDF
 
   var htmlBlob = Utilities.newBlob(htmlContent, 'text/html', docTitle + '.html');
   var tempFile = DriveApp.createFile(htmlBlob);
@@ -583,8 +584,30 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
 // ============================================================
 function driveImgUrl(url) {
   if (!url) return '';
-  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  return m ? 'https://drive.google.com/uc?export=view&id=' + m[1] : url;
+  var m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  // thumbnail URL funciona sin auth para archivos compartidos con "anyone with link"
+  return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w600' : url;
+}
+
+// Embebe imágenes de Drive como base64 en el HTML (necesario para PDF)
+function embedDriveImagesAsBase64(html) {
+  var regex = /https:\/\/drive\.google\.com\/thumbnail\?id=([a-zA-Z0-9_-]+)&sz=w600/g;
+  var match;
+  var replacements = {};
+  var tmpHtml = html;
+  while ((match = regex.exec(tmpHtml)) !== null) {
+    replacements[match[0]] = match[1];
+  }
+  Object.keys(replacements).forEach(function(imgUrl) {
+    var fileId = replacements[imgUrl];
+    try {
+      var blob = DriveApp.getFileById(fileId).getBlob();
+      var b64 = Utilities.base64Encode(blob.getBytes());
+      var mime = blob.getContentType() || 'image/jpeg';
+      html = html.split(imgUrl).join('data:' + mime + ';base64,' + b64);
+    } catch(e) { console.error('Embed img error ' + fileId + ':', e); }
+  });
+  return html;
 }
 
 function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult) {
