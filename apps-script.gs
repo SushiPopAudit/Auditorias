@@ -48,7 +48,7 @@ function doPost(e) {
         data.auditId, data.fecha, data.hora,
         data.auditor,
         data.local,
-        data.marca,
+        r.marca || data.marca,
         r.categoria, r.subcategoria, r.control, r.importancia,
         r.explicacion, r.respuesta, r.observacion, fotoURL,
         data.auditorEmail || '',
@@ -296,13 +296,13 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
 
   var headerBg = (data.puntaje && data.puntaje.reprobado) ? '#e4001b' : '#16a34a';
   var headerHtml = '<div style="background:' + headerBg + ';padding:24px 32px;text-align:center">'
-    + '<h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditoría</h1>'
+    + '<h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditor&iacute;a</h1>'
     + '<p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">' + data.local + ' · ' + fechaHora + '</p>'
     + puntajeHtml + '</div>';
 
   // ---- 2. DATOS ----
   var acompananteRow = data.acompanante
-    ? '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Acompañante</td><td style="padding:3px 0;font-weight:600;font-size:13px" colspan="3">' + data.acompanante + '</td></tr>'
+    ? '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Acompa&ntilde;ante</td><td style="padding:3px 0;font-weight:600;font-size:13px" colspan="3">' + data.acompanante + '</td></tr>'
     : '';
 
   var datosHtml = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb">'
@@ -338,14 +338,14 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
         + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
         + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:4px">' + r[8] + '</div>'
         + explHtmlCrit
-        + '<div style="font-size:13px;font-weight:700;color:#e4001b;margin-bottom:4px">● No Cumple (Crítico)</div>'
+        + '<div style="font-size:13px;font-weight:700;color:#e4001b;margin-bottom:4px">● No Cumple (Cr&iacute;tico)</div>'
         + obsHtml
         + '</td>' + fotoTd + '</tr></table></div>';
     });
     seccionReprobado =
       '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fff1f2">'
       + '<h2 style="margin:0 0 8px;font-size:16px;color:#991b1b">⛔ REPROBADO por Nota de Oro</h2>'
-      + '<p style="margin:0 0 16px;font-size:13px;color:#7f1d1d">La auditoría fue reprobada por incumplimiento de puntos críticos (Nota de Oro):</p>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:#7f1d1d">La auditor&iacute;a fue reprobada por incumplimiento de puntos cr&iacute;ticos (Nota de Oro):</p>'
       + filasCrit + '</div>';
   }
 
@@ -354,7 +354,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   var parcialPts = { 'critico':2,'crítico':2,'alta':1,'media':1,'baja':0 };
   var catMap = {};
   rows.forEach(function(r) {
-    var cat = r[6] || 'Sin categoría';
+    var cat = r[6] || 'Sin categor&iacute;a';
     var res = (r[11]||'').toLowerCase().trim();
     var imp = (r[9]||'').toLowerCase().trim();
     if (!catMap[cat]) catMap[cat] = { obtenido:0, posible:0 };
@@ -384,7 +384,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
 
   var seccionGraficoYCat =
     '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
-    + '<h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Distribución de Resultados</h2>'
+    + '<h2 style="margin:0 0 16px;font-size:15px;color:#1a1a1a">Distribuci&oacute;n de Resultados</h2>'
     + '<div style="text-align:center;margin-bottom:20px"><img src="' + chartUrl + '" alt="Grafico" style="max-width:100%;height:auto"></div>'
     + '<table style="width:100%;border-collapse:collapse;text-align:center"><tr>'
     + '<td style="padding:14px 8px;background:#f0fdf4;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#16a34a">' + cumple + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">Cumple</div></td>'
@@ -395,7 +395,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<td style="width:6px"></td>'
     + '<td style="padding:14px 8px;background:#f1f5f9;border-radius:8px"><div style="font-size:26px;font-weight:800;color:#64748b">' + noAplica + '</div><div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600;margin-top:2px">No Aplica</div></td>'
     + '</tr></table>'
-    + '<h3 style="margin:20px 0 12px;font-size:14px;color:#1a1a1a">% por Categoría</h3>'
+    + '<h3 style="margin:20px 0 12px;font-size:14px;color:#1a1a1a">% por Categor&iacute;a</h3>'
     + '<table style="width:100%;border-collapse:collapse">' + filasCatHtml + '</table>'
     + '</div>';
 
@@ -484,12 +484,12 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     });
     seccionRepetidos =
       '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fffbeb">'
-      + '<h2 style="margin:0 0 8px;font-size:15px;color:#c2410c">🔁 Desvíos Reiterados (' + rep.length + ')</h2>'
-      + '<p style="margin:0 0 16px;font-size:13px;color:#92400e">Puntos que no cumplieron en auditorías anteriores y continúan sin corregirse.</p>'
+      + '<h2 style="margin:0 0 8px;font-size:15px;color:#c2410c">🔁 Desv&iacute;os Reiterados (' + rep.length + ')</h2>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:#92400e">Puntos que no cumplieron en auditor&iacute;as anteriores y contin&uacute;an sin corregirse.</p>'
       + '<table style="width:100%;border-collapse:collapse">'
       + '<tr style="background:#c2410c">'
       + '<th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Control</th>'
-      + '<th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Categoría</th>'
+      + '<th style="padding:8px 12px;text-align:left;color:#fff;font-size:12px">Categor&iacute;a</th>'
       + '<th style="padding:8px 12px;text-align:center;color:#fff;font-size:12px">Importancia</th>'
       + '<th style="padding:8px 12px;text-align:right;color:#fff;font-size:12px">Reincidencia</th></tr>'
       + filasRep
@@ -504,11 +504,11 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       var pa = historial.prevAudit;
       var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
       histHtml += '<p style="margin:0 0 8px;font-size:13px;color:#1a1a1a">'
-        + '<strong>Auditoría anterior:</strong> ' + formatFecha(pa.fecha) + ' — ' + paLabel + '</p>';
+        + '<strong>Auditor&iacute;a anterior:</strong> ' + formatFecha(pa.fecha) + ' — ' + paLabel + '</p>';
     }
     if (historial.promedioMes !== null) {
       histHtml += '<p style="margin:0;font-size:13px;color:#1a1a1a">'
-        + '<strong>Promedio del mes (' + historial.auditsMes + ' auditoría' + (historial.auditsMes !== 1 ? 's' : '') + '):</strong> '
+        + '<strong>Promedio del mes (' + historial.auditsMes + ' auditor&iacute;a' + (historial.auditsMes !== 1 ? 's' : '') + '):</strong> '
         + historial.promedioMes + '%</p>';
     }
     if (histHtml) {
@@ -521,7 +521,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   // ---- 9. SISTEMA DE PUNTOS ----
   var seccionSistema =
     '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f1f5f9">'
-    + '<h2 style="margin:0 0 12px;font-size:14px;color:#475569">Sistema de puntuación</h2>'
+    + '<h2 style="margin:0 0 12px;font-size:14px;color:#475569">Sistema de puntuaci&oacute;n</h2>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<tr style="background:#e2e8f0">'
     + '<th style="padding:6px 10px;text-align:left;color:#334155">Importancia</th>'
@@ -529,7 +529,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<th style="padding:6px 10px;text-align:center;color:#d97706">Parcial</th>'
     + '<th style="padding:6px 10px;text-align:center;color:#e4001b">No Cumple</th>'
     + '</tr>'
-    + '<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:600">Crítico</td>'
+    + '<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:600">Cr&iacute;tico</td>'
     + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">4 pts</td>'
     + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">2 pts</td>'
     + '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center">0 pts + REPRUEBA</td></tr>'
@@ -546,7 +546,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<td style="padding:6px 10px;text-align:center">0 pts</td>'
     + '<td style="padding:6px 10px;text-align:center">0 pts</td></tr>'
     + '</table>'
-    + '<p style="margin:12px 0 0;font-size:11px;color:#64748b;font-style:italic">Los puntos Críticos (Nota de Oro) reprueban la auditoría automáticamente si no se cumplen, independientemente del puntaje total.</p>'
+    + '<p style="margin:12px 0 0;font-size:11px;color:#64748b;font-style:italic">Los puntos Cr&iacute;ticos (Nota de Oro) reprueban la auditor&iacute;a autom&aacute;ticamente si no se cumplen, independientemente del puntaje total.</p>'
     + '</div>';
 
   // ---- 10. FOOTER ----
@@ -606,7 +606,7 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
     emailOpts.attachments = [pdfResult.blob];
   }
 
-  GmailApp.sendEmail(emails.join(','), 'Auditoría ' + data.local + ' — ' + formatFecha(data.fecha) + ' (' + (data.puntaje && data.puntaje.reprobado ? 'REPROBADO' : pct + '% cumplimiento') + ')', '', emailOpts);
+  GmailApp.sendEmail(emails.join(','), 'Auditoria ' + data.local + ' - ' + formatFecha(data.fecha) + ' (' + (data.puntaje && data.puntaje.reprobado ? 'REPROBADO' : pct + '% cumplimiento') + ')', '', emailOpts);
 }
 
 function getImpBg(imp) {
@@ -740,19 +740,19 @@ function doGet(e) {
 
   if (action === 'verAuditoria') {
     var auditIdVer = e.parameter.auditId;
-    if (!auditIdVer) return ContentService.createTextOutput('<h2>Falta auditId</h2>').setMimeType(ContentService.MimeType.HTML);
+    if (!auditIdVer) return HtmlService.createHtmlOutput('<h2>Falta auditId</h2>');
     try {
       var ssVer    = SpreadsheetApp.openById(SPREADSHEET_ID);
       var sheetVer = ssVer.getSheetByName(SHEET_NAME);
-      if (!sheetVer) return ContentService.createTextOutput('<h2>Hoja no encontrada</h2>').setMimeType(ContentService.MimeType.HTML);
+      if (!sheetVer) return HtmlService.createHtmlOutput('<h2>Hoja no encontrada</h2>');
 
       var lastRowVer = sheetVer.getLastRow();
-      if (lastRowVer < 2) return ContentService.createTextOutput('<h2>Sin datos</h2>').setMimeType(ContentService.MimeType.HTML);
+      if (lastRowVer < 2) return HtmlService.createHtmlOutput('<h2>Sin datos</h2>');
 
       var allDataVer = sheetVer.getRange(2, 1, lastRowVer - 1, 19).getValues();
       var rowsVer = allDataVer.filter(function(r) { return String(r[0]) === auditIdVer; })
         .map(function(r) { return r.map(function(v) { return v == null ? '' : String(v); }); });
-      if (!rowsVer.length) return ContentService.createTextOutput('<h2>AuditID no encontrado: ' + auditIdVer + '</h2>').setMimeType(ContentService.MimeType.HTML);
+      if (!rowsVer.length) return HtmlService.createHtmlOutput('<h2>AuditID no encontrado: ' + auditIdVer + '</h2>');
 
       var firstVer = rowsVer[0];
       var puntajeVer = recalcularPuntaje(rowsVer);
@@ -761,7 +761,7 @@ function doGet(e) {
       var catMapVer = {};
       var catOrderVer = [];
       rowsVer.forEach(function(r) {
-        var cat = r[6] || 'Sin categoría';
+        var cat = r[6] || 'Sin categor&iacute;a';
         if (!catMapVer[cat]) { catMapVer[cat] = []; catOrderVer.push(cat); }
         catMapVer[cat].push(r);
       });
@@ -817,7 +817,7 @@ function doGet(e) {
         + '</div></div>'
         + '<div style="padding:16px 32px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#444">'
         + '<strong>Local:</strong> ' + firstVer[4] + ' &nbsp;|&nbsp; <strong>Auditor:</strong> ' + firstVer[3] + ' &nbsp;|&nbsp; <strong>Marca:</strong> ' + firstVer[5]
-        + (firstVer[18] ? ' &nbsp;|&nbsp; <strong>Acompañante:</strong> ' + firstVer[18] : '')
+        + (firstVer[18] ? ' &nbsp;|&nbsp; <strong>Acompa&ntilde;ante:</strong> ' + firstVer[18] : '')
         + '</div>'
         + '<div style="padding:24px 32px">' + seccionesHtml + '</div>'
         + '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#999">'
@@ -825,9 +825,9 @@ function doGet(e) {
         + '</div>'
         + '</div></body></html>';
 
-      return ContentService.createTextOutput(htmlVer).setMimeType(ContentService.MimeType.HTML);
+      return HtmlService.createHtmlOutput(htmlVer);
     } catch(errVer) {
-      return ContentService.createTextOutput('<h2>Error: ' + errVer.message + '</h2>').setMimeType(ContentService.MimeType.HTML);
+      return HtmlService.createHtmlOutput('<h2>Error: ' + errVer.message + '</h2>');
     }
   }
 

@@ -914,6 +914,7 @@ async function submitAudit() {
   const respuestas = allQs.map(q => {
     const ans = state.answers[q.id] || {};
     return {
+      marca:        q.marca,
       categoria:    q.categoria,
       subcategoria: q.subcategoria,
       control:      q.control,
