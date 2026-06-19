@@ -290,12 +290,37 @@ function renderWelcome() {
     ? '' // Si Google está configurado, solo login con Google
     : `<button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>`;
 
+  let draftBanner = '';
+  try {
+    const raw = localStorage.getItem('audit_draft');
+    if (raw) {
+      const draft = JSON.parse(raw);
+      const age = Date.now() - (draft.ts || 0);
+      if (age < 86400000 && draft.local && draft.local.nombre) {
+        const fechaFmt = draft.fecha || '';
+        const localNombre = draft.local.nombre || '';
+        draftBanner = `
+          <div id="draft-banner" style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;width:100%;box-sizing:border-box">
+            <div style="font-size:0.9rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
+            <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:12px">
+              <strong>${escHtml(localNombre)}</strong> &mdash; ${escHtml(fechaFmt)}
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.85rem">Continuar auditoría</button>
+              <button class="btn btn-outline" id="btn-draft-discard" style="flex:1;font-size:0.85rem">Descartar</button>
+            </div>
+          </div>`;
+      }
+    }
+  } catch(e) {}
+
   return `
     <div class="screen-welcome">
       <img src="logo.png" alt="Sushi POP" class="welcome-logo"
         onerror="this.style.display='none'">
       <h1 class="welcome-title">Sistema de Auditorías</h1>
       <p class="welcome-sub">Herramienta para auditores de locales</p>
+      ${draftBanner}
       ${googleBtn}
       ${skipBtn}
     </div>
@@ -657,6 +682,36 @@ function attachListeners() {
   on('btn-go-setup',   'click', () => setState({ screen: 'setup' }));
   on('btn-back-welcome','click', () => setState({ screen: 'welcome' }));
 
+  // Borrador
+  on('btn-draft-continue', 'click', () => {
+    try {
+      const raw = localStorage.getItem('audit_draft');
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (!draft.local) return;
+      const cats = buildCategories(draft.local.isCausa);
+      Object.assign(state, {
+        auditor:       draft.auditor      || state.auditor,
+        auditorEmail:  draft.auditorEmail || state.auditorEmail,
+        acompanante:   draft.acompanante  || '',
+        local:         draft.local,
+        fecha:         draft.fecha        || state.fecha,
+        categories:    cats,
+        categoryIndex: draft.categoryIndex || 0,
+        questionIndex: draft.questionIndex || 0,
+        answers:       draft.answers      || {},
+        screen:        'audit',
+      });
+      render();
+    } catch(e) {
+      alert('No se pudo restaurar el borrador.');
+    }
+  });
+  on('btn-draft-discard', 'click', () => {
+    borrarBorrador();
+    render();
+  });
+
   // Setup — local
   const selLocal = document.getElementById('sel-local');
   if (selLocal) {
@@ -721,6 +776,7 @@ function attachListeners() {
         if (!lbl) return;
         lbl.className = 'answer-label' + (r.checked ? ' ' + lbl.dataset.cls : '');
       });
+      guardarBorrador();
     });
   });
 
@@ -837,6 +893,7 @@ function nextQuestion() {
   } else {
     setState({ screen: 'summary' });
   }
+  guardarBorrador();
 }
 
 function prevQuestion() {
@@ -905,6 +962,44 @@ function compressImage(file, maxWidth, quality) {
 }
 
 // ============================================================
+// BORRADOR (auto-guardado)
+// ============================================================
+function guardarBorrador() {
+  if (!state.local || state.screen === 'success') return;
+  try {
+    const draft = {
+      ts: Date.now(),
+      auditor:      state.auditor,
+      auditorEmail: state.auditorEmail,
+      acompanante:  state.acompanante,
+      local:        state.local,
+      fecha:        state.fecha,
+      categoryIndex: state.categoryIndex,
+      questionIndex: state.questionIndex,
+      answers:      state.answers,
+    };
+    const json = JSON.stringify(draft);
+    // Si supera ~4MB, guardar sin fotos
+    if (json.length > 4 * 1024 * 1024) {
+      const answersSinFotos = {};
+      Object.keys(draft.answers).forEach(qid => {
+        const a = Object.assign({}, draft.answers[qid]);
+        delete a.foto;
+        answersSinFotos[qid] = a;
+      });
+      draft.answers = answersSinFotos;
+      localStorage.setItem('audit_draft', JSON.stringify(draft));
+    } else {
+      localStorage.setItem('audit_draft', json);
+    }
+  } catch(e) {}
+}
+
+function borrarBorrador() {
+  try { localStorage.removeItem('audit_draft'); } catch(e) {}
+}
+
+// ============================================================
 // ENVIAR AUDITORÍA
 // ============================================================
 async function submitAudit() {
@@ -950,14 +1045,30 @@ async function submitAudit() {
   document.body.appendChild(overlay);
 
   try {
-    const resp = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' });
-    // Apps Script redirige el POST — en moviles la respuesta puede no parsearse
-    // aunque la auditoria si llego. Solo fallar si hubo error de red real.
-    let data = { success: true };
-    try { const text = await resp.text(); if (text) data = JSON.parse(text); } catch (_) {}
-    if (data.success === false) throw new Error(data.error || 'Error desconocido');
-    console.log('Email status:', data.email);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let fetchOk = false;
+    try {
+      await fetch(CONFIG.appsScriptURL, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        mode: 'no-cors',
+        signal: controller.signal,
+      });
+      fetchOk = true;
+    } catch (fetchErr) {
+      if (fetchErr.name === 'AbortError') {
+        throw new Error('La conexión tardó demasiado. Verificá tu conexión a internet e intentá de nuevo.');
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    // Con mode:'no-cors' la respuesta es opaca — si no hubo error de red, la auditoría llegó
+    if (!fetchOk) throw new Error('Error de red al enviar la auditoría.');
+    let data = { success: true, email: '', desviosRepetidos: [] };
     setState({ screen: 'success', auditId, emailStatus: data.email || '', lastPuntaje: puntaje, desviosRepetidos: data.desviosRepetidos || [] });
+    borrarBorrador();
   } catch (err) {
     console.error(err);
     alert('Error al enviar: ' + err.message);
