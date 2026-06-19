@@ -21,6 +21,7 @@ const state = {
   categoryIndex: 0,
   questionIndex: 0,  // una pregunta a la vez
   answers:       {},
+  skipped:       {},
 
   // Submit
   submitting: false,
@@ -438,10 +439,22 @@ function renderAudit() {
       ${!isFirst
         ? `<button class="btn btn-outline" id="btn-prev-q-footer">← Anterior</button>`
         : `<div></div>`}
-      <button class="btn ${isLast ? 'btn-success' : 'btn-primary'}" id="btn-next-q">
-        ${isLast ? 'Ver Resumen →' : 'Siguiente →'}
-      </button>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
+        ${isLast
+          ? (Object.keys(state.skipped).length > 0
+            ? `<div style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;text-align:center">Hay ${Object.keys(state.skipped).length} pregunta${Object.keys(state.skipped).length !== 1 ? 's' : ''} pendiente${Object.keys(state.skipped).length !== 1 ? 's' : ''}. Revisalas antes de enviar.</div>
+               <button class="btn btn-primary" id="btn-go-first-skipped">Revisar preguntas pendientes →</button>
+               <button class="btn btn-outline" id="btn-next-q" style="font-size:13px;color:#6b7280">Enviar igual (dejar sin responder)</button>`
+            : `<button class="btn btn-success" id="btn-next-q">Ver Resumen →</button>`)
+          : `<button class="btn btn-primary" id="btn-next-q">Siguiente →</button>`}
+        ${!isLast
+          ? `<button class="btn btn-outline" id="btn-skip-q" style="border-color:#d1d5db;color:#6b7280;font-size:13px">⏭ Saltar / Contestar luego</button>`
+          : ''}
+      </div>
     </div>
+    ${Object.keys(state.skipped).length > 0
+      ? `<div id="skipped-badge" style="position:fixed;bottom:80px;right:16px;background:#f59e0b;color:#fff;border-radius:99px;padding:8px 14px;font-size:13px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;z-index:100">⏭ ${Object.keys(state.skipped).length} salteada${Object.keys(state.skipped).length !== 1 ? 's' : ''}</div>`
+      : ''}
   `;
 }
 
@@ -700,6 +713,7 @@ function attachListeners() {
         categoryIndex: draft.categoryIndex || 0,
         questionIndex: draft.questionIndex || 0,
         answers:       draft.answers      || {},
+        skipped:       draft.skipped      || {},
         screen:        'audit',
       });
       render();
@@ -744,13 +758,16 @@ function attachListeners() {
     const cats = buildCategories(state.local.isCausa);
     if (!cats.length) return alert('No se encontraron preguntas para este local.');
 
-    setState({ categories: cats, categoryIndex: 0, questionIndex: 0, answers: {}, screen: 'audit' });
+    setState({ categories: cats, categoryIndex: 0, questionIndex: 0, answers: {}, skipped: {}, screen: 'audit' });
   });
 
   // Navegación pregunta a pregunta
   on('btn-next-q', 'click', nextQuestion);
   on('btn-prev-q', 'click', prevQuestion);
   on('btn-prev-q-footer', 'click', prevQuestion);
+  on('btn-skip-q', 'click', skipQuestion);
+  on('btn-go-first-skipped', 'click', goToFirstSkipped);
+  on('skipped-badge', 'click', goToFirstSkipped);
 
   // Volver al audit desde summary
   on('btn-back-to-audit', 'click', () => {
@@ -852,7 +869,7 @@ function attachListeners() {
     Object.assign(state, {
       screen: 'welcome', local: null, acompanante: '',
       categories: [], categoryIndex: 0, questionIndex: 0,
-      answers: {}, auditId: '', error: '', submitting: false,
+      answers: {}, skipped: {}, auditId: '', error: '', submitting: false,
     });
     if (!state.auditorEmail) state.auditor = ''; // limpiar si no es Google
     render();
@@ -885,6 +902,13 @@ function nextQuestion() {
     }
   }
 
+  // Si esta pregunta estaba salteada, removerla del set
+  const catCur = state.categories[state.categoryIndex];
+  const qCur   = catCur.questions[state.questionIndex];
+  if (state.skipped[qCur.id]) {
+    delete state.skipped[qCur.id];
+  }
+
   const cat = state.categories[state.categoryIndex];
   if (state.questionIndex < cat.questions.length - 1) {
     setState({ questionIndex: state.questionIndex + 1 });
@@ -906,6 +930,38 @@ function prevQuestion() {
   } else {
     if (confirm('¿Salir de la auditoría? Se perderá el progreso no guardado.')) {
       setState({ screen: 'setup' });
+    }
+  }
+}
+
+function skipQuestion() {
+  saveCurrentAnswer();
+  const cat = state.categories[state.categoryIndex];
+  const q   = cat.questions[state.questionIndex];
+  state.skipped[q.id] = true;
+
+  const totalCats    = state.categories.length;
+  const totalQsInCat = cat.questions.length;
+  if (state.questionIndex < totalQsInCat - 1) {
+    setState({ questionIndex: state.questionIndex + 1 });
+  } else if (state.categoryIndex < totalCats - 1) {
+    setState({ categoryIndex: state.categoryIndex + 1, questionIndex: 0 });
+  } else {
+    setState({ screen: 'audit' }); // ya está en la última, re-render para mostrar advertencia
+  }
+  guardarBorrador();
+}
+
+function goToFirstSkipped() {
+  const skippedIds = Object.keys(state.skipped);
+  if (!skippedIds.length) return;
+  for (let ci = 0; ci < state.categories.length; ci++) {
+    const cat = state.categories[ci];
+    for (let qi = 0; qi < cat.questions.length; qi++) {
+      if (state.skipped[cat.questions[qi].id]) {
+        setState({ categoryIndex: ci, questionIndex: qi });
+        return;
+      }
     }
   }
 }
@@ -977,6 +1033,7 @@ function guardarBorrador() {
       categoryIndex: state.categoryIndex,
       questionIndex: state.questionIndex,
       answers:      state.answers,
+      skipped:      state.skipped,
     };
     const json = JSON.stringify(draft);
     // Si supera ~4MB, guardar sin fotos

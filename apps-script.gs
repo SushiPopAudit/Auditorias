@@ -302,20 +302,48 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + puntajeHtml + '</div>';
 
   // ---- 2. DATOS ----
-  var acompananteRow = data.acompanante
-    ? '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Acompa&ntilde;ante</td><td style="padding:3px 0;font-weight:600;font-size:13px" colspan="3">' + data.acompanante + '</td></tr>'
+  var acompananteDiv = data.acompanante
+    ? '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Acompa&ntilde;ante</span><br><span style="font-weight:600;font-size:13px">' + data.acompanante + '</span></div>'
     : '';
 
   var datosHtml = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb">'
     + '<table style="width:100%;border-collapse:collapse">'
-    + '<tr><td style="padding:3px 0;color:#666;font-size:13px;width:110px">Local</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.local + '</td>'
-    + '<td style="padding:3px 0;color:#666;font-size:13px;width:110px">Auditor</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.auditor + '</td></tr>'
-    + acompananteRow
-    + '<tr><td style="padding:3px 0;color:#666;font-size:13px">Fecha</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + formatFecha(data.fecha) + ' ' + (data.hora || '') + '</td>'
-    + '<td style="padding:3px 0;color:#666;font-size:13px">Marca</td><td style="padding:3px 0;font-weight:600;font-size:13px">' + data.marca + '</td></tr>'
+    + '<tr>'
+    + '<td style="vertical-align:top;width:50%;padding-right:16px">'
+    + '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Local</span><br><span style="font-weight:600;font-size:13px">' + data.local + '</span></div>'
+    + '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Fecha</span><br><span style="font-weight:600;font-size:13px">' + formatFecha(data.fecha) + ' ' + (data.hora || '') + '</span></div>'
+    + '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Marca</span><br><span style="font-weight:600;font-size:13px">' + data.marca + '</span></div>'
+    + '</td>'
+    + '<td style="vertical-align:top;width:50%">'
+    + '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Auditor</span><br><span style="font-weight:600;font-size:13px">' + data.auditor + '</span></div>'
+    + acompananteDiv
+    + '</td>'
+    + '</tr>'
     + '</table></div>';
 
-  // ---- 3. REPROBADO POR NOTA DE ORO ----
+  // ---- 3. HISTORIAL ----
+  var seccionHistorial = '';
+  if (historial) {
+    var histHtml = '';
+    if (historial.prevAudit) {
+      var pa = historial.prevAudit;
+      var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
+      histHtml += '<p style="margin:0 0 8px;font-size:13px;color:#1a1a1a">'
+        + '<strong>Auditor&iacute;a anterior:</strong> ' + formatFecha(pa.fecha) + ' — ' + paLabel + '</p>';
+    }
+    if (historial.promedioMes !== null) {
+      histHtml += '<p style="margin:0;font-size:13px;color:#1a1a1a">'
+        + '<strong>Promedio del mes (' + historial.auditsMes + ' auditor&iacute;a' + (historial.auditsMes !== 1 ? 's' : '') + '):</strong> '
+        + historial.promedioMes + '%</p>';
+    }
+    if (histHtml) {
+      seccionHistorial = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f8fafc">'
+        + '<h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">Historial</h2>'
+        + histHtml + '</div>';
+    }
+  }
+
+  // ---- 4. REPROBADO POR NOTA DE ORO ----
   var seccionReprobado = '';
   if (data.puntaje && data.puntaje.reprobado) {
     var criticosReprobados = rows.filter(function(r) {
@@ -350,7 +378,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       + filasCrit + '</div>';
   }
 
-  // ---- 4+5. GRÁFICO Y % POR CATEGORÍA ----
+  // ---- 5+6. GRÁFICO Y % POR CATEGORÍA ----
   var maxPts     = { 'critico':4,'crítico':4,'alta':3,'media':2,'baja':1 };
   var parcialPts = { 'critico':2,'crítico':2,'alta':1,'media':1,'baja':0 };
   var catMap = {};
@@ -400,7 +428,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<table style="width:100%;border-collapse:collapse">' + filasCatHtml + '</table>'
     + '</div>';
 
-  // ---- 6. PUNTOS A CORREGIR ----
+  // ---- 7. PUNTOS A CORREGIR ----
   // Si hay reprobado, excluir los críticos que no cumplen (ya mostrados arriba)
   var noOkRows = rows.filter(function(r){
     var v = (r[11]||'').toLowerCase();
@@ -461,7 +489,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       + filasNoOkHtml + '</div>';
   }
 
-  // ---- 7. DESVÍOS REITERADOS ----
+  // ---- 8. DESVÍOS REITERADOS ----
   var seccionRepetidos = '';
   var rep = desviosRepetidos || [];
   if (rep.length) {
@@ -497,28 +525,6 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       + '</table></div>';
   }
 
-  // ---- 8. HISTORIAL ----
-  var seccionHistorial = '';
-  if (historial) {
-    var histHtml = '';
-    if (historial.prevAudit) {
-      var pa = historial.prevAudit;
-      var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
-      histHtml += '<p style="margin:0 0 8px;font-size:13px;color:#1a1a1a">'
-        + '<strong>Auditor&iacute;a anterior:</strong> ' + formatFecha(pa.fecha) + ' — ' + paLabel + '</p>';
-    }
-    if (historial.promedioMes !== null) {
-      histHtml += '<p style="margin:0;font-size:13px;color:#1a1a1a">'
-        + '<strong>Promedio del mes (' + historial.auditsMes + ' auditor&iacute;a' + (historial.auditsMes !== 1 ? 's' : '') + '):</strong> '
-        + historial.promedioMes + '%</p>';
-    }
-    if (histHtml) {
-      seccionHistorial = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f8fafc">'
-        + '<h2 style="margin:0 0 12px;font-size:15px;color:#1a1a1a">Historial</h2>'
-        + histHtml + '</div>';
-    }
-  }
-
   // ---- 9. SISTEMA DE PUNTOS ----
   var seccionSistema =
     '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb;background:#f1f5f9">'
@@ -550,7 +556,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<p style="margin:12px 0 0;font-size:11px;color:#64748b;font-style:italic">Los puntos Cr&iacute;ticos (Nota de Oro) reprueban la auditor&iacute;a autom&aacute;ticamente si no se cumplen, independientemente del puntaje total.</p>'
     + '</div>';
 
-  // ---- 10. FOOTER ----
+  // ---- 10. FOOTER ----  (renumbered — was 10)
   var pdfBtnHtml = '';
   if (pdfUrl) {
     pdfBtnHtml = '<a href="' + pdfUrl + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;margin:4px">Descargar PDF</a>';
@@ -569,11 +575,11 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<div style="max-width:700px;margin:0 auto;background:#fff">'
     + headerHtml
     + datosHtml
+    + seccionHistorial
     + seccionReprobado
     + seccionGraficoYCat
     + seccionNoOk
     + seccionRepetidos
-    + seccionHistorial
     + seccionSistema
     + footerHtml
     + '</div></body></html>';
