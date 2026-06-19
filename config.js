@@ -17,5 +17,5 @@ const CONFIG = {
   appsScriptURL: 'https://script.google.com/macros/s/AKfycbwtsRNwBylKb_Nis4hUXlhj5epPeF7VGgGWSZzzHNAQ7Py00nzPp6g_7D9DsyelOCLB/exec',
 
   // ID de la carpeta de Google Drive donde se guardarán las fotos
-  driveFolderID: '1a6RWhFsza7AhNl_HHSTh59c4xWUXMUZk',
+  driveFolderID: '1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P',
 };

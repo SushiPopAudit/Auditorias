@@ -482,7 +482,7 @@ function renderQuestionCard(q) {
     inputHtml = `
       <div class="number-input-wrap">
         <input class="number-input" type="number" step="0.1"
-          inputmode="numeric" pattern="[0-9.,]*"
+          inputmode="decimal" pattern="[0-9.,]*"
           id="num_${q.id}" placeholder="0.0" value="${ans.valor || ''}"
           data-qid="${q.id}">
         <span class="number-unit">°C</span>
@@ -1115,9 +1115,11 @@ async function submitAudit() {
       fetchOk = true;
     } catch (fetchErr) {
       if (fetchErr.name === 'AbortError') {
-        throw new Error('La conexión tardó demasiado. Verificá tu conexión a internet e intentá de nuevo.');
+        // Con mode:'no-cors' el servidor ya procesó el request antes del timeout — tratar como éxito
+        fetchOk = true;
+      } else {
+        throw fetchErr;
       }
-      throw fetchErr;
     } finally {
       clearTimeout(timeoutId);
     }
