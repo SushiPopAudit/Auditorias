@@ -524,22 +524,16 @@ function renderAudit() {
       ${renderQuestionCard(q)}
     </div>
 
-    <div class="nav-footer">
-      ${!isFirst
-        ? `<button class="btn btn-outline" id="btn-prev-q-footer">← Anterior</button>`
-        : `<div></div>`}
-      <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
+    <div class="nav-footer" style="flex-direction:column;gap:8px">
+      <div style="display:flex;gap:8px;width:100%">
+        ${!isFirst
+          ? `<button class="btn btn-outline" id="btn-prev-q-footer" style="flex:1">← Anterior</button>`
+          : `<div style="flex:1"></div>`}
         ${isLast
-          ? (skippedInCat > 0
-            ? `<div style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;text-align:center">${skippedInCat} pregunta${skippedInCat !== 1 ? 's' : ''} pendiente${skippedInCat !== 1 ? 's' : ''} en esta categoría</div>
-               <button class="btn btn-primary" id="btn-go-first-skipped">Responder pendientes →</button>
-               <button class="btn btn-outline" id="btn-next-q" style="font-size:13px;color:#6b7280">Volver a categorías igual</button>`
-            : `<button class="btn btn-success" id="btn-next-q">Completar categoría →</button>`)
-          : `<button class="btn btn-primary" id="btn-next-q">Siguiente →</button>`}
-        ${!isLast
-          ? `<button class="btn btn-outline" id="btn-skip-q" style="border-color:#d1d5db;color:#6b7280;font-size:13px">⏭ Saltar / Contestar luego</button>`
-          : ''}
+          ? `<button class="btn btn-success" id="btn-next-q" style="flex:2">Completar categoría →</button>`
+          : `<button class="btn btn-primary" id="btn-next-q" style="flex:2">Siguiente →</button>`}
       </div>
+      <button class="btn btn-outline" id="btn-back-to-cats-footer" style="width:100%;font-size:13px;color:#64748b;border-color:#e2e8f0">‹ Volver a categorías</button>
     </div>`;
 }
 
@@ -811,8 +805,9 @@ function attachListeners() {
   });
   on('btn-go-summary', 'click', () => setState({ screen: 'summary' }));
 
-  // Audit: volver a cat-select
-  on('btn-back-to-cats', 'click', () => { saveCurrentAnswer(); setState({ screen: 'cat-select' }); });
+  // Audit: volver a cat-select (header y footer)
+  on('btn-back-to-cats',        'click', () => { saveCurrentAnswer(); setState({ screen: 'cat-select' }); });
+  on('btn-back-to-cats-footer', 'click', () => { saveCurrentAnswer(); setState({ screen: 'cat-select' }); });
 
   // Borrador
   on('btn-draft-continue', 'click', () => {
@@ -983,11 +978,16 @@ function attachListeners() {
 function nextQuestion() {
   saveCurrentAnswer();
 
-  // Validar observación obligatoria (No cumple o parcial)
   const cat0 = state.categories[state.categoryIndex];
   const q0   = cat0.questions[state.questionIndex];
   const ans0 = state.answers[q0.id] || {};
   const val0 = (ans0.valor || '').toLowerCase();
+
+  // Validar que haya una respuesta
+  if (!ans0.valor || !String(ans0.valor).trim()) {
+    alert('Ingresá una respuesta antes de continuar.');
+    return;
+  }
   if (val0 === 'no cumple' || val0.includes('parcial')) {
     if (!(ans0.observacion || '').trim()) {
       alert('La observación es obligatoria cuando la respuesta es "No cumple" o parcial.');
