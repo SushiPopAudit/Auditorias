@@ -983,11 +983,7 @@ function nextQuestion() {
   const ans0 = state.answers[q0.id] || {};
   const val0 = (ans0.valor || '').toLowerCase();
 
-  // Validar que haya una respuesta
-  if (!ans0.valor || !String(ans0.valor).trim()) {
-    alert('Ingresá una respuesta antes de continuar.');
-    return;
-  }
+  // Solo validar reglas condicionales si hay una respuesta
   if (val0 === 'no cumple' || val0.includes('parcial')) {
     if (!(ans0.observacion || '').trim()) {
       alert('La observación es obligatoria cuando la respuesta es "No cumple" o parcial.');
