@@ -1000,14 +1000,6 @@ function nextQuestion() {
     }
   }
 
-  // Validar foto obligatoria por campo (solo si hay respuesta)
-  if (val0 && (q0.imagen === 'si' || q0.imagen === 'obligatorio')) {
-    const fotos0 = ans0.fotos || (ans0.foto ? [ans0.foto] : []);
-    if (!fotos0.length) {
-      alert('La foto es obligatoria para esta pregunta.');
-      return;
-    }
-  }
 
   // Remover de skipped si estaba salteada
   if (state.skipped[q0.id]) delete state.skipped[q0.id];
