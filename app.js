@@ -9,8 +9,9 @@ const state = {
   // Auth
   auditor:      '',
   auditorEmail: '',
-  acompanante:  '',
-  googleReady:  false,
+  acompanante:         '',
+  posicionAcompanante: '',
+  googleReady:         false,
 
   // Setup
   local: null,       // {nombre, isCausa, emails}
@@ -264,13 +265,14 @@ function setState(patch) {
 function render() {
   const app = document.getElementById('app');
   switch (state.screen) {
-    case 'loading': app.innerHTML = renderLoading(); break;
-    case 'welcome': app.innerHTML = renderWelcome(); break;
-    case 'setup':   app.innerHTML = renderSetup();   break;
-    case 'audit':   app.innerHTML = renderAudit();   break;
-    case 'summary': app.innerHTML = renderSummary(); break;
-    case 'success': app.innerHTML = renderSuccess(); break;
-    case 'error':   app.innerHTML = renderError();   break;
+    case 'loading':    app.innerHTML = renderLoading();    break;
+    case 'welcome':    app.innerHTML = renderWelcome();    break;
+    case 'setup':      app.innerHTML = renderSetup();      break;
+    case 'cat-select': app.innerHTML = renderCatSelect();  break;
+    case 'audit':      app.innerHTML = renderAudit();      break;
+    case 'summary':    app.innerHTML = renderSummary();    break;
+    case 'success':    app.innerHTML = renderSuccess();    break;
+    case 'error':      app.innerHTML = renderError();      break;
   }
   attachListeners();
 }
@@ -380,6 +382,18 @@ function renderSetup() {
         </div>
 
         <div class="form-group">
+          <label class="form-label">Posición del acompañante</label>
+          <select class="form-control" id="sel-posicion-acomp">
+            <option value="">— Sin especificar —</option>
+            <option value="Franquiciado" ${state.posicionAcompanante === 'Franquiciado' ? 'selected' : ''}>Franquiciado</option>
+            <option value="Jefe de cocina" ${state.posicionAcompanante === 'Jefe de cocina' ? 'selected' : ''}>Jefe de cocina</option>
+            <option value="Supervisor" ${state.posicionAcompanante === 'Supervisor' ? 'selected' : ''}>Supervisor</option>
+            <option value="Encargado" ${state.posicionAcompanante === 'Encargado' ? 'selected' : ''}>Encargado</option>
+            <option value="Otro" ${state.posicionAcompanante === 'Otro' ? 'selected' : ''}>Otro</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Fecha de visita</label>
           <input class="form-control" id="inp-fecha" type="date" value="${state.fecha}">
         </div>
@@ -392,35 +406,110 @@ function renderSetup() {
 }
 
 // ============================================================
+// PANTALLA: SELECCIÓN DE CATEGORÍA
+// ============================================================
+function renderCatSelect() {
+  const allQs = state.categories.flatMap(c => c.questions);
+  const totalAnswered = allQs.filter(q => state.answers[q.id]?.valor).length;
+  const pct = allQs.length ? Math.round(totalAnswered / allQs.length * 100) : 0;
+
+  const catCards = state.categories.map((cat, ci) => {
+    const total      = cat.questions.length;
+    const answered   = cat.questions.filter(q => state.answers[q.id]?.valor).length;
+    const skippedCnt = cat.questions.filter(q => state.skipped[q.id]).length;
+    const complete   = answered === total && skippedCnt === 0;
+    const inProgress = answered > 0 || skippedCnt > 0;
+
+    let bg, border, labelTxt, labelColor;
+    if (complete)        { bg='#f0fdf4'; border='#16a34a'; labelTxt='✓ Completa';                                  labelColor='#16a34a'; }
+    else if (skippedCnt) { bg='#fff7ed'; border='#f97316'; labelTxt=skippedCnt+' pendiente'+(skippedCnt!==1?'s':''); labelColor='#ea580c'; }
+    else if (inProgress) { bg='#fffbeb'; border='#d97706'; labelTxt=answered+'/'+total+' respondidas';             labelColor='#d97706'; }
+    else                 { bg='#f8fafc'; border='#cbd5e1'; labelTxt=total+' preguntas';                            labelColor='#64748b'; }
+
+    const barHtml = inProgress && !complete
+      ? `<div style="margin-top:8px;background:#e2e8f0;border-radius:99px;height:6px;overflow:hidden"><div style="background:${border};width:${Math.round(answered/total*100)}%;height:100%;border-radius:99px"></div></div>`
+      : '';
+
+    return `<button class="cat-select-card" data-ci="${ci}"
+      style="background:${bg};border:2px solid ${border};border-radius:12px;padding:16px;width:100%;text-align:left;cursor:pointer;margin-bottom:10px;display:block;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:15px;font-weight:700;color:#1a1a1a">${escHtml(cat.name)}</div>
+        <div style="font-size:12px;font-weight:700;color:${labelColor};white-space:nowrap;margin-left:8px">${labelTxt}</div>
+      </div>${barHtml}
+    </button>`;
+  }).join('');
+
+  const allComplete = state.categories.every(cat =>
+    cat.questions.every(q => state.answers[q.id]?.valor && !state.skipped[q.id])
+  );
+
+  return `
+    <div class="header">
+      <button class="header-back" id="btn-back-to-setup">‹</button>
+      <div style="flex:1">
+        <div class="header-title">${escHtml(state.local.nombre)}</div>
+        <div class="header-subtitle">Seleccioná una categoría</div>
+      </div>
+      <button id="btn-borrar-auditoria" style="background:none;border:none;color:#ef4444;font-size:13px;font-weight:600;cursor:pointer;padding:4px 8px">Borrar</button>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" style="width:${pct}%"></div>
+    </div>
+
+    <div class="main" style="padding-bottom:100px">
+      <div style="padding:8px 0 16px;font-size:13px;color:#64748b;text-align:center">
+        ${totalAnswered} de ${allQs.length} preguntas respondidas
+      </div>
+      ${catCards}
+    </div>
+
+    <div class="nav-footer">
+      ${allComplete
+        ? `<button class="btn btn-success" id="btn-go-summary" style="width:100%">Ver Resumen →</button>`
+        : `<button class="btn btn-outline" style="width:100%;color:#94a3b8;border-color:#e2e8f0;pointer-events:none">Completá todas las categorías para continuar</button>`}
+    </div>`;
+}
+
+function borrarAuditoria() {
+  if (confirm('¿Borrar la auditoría? Se eliminarán todas las respuestas guardadas.')) {
+    borrarBorrador();
+    Object.assign(state, {
+      screen: 'welcome', local: null, acompanante: '', posicionAcompanante: '',
+      categories: [], categoryIndex: 0, questionIndex: 0,
+      answers: {}, skipped: {}, auditId: '', error: '', submitting: false,
+    });
+    render();
+  }
+}
+
+// ============================================================
 // PANTALLA: AUDITORÍA — UNA PREGUNTA A LA VEZ
 // ============================================================
 function renderAudit() {
-  const cat      = state.categories[state.categoryIndex];
-  const q        = cat.questions[state.questionIndex];
-  const totalCats = state.categories.length;
+  const cat          = state.categories[state.categoryIndex];
+  const q            = cat.questions[state.questionIndex];
   const totalQsInCat = cat.questions.length;
 
-  // Progreso global
-  const allQs = state.categories.flatMap(c => c.questions);
+  const allQs     = state.categories.flatMap(c => c.questions);
   const globalIdx = state.categories
     .slice(0, state.categoryIndex)
     .reduce((sum, c) => sum + c.questions.length, 0) + state.questionIndex;
   const pct = Math.round(((globalIdx + 1) / allQs.length) * 100);
 
-  const isFirst = state.categoryIndex === 0 && state.questionIndex === 0;
-  const isLast  = state.categoryIndex === totalCats - 1
-               && state.questionIndex === totalQsInCat - 1;
+  const isFirst      = state.questionIndex === 0;
+  const isLast       = state.questionIndex === totalQsInCat - 1;
+  const skippedInCat = cat.questions.filter(q2 => state.skipped[q2.id]).length;
 
   return `
     <div class="header">
-      <button class="header-back" id="btn-prev-q">‹</button>
+      <button class="header-back" id="btn-back-to-cats">‹</button>
       <div style="flex:1">
         <div class="header-title">${escHtml(cat.name)}</div>
         <div class="header-subtitle">${escHtml(state.local.nombre)}</div>
       </div>
       <div class="header-info">
-        <div style="font-size:0.85rem;color:#fff;font-weight:700">${globalIdx + 1}<span style="color:#94a3b8;font-weight:400"> / ${allQs.length}</span></div>
-        <div style="font-size:0.7rem;color:#64748b">Cat. ${state.categoryIndex + 1}/${totalCats}</div>
+        <div style="font-size:0.85rem;color:#fff;font-weight:700">${state.questionIndex + 1}<span style="color:#94a3b8;font-weight:400"> / ${totalQsInCat}</span></div>
+        <button id="btn-borrar-audit-header" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;padding:2px 0">borrar</button>
       </div>
     </div>
     <div class="progress-bar-wrap">
@@ -441,21 +530,17 @@ function renderAudit() {
         : `<div></div>`}
       <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
         ${isLast
-          ? (Object.keys(state.skipped).length > 0
-            ? `<div style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;text-align:center">Hay ${Object.keys(state.skipped).length} pregunta${Object.keys(state.skipped).length !== 1 ? 's' : ''} pendiente${Object.keys(state.skipped).length !== 1 ? 's' : ''}. Revisalas antes de enviar.</div>
-               <button class="btn btn-primary" id="btn-go-first-skipped">Revisar preguntas pendientes →</button>
-               <button class="btn btn-outline" id="btn-next-q" style="font-size:13px;color:#6b7280">Enviar igual (dejar sin responder)</button>`
-            : `<button class="btn btn-success" id="btn-next-q">Ver Resumen →</button>`)
+          ? (skippedInCat > 0
+            ? `<div style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;text-align:center">${skippedInCat} pregunta${skippedInCat !== 1 ? 's' : ''} pendiente${skippedInCat !== 1 ? 's' : ''} en esta categoría</div>
+               <button class="btn btn-primary" id="btn-go-first-skipped">Responder pendientes →</button>
+               <button class="btn btn-outline" id="btn-next-q" style="font-size:13px;color:#6b7280">Volver a categorías igual</button>`
+            : `<button class="btn btn-success" id="btn-next-q">Completar categoría →</button>`)
           : `<button class="btn btn-primary" id="btn-next-q">Siguiente →</button>`}
         ${!isLast
           ? `<button class="btn btn-outline" id="btn-skip-q" style="border-color:#d1d5db;color:#6b7280;font-size:13px">⏭ Saltar / Contestar luego</button>`
           : ''}
       </div>
-    </div>
-    ${Object.keys(state.skipped).length > 0
-      ? `<div id="skipped-badge" style="position:fixed;bottom:80px;right:16px;background:#f59e0b;color:#fff;border-radius:99px;padding:8px 14px;font-size:13px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;z-index:100">⏭ ${Object.keys(state.skipped).length} salteada${Object.keys(state.skipped).length !== 1 ? 's' : ''}</div>`
-      : ''}
-  `;
+    </div>`;
 }
 
 function renderQuestionCard(q) {
@@ -504,24 +589,30 @@ function renderQuestionCard(q) {
         style="${obsRequired ? 'border:2px solid #e4001b;' : ''}">${ans.observacion || ''}</textarea>
     </div>` : '';
 
-  const hasPhoto = ans.foto?.dataURL;
-  const photoReqLabel = needsPhoto && !hasPhoto
+  const fotos = ans.fotos || (ans.foto ? [ans.foto] : []);
+  const valLower = (ans.valor || '').toLowerCase();
+  const fotoByAnswer = valLower === 'no cumple' || valLower.includes('parcial');
+  const fotoRequired = needsPhoto || fotoByAnswer;
+  const fotoReqLabel = fotoRequired && fotos.length === 0
     ? '<div style="font-size:12px;color:#e4001b;font-weight:700;margin-top:4px">* Foto requerida</div>'
     : '';
+  const fotosPreviewHtml = fotos.map((f, idx) => `
+    <div class="photo-preview-wrap" style="margin-top:8px">
+      <img class="photo-preview" src="${f.dataURL}" alt="foto ${idx + 1}">
+      <button class="photo-remove" data-qid="${q.id}" data-fotoidx="${idx}">✕</button>
+    </div>`).join('');
   const photoHtml = `
     <div class="photo-section">
-      <button class="photo-btn ${needsPhoto ? 'required' : ''} ${hasPhoto ? 'has-photo' : ''}"
+      <button class="photo-btn ${fotoRequired ? 'required' : ''} ${fotos.length > 0 ? 'has-photo' : ''}"
         data-qid="${q.id}" id="photobtn_${q.id}">
-        📷 ${hasPhoto ? 'Foto tomada ✓' : needsPhoto ? 'Foto requerida *' : 'Agregar foto'}
+        📷 ${fotos.length > 0
+          ? fotos.length + ' foto' + (fotos.length !== 1 ? 's' : '') + ' ✓ &mdash; Agregar otra'
+          : fotoRequired ? 'Foto requerida *' : 'Agregar foto'}
       </button>
-      ${photoReqLabel}
+      ${fotoReqLabel}
       <input type="file" accept="image/*" capture="environment"
         id="fileinput_${q.id}" data-qid="${q.id}" style="display:none">
-      ${hasPhoto
-        ? `<div class="photo-preview-wrap" style="margin-top:8px">
-             <img class="photo-preview" src="${ans.foto.dataURL}" alt="foto">
-             <button class="photo-remove" data-qid="${q.id}" id="photoremove_${q.id}">✕</button>
-           </div>` : ''}
+      ${fotosPreviewHtml}
     </div>`;
 
   return `
@@ -692,8 +783,36 @@ function renderError() {
 // EVENT LISTENERS
 // ============================================================
 function attachListeners() {
-  on('btn-go-setup',   'click', () => setState({ screen: 'setup' }));
+  on('btn-go-setup',    'click', () => setState({ screen: 'setup' }));
   on('btn-back-welcome','click', () => setState({ screen: 'welcome' }));
+
+  // Borrar auditoría (aparece en cat-select y en header de audit)
+  on('btn-borrar-auditoria',   'click', borrarAuditoria);
+  on('btn-borrar-audit-header','click', borrarAuditoria);
+
+  // Cat-select: tarjetas de categoría
+  document.querySelectorAll('.cat-select-card').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ci  = parseInt(btn.dataset.ci);
+      const cat = state.categories[ci];
+      // Empezar en la primera pregunta sin responder (o skipped), sino en la primera
+      let startQ = 0;
+      const firstPending = cat.questions.findIndex(q => !state.answers[q.id]?.valor || state.skipped[q.id]);
+      if (firstPending !== -1) startQ = firstPending;
+      setState({ screen: 'audit', categoryIndex: ci, questionIndex: startQ });
+    });
+  });
+
+  // Cat-select: volver a setup, ver resumen
+  on('btn-back-to-setup', 'click', () => {
+    if (confirm('¿Volver a la configuración? El progreso se mantiene guardado.')) {
+      setState({ screen: 'setup' });
+    }
+  });
+  on('btn-go-summary', 'click', () => setState({ screen: 'summary' }));
+
+  // Audit: volver a cat-select
+  on('btn-back-to-cats', 'click', () => { saveCurrentAnswer(); setState({ screen: 'cat-select' }); });
 
   // Borrador
   on('btn-draft-continue', 'click', () => {
@@ -704,17 +823,18 @@ function attachListeners() {
       if (!draft.local) return;
       const cats = buildCategories(draft.local.isCausa);
       Object.assign(state, {
-        auditor:       draft.auditor      || state.auditor,
-        auditorEmail:  draft.auditorEmail || state.auditorEmail,
-        acompanante:   draft.acompanante  || '',
-        local:         draft.local,
-        fecha:         draft.fecha        || state.fecha,
-        categories:    cats,
-        categoryIndex: draft.categoryIndex || 0,
-        questionIndex: draft.questionIndex || 0,
-        answers:       draft.answers      || {},
-        skipped:       draft.skipped      || {},
-        screen:        'audit',
+        auditor:             draft.auditor             || state.auditor,
+        auditorEmail:        draft.auditorEmail        || state.auditorEmail,
+        acompanante:         draft.acompanante         || '',
+        posicionAcompanante: draft.posicionAcompanante || '',
+        local:               draft.local,
+        fecha:               draft.fecha               || state.fecha,
+        categories:          cats,
+        categoryIndex:       draft.categoryIndex       || 0,
+        questionIndex:       draft.questionIndex       || 0,
+        answers:             draft.answers             || {},
+        skipped:             draft.skipped             || {},
+        screen:              'cat-select',
       });
       render();
     } catch(e) {
@@ -742,15 +862,19 @@ function attachListeners() {
   const inpAcompanante = document.getElementById('inp-acompanante');
   if (inpAcompanante) inpAcompanante.addEventListener('input', () => { state.acompanante = inpAcompanante.value; });
 
+  const selPosicion = document.getElementById('sel-posicion-acomp');
+  if (selPosicion) selPosicion.addEventListener('change', () => { state.posicionAcompanante = selPosicion.value; });
+
   const inpFecha = document.getElementById('inp-fecha');
   if (inpFecha) inpFecha.addEventListener('change', () => { state.fecha = inpFecha.value; });
 
   on('btn-start-audit', 'click', () => {
     // Leer valores actuales
-    if (selLocal)       state.local       = state.locales.find(l => l.nombre === selLocal.value) || state.local;
-    if (inpAuditor)     state.auditor     = inpAuditor.value     || state.auditor;
-    if (inpAcompanante) state.acompanante = inpAcompanante.value || state.acompanante;
-    if (inpFecha)       state.fecha       = inpFecha.value       || state.fecha;
+    if (selLocal)       state.local               = state.locales.find(l => l.nombre === selLocal.value) || state.local;
+    if (inpAuditor)     state.auditor             = inpAuditor.value     || state.auditor;
+    if (inpAcompanante) state.acompanante         = inpAcompanante.value || state.acompanante;
+    if (selPosicion)    state.posicionAcompanante = selPosicion.value    || state.posicionAcompanante;
+    if (inpFecha)       state.fecha               = inpFecha.value       || state.fecha;
 
     if (!state.local)   return alert('Seleccioná un local.');
     if (!state.auditor) return alert('Ingresá el nombre del auditor.');
@@ -758,7 +882,7 @@ function attachListeners() {
     const cats = buildCategories(state.local.isCausa);
     if (!cats.length) return alert('No se encontraron preguntas para este local.');
 
-    setState({ categories: cats, categoryIndex: 0, questionIndex: 0, answers: {}, skipped: {}, screen: 'audit' });
+    setState({ categories: cats, categoryIndex: 0, questionIndex: 0, answers: {}, skipped: {}, screen: 'cat-select' });
   });
 
   // Navegación pregunta a pregunta
@@ -769,15 +893,8 @@ function attachListeners() {
   on('btn-go-first-skipped', 'click', goToFirstSkipped);
   on('skipped-badge', 'click', goToFirstSkipped);
 
-  // Volver al audit desde summary
-  on('btn-back-to-audit', 'click', () => {
-    const last = state.categories[state.categories.length - 1];
-    setState({
-      screen: 'audit',
-      categoryIndex: state.categories.length - 1,
-      questionIndex: last.questions.length - 1,
-    });
-  });
+  // Volver a cat-select desde summary
+  on('btn-back-to-audit', 'click', () => setState({ screen: 'cat-select' }));
 
   // Respuestas radio
   document.querySelectorAll('.answer-radio').forEach(input => {
@@ -830,44 +947,28 @@ function attachListeners() {
       if (!file) return;
       const dataURL = await compressImage(file, 800, 0.65);
       if (!state.answers[qid]) state.answers[qid] = {};
-      state.answers[qid].foto = { dataURL, name: file.name };
-
-      const photoBtn = document.getElementById(`photobtn_${qid}`);
-      if (photoBtn) { photoBtn.className = 'photo-btn has-photo'; photoBtn.innerHTML = '📷 Foto tomada ✓'; }
-
-      const wrap = photoBtn?.closest('.photo-section');
-      if (wrap && !wrap.querySelector('.photo-preview')) {
-        const div = document.createElement('div');
-        div.className = 'photo-preview-wrap';
-        div.style.marginTop = '8px';
-        div.innerHTML = `<img class="photo-preview" src="${dataURL}" alt="foto">
-          <button class="photo-remove" data-qid="${qid}" id="photoremove_${qid}">✕</button>`;
-        wrap.appendChild(div);
-        div.querySelector('.photo-remove').addEventListener('click', e => {
-          e.stopPropagation();
-          if (state.answers[qid]) delete state.answers[qid].foto;
-          div.remove();
-          if (photoBtn) { photoBtn.className = 'photo-btn'; photoBtn.innerHTML = '📷 Agregar foto'; }
-        });
-      }
+      if (!state.answers[qid].fotos) state.answers[qid].fotos = [];
+      state.answers[qid].fotos.push({ dataURL, name: file.name });
+      guardarBorrador();
+      render();
     });
   });
 
-  document.querySelectorAll('[id^="photoremove_"]').forEach(btn => {
+  document.querySelectorAll('.photo-remove').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const qid = btn.dataset.qid;
-      if (state.answers[qid]) delete state.answers[qid].foto;
-      btn.closest('.photo-preview-wrap')?.remove();
-      const photoBtn = document.getElementById(`photobtn_${qid}`);
-      if (photoBtn) { photoBtn.className = 'photo-btn'; photoBtn.innerHTML = '📷 Agregar foto'; }
+      const idx = parseInt(btn.dataset.fotoidx);
+      if (state.answers[qid]?.fotos) state.answers[qid].fotos.splice(idx, 1);
+      guardarBorrador();
+      render();
     });
   });
 
   on('btn-submit',    'click', submitAudit);
   on('btn-new-audit', 'click', () => {
     Object.assign(state, {
-      screen: 'welcome', local: null, acompanante: '',
+      screen: 'welcome', local: null, acompanante: '', posicionAcompanante: '',
       categories: [], categoryIndex: 0, questionIndex: 0,
       answers: {}, skipped: {}, auditId: '', error: '', submitting: false,
     });
@@ -894,28 +995,32 @@ function nextQuestion() {
     }
   }
 
-  // Validar foto obligatoria
+  // Validar foto obligatoria si No cumple / Parcial
+  if (val0 === 'no cumple' || val0.includes('parcial')) {
+    const fotos0 = ans0.fotos || (ans0.foto ? [ans0.foto] : []);
+    if (!fotos0.length) {
+      alert('La foto es obligatoria cuando la respuesta es "No cumple" o parcial.');
+      return;
+    }
+  }
+
+  // Validar foto obligatoria si el campo lo requiere
   if (q0.imagen === 'si' || q0.imagen === 'obligatorio') {
-    if (!ans0.foto?.dataURL) {
+    const fotos0 = ans0.fotos || (ans0.foto ? [ans0.foto] : []);
+    if (!fotos0.length) {
       alert('La foto es obligatoria para esta pregunta.');
       return;
     }
   }
 
-  // Si esta pregunta estaba salteada, removerla del set
-  const catCur = state.categories[state.categoryIndex];
-  const qCur   = catCur.questions[state.questionIndex];
-  if (state.skipped[qCur.id]) {
-    delete state.skipped[qCur.id];
-  }
+  // Remover de skipped si estaba salteada
+  if (state.skipped[q0.id]) delete state.skipped[q0.id];
 
   const cat = state.categories[state.categoryIndex];
   if (state.questionIndex < cat.questions.length - 1) {
     setState({ questionIndex: state.questionIndex + 1 });
-  } else if (state.categoryIndex < state.categories.length - 1) {
-    setState({ categoryIndex: state.categoryIndex + 1, questionIndex: 0 });
   } else {
-    setState({ screen: 'summary' });
+    setState({ screen: 'cat-select' });
   }
   guardarBorrador();
 }
@@ -924,13 +1029,8 @@ function prevQuestion() {
   saveCurrentAnswer();
   if (state.questionIndex > 0) {
     setState({ questionIndex: state.questionIndex - 1 });
-  } else if (state.categoryIndex > 0) {
-    const prev = state.categories[state.categoryIndex - 1];
-    setState({ categoryIndex: state.categoryIndex - 1, questionIndex: prev.questions.length - 1 });
   } else {
-    if (confirm('¿Salir de la auditoría? Se perderá el progreso no guardado.')) {
-      setState({ screen: 'setup' });
-    }
+    setState({ screen: 'cat-select' });
   }
 }
 
@@ -940,14 +1040,11 @@ function skipQuestion() {
   const q   = cat.questions[state.questionIndex];
   state.skipped[q.id] = true;
 
-  const totalCats    = state.categories.length;
   const totalQsInCat = cat.questions.length;
   if (state.questionIndex < totalQsInCat - 1) {
     setState({ questionIndex: state.questionIndex + 1 });
-  } else if (state.categoryIndex < totalCats - 1) {
-    setState({ categoryIndex: state.categoryIndex + 1, questionIndex: 0 });
   } else {
-    setState({ screen: 'audit' }); // ya está en la última, re-render para mostrar advertencia
+    setState({ screen: 'cat-select' });
   }
   guardarBorrador();
 }
@@ -1024,16 +1121,17 @@ function guardarBorrador() {
   if (!state.local || state.screen === 'success') return;
   try {
     const draft = {
-      ts: Date.now(),
-      auditor:      state.auditor,
-      auditorEmail: state.auditorEmail,
-      acompanante:  state.acompanante,
-      local:        state.local,
-      fecha:        state.fecha,
-      categoryIndex: state.categoryIndex,
-      questionIndex: state.questionIndex,
-      answers:      state.answers,
-      skipped:      state.skipped,
+      ts:                  Date.now(),
+      auditor:             state.auditor,
+      auditorEmail:        state.auditorEmail,
+      acompanante:         state.acompanante,
+      posicionAcompanante: state.posicionAcompanante,
+      local:               state.local,
+      fecha:               state.fecha,
+      categoryIndex:       state.categoryIndex,
+      questionIndex:       state.questionIndex,
+      answers:             state.answers,
+      skipped:             state.skipped,
     };
     const json = JSON.stringify(draft);
     // Si supera ~4MB, guardar sin fotos
@@ -1042,6 +1140,7 @@ function guardarBorrador() {
       Object.keys(draft.answers).forEach(qid => {
         const a = Object.assign({}, draft.answers[qid]);
         delete a.foto;
+        delete a.fotos;
         answersSinFotos[qid] = a;
       });
       draft.answers = answersSinFotos;
@@ -1064,7 +1163,8 @@ async function submitAudit() {
 
   const allQs = state.categories.flatMap(c => c.questions);
   const respuestas = allQs.map(q => {
-    const ans = state.answers[q.id] || {};
+    const ans   = state.answers[q.id] || {};
+    const fotos = ans.fotos || (ans.foto ? [ans.foto] : []);
     return {
       marca:        q.marca,
       categoria:    q.categoria,
@@ -1074,8 +1174,9 @@ async function submitAudit() {
       explicacion:  q.explicacion,
       respuesta:    ans.valor       || '',
       observacion:  ans.observacion || '',
-      fotoBase64:   ans.foto?.dataURL ? ans.foto.dataURL.split(',')[1] : '',
-      fotoNombre:   ans.foto?.name   || '',
+      fotosBase64:  fotos
+        .filter(f => f.dataURL)
+        .map(f => ({ base64: f.dataURL.split(',')[1], nombre: f.name || 'foto.jpg' })),
     };
   });
 
@@ -1088,8 +1189,9 @@ async function submitAudit() {
     hora:         new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     auditor:      state.auditor,
     auditorEmail: state.auditorEmail,
-    acompanante:  state.acompanante || '',
-    local:        state.local.nombre,
+    acompanante:         state.acompanante         || '',
+    posicionAcompanante: state.posicionAcompanante || '',
+    local:               state.local.nombre,
     marca:        state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca',
     emailsLocal:  state.local.emails,
     puntaje:      { pct: puntaje.pct, nivel: puntaje.nivel, obtenido: puntaje.obtenido, posible: puntaje.posible, reprobado: puntaje.reprobado },
