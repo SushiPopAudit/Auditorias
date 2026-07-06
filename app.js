@@ -25,9 +25,10 @@ const state = {
   skipped:       {},
 
   // Submit
-  submitting: false,
-  auditId: '',
-  error: '',
+  submitting:    false,
+  auditId:       '',
+  error:         '',
+  returnScreen:  '',
 };
 
 // ============================================================
@@ -265,14 +266,15 @@ function setState(patch) {
 function render() {
   const app = document.getElementById('app');
   switch (state.screen) {
-    case 'loading':    app.innerHTML = renderLoading();    break;
-    case 'welcome':    app.innerHTML = renderWelcome();    break;
-    case 'setup':      app.innerHTML = renderSetup();      break;
-    case 'cat-select': app.innerHTML = renderCatSelect();  break;
-    case 'audit':      app.innerHTML = renderAudit();      break;
-    case 'summary':    app.innerHTML = renderSummary();    break;
-    case 'success':    app.innerHTML = renderSuccess();    break;
-    case 'error':      app.innerHTML = renderError();      break;
+    case 'loading':         app.innerHTML = renderLoading();         break;
+    case 'welcome':         app.innerHTML = renderWelcome();         break;
+    case 'setup':           app.innerHTML = renderSetup();           break;
+    case 'cat-select':      app.innerHTML = renderCatSelect();       break;
+    case 'audit':           app.innerHTML = renderAudit();           break;
+    case 'incumplimientos': app.innerHTML = renderIncumplimientos(); break;
+    case 'summary':         app.innerHTML = renderSummary();         break;
+    case 'success':         app.innerHTML = renderSuccess();         break;
+    case 'error':           app.innerHTML = renderError();           break;
   }
   attachListeners();
 }
@@ -412,6 +414,10 @@ function renderCatSelect() {
   const allQs = state.categories.flatMap(c => c.questions);
   const totalAnswered = allQs.filter(q => state.answers[q.id]?.valor).length;
   const pct = allQs.length ? Math.round(totalAnswered / allQs.length * 100) : 0;
+  const incumplCnt = allQs.filter(q => {
+    const val = (state.answers[q.id]?.valor || '').toLowerCase();
+    return val.includes('no cumple') || val === 'nocumple' || val.includes('parcial');
+  }).length;
 
   const catCards = state.categories.map((cat, ci) => {
     const total      = cat.questions.length;
@@ -463,7 +469,10 @@ function renderCatSelect() {
       ${catCards}
     </div>
 
-    <div class="nav-footer">
+    <div class="nav-footer" style="flex-direction:column;gap:8px">
+      ${incumplCnt > 0
+        ? `<button class="btn btn-outline" id="btn-ver-incumplimientos" style="width:100%;color:#e4001b;border-color:#fca5a5">⚠ Ver incumplimientos (${incumplCnt})</button>`
+        : ''}
       ${allComplete
         ? `<button class="btn btn-success" id="btn-go-summary" style="width:100%">Ver Resumen →</button>`
         : `<button class="btn btn-outline" style="width:100%;color:#94a3b8;border-color:#e2e8f0;pointer-events:none">Completá todas las categorías para continuar</button>`}
@@ -624,6 +633,114 @@ function renderQuestionCard(q) {
 }
 
 // ============================================================
+// HELPERS DE IMPORTANCIA (frontend)
+// ============================================================
+function impBg(imp) {
+  const i = (imp || '').toLowerCase();
+  if (i === 'critico' || i === 'crítico') return '#fff1f2';
+  if (i === 'alta')  return '#fff7ed';
+  if (i === 'media') return '#fffbeb';
+  return '#f0fdf4';
+}
+function impColor(imp) {
+  const i = (imp || '').toLowerCase();
+  if (i === 'critico' || i === 'crítico') return '#e4001b';
+  if (i === 'alta')  return '#ea580c';
+  if (i === 'media') return '#d97706';
+  return '#16a34a';
+}
+
+// ============================================================
+// PANTALLA: INCUMPLIMIENTOS
+// ============================================================
+function renderIncumplimientos() {
+  const items = [];
+  state.categories.forEach(cat => {
+    cat.questions.forEach(q => {
+      const ans = state.answers[q.id] || {};
+      const val = (ans.valor || '').toLowerCase();
+      if (val.includes('no cumple') || val === 'nocumple' || val.includes('parcial')) {
+        items.push({ q, ans, catName: cat.name });
+      }
+    });
+  });
+
+  const backBtn = `<button class="header-back" id="btn-back-incumpl">‹</button>`;
+
+  if (!items.length) {
+    return `
+      <div class="header">${backBtn}
+        <div style="flex:1"><div class="header-title">Incumplimientos</div>
+        <div class="header-subtitle">${escHtml(state.local.nombre)}</div></div>
+      </div>
+      <div class="main" style="display:flex;flex-direction:column;align-items:center;padding:48px 24px;text-align:center">
+        <div style="font-size:52px;margin-bottom:12px">✓</div>
+        <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:8px">Sin incumplimientos registrados</div>
+        <div style="font-size:14px;color:#64748b">Todos los puntos respondidos cumplen.</div>
+        <button class="btn btn-outline" id="btn-back-incumpl" style="margin-top:24px">Volver</button>
+      </div>`;
+  }
+
+  // Agrupar por categoría
+  const byCat = {};
+  const catOrder = [];
+  items.forEach(item => {
+    if (!byCat[item.catName]) { byCat[item.catName] = []; catOrder.push(item.catName); }
+    byCat[item.catName].push(item);
+  });
+
+  const cardsHtml = catOrder.map(catName => {
+    const filasHtml = byCat[catName].map(({ q, ans }) => {
+      const val       = (ans.valor || '').toLowerCase();
+      const isNC      = val.includes('no cumple') || val === 'nocumple';
+      const resColor  = isNC ? '#e4001b' : '#d97706';
+      const resBg     = isNC ? '#fff1f2' : '#fffbeb';
+      const fotos     = ans.fotos || (ans.foto ? [ans.foto] : []);
+      const fotosHtml = fotos.map(f =>
+        `<img src="${f.dataURL}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;margin:4px 4px 0 0">`
+      ).join('');
+      return `
+        <div style="background:${resBg};border-left:4px solid ${resColor};border-radius:8px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1">
+              <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">${escHtml(q.subcategoria)}</div>
+              <div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px">${escHtml(q.control)}</div>
+              <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:${resBg};border:1px solid ${resColor};color:${resColor};margin-bottom:6px">${escHtml(ans.valor)}</span>
+              ${ans.observacion ? `<div style="font-size:13px;color:#555;font-style:italic;margin-top:4px">"${escHtml(ans.observacion)}"</div>` : ''}
+            </div>
+            <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:${impBg(q.importancia)};color:${impColor(q.importancia)};white-space:nowrap;flex-shrink:0">${escHtml(q.importancia)}</span>
+          </div>
+          ${fotosHtml ? `<div style="display:flex;flex-wrap:wrap;margin-top:4px">${fotosHtml}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #e2e8f0">${escHtml(catName)}</div>
+        ${filasHtml}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="header">${backBtn}
+      <div style="flex:1">
+        <div class="header-title">Incumplimientos (${items.length})</div>
+        <div class="header-subtitle">${escHtml(state.local.nombre)} · Revisión con acompañante</div>
+      </div>
+    </div>
+
+    <div class="main" style="padding-bottom:80px">
+      <div style="padding:8px 0 16px;font-size:13px;color:#64748b;text-align:center">
+        Revisá estos puntos con el acompañante antes de enviar la auditoría.
+      </div>
+      ${cardsHtml}
+    </div>
+
+    <div class="nav-footer">
+      <button class="btn btn-outline" id="btn-back-incumpl" style="width:100%">Volver</button>
+    </div>`;
+}
+
+// ============================================================
 // PANTALLA: RESUMEN
 // ============================================================
 function renderSummary() {
@@ -724,9 +841,20 @@ function renderSummary() {
       </div>
     </div>
 
-    <div class="nav-footer">
-      <button class="btn btn-outline" id="btn-back-to-audit">← Revisar</button>
-      <button class="btn btn-primary" id="btn-submit">Enviar ✓</button>
+    <div class="nav-footer" style="flex-direction:column;gap:8px">
+      ${(() => {
+        const cnt = state.categories.flatMap(c => c.questions).filter(q => {
+          const v = (state.answers[q.id]?.valor || '').toLowerCase();
+          return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
+        }).length;
+        return cnt > 0
+          ? `<button class="btn btn-outline" id="btn-ver-incumplimientos-summary" style="width:100%;color:#e4001b;border-color:#fca5a5">⚠ Revisar incumplimientos con acompañante (${cnt})</button>`
+          : '';
+      })()}
+      <div style="display:flex;gap:8px;width:100%">
+        <button class="btn btn-outline" id="btn-back-to-audit" style="flex:1">← Revisar</button>
+        <button class="btn btn-primary" id="btn-submit" style="flex:2">Enviar ✓</button>
+      </div>
     </div>`;
 }
 
@@ -796,6 +924,17 @@ function attachListeners() {
       setState({ screen: 'audit', categoryIndex: ci, questionIndex: startQ });
     });
   });
+
+  // Incumplimientos
+  on('btn-ver-incumplimientos', 'click', () => {
+    state.returnScreen = 'cat-select';
+    setState({ screen: 'incumplimientos' });
+  });
+  on('btn-ver-incumplimientos-summary', 'click', () => {
+    state.returnScreen = 'summary';
+    setState({ screen: 'incumplimientos' });
+  });
+  on('btn-back-incumpl', 'click', () => setState({ screen: state.returnScreen || 'cat-select' }));
 
   // Cat-select: volver a setup, ver resumen
   on('btn-back-to-setup', 'click', () => {
