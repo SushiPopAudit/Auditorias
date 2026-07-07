@@ -7,11 +7,11 @@ const state = {
   locales: [],       // [{nombre, isCausa, emails}]
 
   // Auth
+  user:         null,   // {email, nombre, rol, locales, token, savedAt}
   auditor:      '',
   auditorEmail: '',
   acompanante:         '',
   posicionAcompanante: '',
-  googleReady:         false,
 
   // Setup
   local: null,       // {nombre, isCausa, emails}
@@ -29,6 +29,11 @@ const state = {
   auditId:       '',
   error:         '',
   returnScreen:  '',
+
+  // Admin
+  adminUsers:   [],
+  adminLoading: false,
+  adminError:   '',
 };
 
 // ============================================================
@@ -60,10 +65,15 @@ async function init() {
       state.locales = [{ nombre: '(Sin locales cargados)', isCausa: false, emails: '' }];
     }
 
-    // Google Sign-In
-    initGoogleSignIn();
-
-    setState({ screen: 'welcome' });
+    const session = loadSession();
+    if (session) {
+      state.user        = session;
+      state.auditor     = session.nombre;
+      state.auditorEmail = session.email;
+      setState({ screen: 'welcome' });
+    } else {
+      setState({ screen: 'login' });
+    }
   } catch (err) {
     console.error(err);
     setState({ screen: 'error', error: 'No se pudieron cargar los datos. Verificá tu conexión a internet.' });
@@ -77,51 +87,49 @@ async function fetchText(url) {
 }
 
 // ============================================================
-// GOOGLE SIGN-IN
+// AUTH
 // ============================================================
-function initGoogleSignIn() {
-  if (!CONFIG.googleClientId || CONFIG.googleClientId.startsWith('REEMPLAZAR')) {
-    state.googleReady = false;
-    return;
-  }
-  if (typeof google === 'undefined') {
-    state.googleReady = false;
-    return;
-  }
-  state.googleReady = true;
-  google.accounts.id.initialize({
-    client_id: CONFIG.googleClientId,
-    callback: handleGoogleCredential,
-    auto_select: false,
-    context: 'signin',
-  });
+async function hashPwd(password) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function handleGoogleCredential(response) {
+async function callAPI(params) {
+  const qs = Object.keys(params)
+    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+    .join('&');
+  const r = await fetch(CONFIG.appsScriptURL + '?' + qs, { redirect: 'follow' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function loadSession() {
   try {
-    // Decodificar JWT sin librería externa
-    const payload = JSON.parse(atob(response.credential.split('.')[1]));
-    state.auditor      = payload.name  || payload.email;
-    state.auditorEmail = payload.email || '';
-    setState({ screen: 'setup' });
-  } catch (e) {
-    alert('Error al iniciar sesión con Google.');
-  }
+    const raw = localStorage.getItem('user_session');
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !s.email || !s.token) return null;
+    if (Date.now() - (s.savedAt || 0) > 7 * 24 * 3600 * 1000) { clearSession(); return null; }
+    return s;
+  } catch(e) { return null; }
 }
 
-function renderGoogleBtn() {
-  if (!state.googleReady) return '';
-  // El SDK de Google renderiza el botón en este div
-  setTimeout(() => {
-    const el = document.getElementById('google-signin-div');
-    if (el && typeof google !== 'undefined') {
-      google.accounts.id.renderButton(el, {
-        theme: 'outline', size: 'large', width: 280,
-        text: 'signin_with', shape: 'rectangular',
-      });
-    }
-  }, 50);
-  return `<div id="google-signin-div" style="margin-bottom:16px"></div>`;
+function saveSession(user) {
+  try {
+    localStorage.setItem('user_session', JSON.stringify(Object.assign({}, user, { savedAt: Date.now() })));
+  } catch(e) {}
+}
+
+function clearSession() {
+  try { localStorage.removeItem('user_session'); } catch(e) {}
+}
+
+function logout() {
+  clearSession();
+  state.user        = null;
+  state.auditor     = '';
+  state.auditorEmail = '';
+  setState({ screen: 'login' });
 }
 
 // ============================================================
@@ -266,15 +274,18 @@ function setState(patch) {
 function render() {
   const app = document.getElementById('app');
   switch (state.screen) {
-    case 'loading':         app.innerHTML = renderLoading();         break;
-    case 'welcome':         app.innerHTML = renderWelcome();         break;
-    case 'setup':           app.innerHTML = renderSetup();           break;
-    case 'cat-select':      app.innerHTML = renderCatSelect();       break;
-    case 'audit':           app.innerHTML = renderAudit();           break;
-    case 'incumplimientos': app.innerHTML = renderIncumplimientos(); break;
-    case 'summary':         app.innerHTML = renderSummary();         break;
-    case 'success':         app.innerHTML = renderSuccess();         break;
-    case 'error':           app.innerHTML = renderError();           break;
+    case 'loading':          app.innerHTML = renderLoading();          break;
+    case 'login':            app.innerHTML = renderLogin();            break;
+    case 'change-password':  app.innerHTML = renderChangePassword();   break;
+    case 'welcome':          app.innerHTML = renderWelcome();          break;
+    case 'setup':            app.innerHTML = renderSetup();            break;
+    case 'cat-select':       app.innerHTML = renderCatSelect();        break;
+    case 'audit':            app.innerHTML = renderAudit();            break;
+    case 'incumplimientos':  app.innerHTML = renderIncumplimientos();  break;
+    case 'summary':          app.innerHTML = renderSummary();          break;
+    case 'success':          app.innerHTML = renderSuccess();          break;
+    case 'admin':            app.innerHTML = renderAdmin();            break;
+    case 'error':            app.innerHTML = renderError();            break;
   }
   attachListeners();
 }
@@ -290,10 +301,8 @@ function renderLoading() {
 // PANTALLA: WELCOME
 // ============================================================
 function renderWelcome() {
-  const googleBtn = renderGoogleBtn();
-  const skipBtn = state.googleReady
-    ? '' // Si Google está configurado, solo login con Google
-    : `<button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>`;
+  const u = state.user;
+  const rolBadge = u ? `<span style="font-size:0.75rem;background:${u.rol === 'Admin' ? '#7c3aed' : u.rol === 'Franquiciado' ? '#0369a1' : '#166534'};color:#fff;padding:2px 8px;border-radius:999px;font-weight:600">${escHtml(u.rol)}</span>` : '';
 
   let draftBanner = '';
   try {
@@ -302,13 +311,11 @@ function renderWelcome() {
       const draft = JSON.parse(raw);
       const age = Date.now() - (draft.ts || 0);
       if (age < 86400000 && draft.local && draft.local.nombre) {
-        const fechaFmt = draft.fecha || '';
-        const localNombre = draft.local.nombre || '';
         draftBanner = `
           <div id="draft-banner" style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;width:100%;box-sizing:border-box">
             <div style="font-size:0.9rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
             <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:12px">
-              <strong>${escHtml(localNombre)}</strong> &mdash; ${escHtml(fechaFmt)}
+              <strong>${escHtml(draft.local.nombre)}</strong> &mdash; ${escHtml(draft.fecha || '')}
             </div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.85rem">Continuar auditoría</button>
@@ -319,15 +326,20 @@ function renderWelcome() {
     }
   } catch(e) {}
 
+  const adminBtn = u && u.rol === 'Admin'
+    ? `<button class="btn btn-outline" id="btn-go-admin" style="width:100%;margin-bottom:8px">Administración de usuarios</button>`
+    : '';
+
   return `
     <div class="screen-welcome">
-      <img src="logo.png" alt="Sushi POP" class="welcome-logo"
-        onerror="this.style.display='none'">
+      <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
       <h1 class="welcome-title">Sistema de Auditorías</h1>
-      <p class="welcome-sub">Herramienta para auditores de locales</p>
+      ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span></div>` : ''}
+      <p class="welcome-sub" style="margin-bottom:20px">${u && u.rol === 'Franquiciado' ? 'Auditoría interna' : 'Auditoría oficial'}</p>
       ${draftBanner}
-      ${googleBtn}
-      ${skipBtn}
+      ${adminBtn}
+      <button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>
+      <button class="btn btn-outline" id="btn-logout" style="width:100%;margin-top:8px;color:#94a3b8;border-color:#94a3b8;font-size:0.85rem">Cerrar sesión</button>
     </div>
   `;
 }
@@ -335,17 +347,159 @@ function renderWelcome() {
 // ============================================================
 // PANTALLA: SETUP
 // ============================================================
+// ============================================================
+// PANTALLA: LOGIN
+// ============================================================
+function renderLogin() {
+  return `
+    <div class="screen-welcome">
+      <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
+      <h1 class="welcome-title">Sistema de Auditorías</h1>
+      <p class="welcome-sub" style="margin-bottom:24px">Iniciá sesión para continuar</p>
+      <div style="width:100%;max-width:340px;text-align:left">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-control" id="inp-login-email" type="email" placeholder="tu@email.com" autocomplete="email" inputmode="email">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña</label>
+          <input class="form-control" id="inp-login-pwd" type="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="login-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:12px;min-height:20px"></div>
+        <button class="btn btn-primary btn-large" id="btn-login-submit" style="width:100%">Ingresar</button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// PANTALLA: CAMBIO DE CONTRASEÑA
+// ============================================================
+function renderChangePassword() {
+  return `
+    <div class="screen-welcome">
+      <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
+      <h1 class="welcome-title" style="font-size:1.4rem">Primera vez que ingresás</h1>
+      <p class="welcome-sub" style="margin-bottom:24px">Elegí una nueva contraseña para tu cuenta</p>
+      <div style="width:100%;max-width:340px;text-align:left">
+        <div class="form-group">
+          <label class="form-label">Nueva contraseña</label>
+          <input class="form-control" id="inp-newpwd" type="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirmar contraseña</label>
+          <input class="form-control" id="inp-newpwd2" type="password" placeholder="Repetir contraseña" autocomplete="new-password">
+        </div>
+        <div id="changepwd-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:12px;min-height:20px"></div>
+        <button class="btn btn-primary btn-large" id="btn-changepwd-submit" style="width:100%">Cambiar contraseña</button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// PANTALLA: ADMIN
+// ============================================================
+function renderAdmin() {
+  const u = state.user;
+  if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
+
+  const users = state.adminUsers || [];
+  const loading = state.adminLoading;
+  const err = state.adminError || '';
+
+  const userRows = users.map(usr => {
+    const estadoColor = usr.estado === 'Activo' ? '#16a34a' : '#dc2626';
+    const isMe = usr.email.toLowerCase() === u.email.toLowerCase();
+    return `
+      <div style="background:#1e293b;border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:0.95rem">${escHtml(usr.nombre)}</div>
+            <div style="font-size:0.78rem;color:#94a3b8">${escHtml(usr.email)}</div>
+            <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+              <span style="font-size:0.72rem;background:#334155;color:#e2e8f0;padding:1px 7px;border-radius:999px">${escHtml(usr.rol)}</span>
+              <span style="font-size:0.72rem;color:${estadoColor};font-weight:600">${escHtml(usr.estado)}</span>
+            </div>
+            <div style="font-size:0.75rem;color:#64748b;margin-top:2px">Locales: ${escHtml(usr.locales || 'todos')}</div>
+          </div>
+        </div>
+        ${isMe ? '' : `
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.75rem;padding:5px 10px">Reset contraseña</button>
+          ${usr.estado === 'Activo'
+            ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.75rem;padding:5px 10px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Dar de baja</button>`
+            : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.75rem;padding:5px 10px">Reactivar</button>`
+          }
+        </div>`}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="header">
+      <button class="header-back" id="btn-admin-back">‹</button>
+      <div>
+        <div class="header-title">Administración</div>
+        <div class="header-subtitle">Gestión de usuarios</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="setup-card">
+        <h2>Nuevo usuario</h2>
+        <div class="form-group">
+          <label class="form-label">Nombre completo</label>
+          <input class="form-control" id="inp-admin-nombre" type="text" placeholder="Nombre Apellido">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-control" id="inp-admin-email" type="email" placeholder="usuario@email.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rol</label>
+          <select class="form-control" id="sel-admin-rol">
+            <option value="Auditor">Auditor</option>
+            <option value="Franquiciado">Franquiciado</option>
+            <option value="Admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group" id="admin-locales-group">
+          <label class="form-label">Locales asignados</label>
+          <input class="form-control" id="inp-admin-locales" type="text" placeholder="Local 1, Local 2 (vacío = todos)">
+          <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Dejá vacío para que vea todos los locales.</div>
+        </div>
+        <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
+        <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear usuario y enviar email</button>
+      </div>
+
+      <h3 style="color:#e2e8f0;margin-bottom:12px">Usuarios registrados</h3>
+      ${loading ? '<div class="screen-center"><div class="spinner"></div></div>' : ''}
+      ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
+      ${userRows || (!loading ? '<p style="color:#64748b;font-size:0.85rem">No hay usuarios registrados.</p>' : '')}
+      <div style="height:24px"></div>
+    </div>
+  `;
+}
+
+function getVisibleLocales() {
+  const u = state.user;
+  if (!u || u.rol !== 'Franquiciado' || !u.locales || u.locales === 'todos') return state.locales;
+  const assigned = u.locales.split(',').map(l => l.trim().toLowerCase());
+  return state.locales.filter(l => assigned.includes(l.nombre.toLowerCase()));
+}
+
 function renderSetup() {
-  const localesOpts = state.locales.map(l =>
+  const visibleLocales = getVisibleLocales();
+  const localesOpts = visibleLocales.map(l =>
     `<option value="${escHtml(l.nombre)}" ${state.local?.nombre === l.nombre ? 'selected' : ''}>${escHtml(l.nombre)}</option>`
   ).join('');
 
-  const auditorField = state.auditorEmail
+  const u = state.user;
+  const auditorField = u
     ? `<div class="auditor-badge">
-         <span class="auditor-avatar">${(state.auditor[0] || '?').toUpperCase()}</span>
+         <span class="auditor-avatar">${(u.nombre[0] || '?').toUpperCase()}</span>
          <div>
-           <div class="auditor-name">${escHtml(state.auditor)}</div>
-           <div class="auditor-email">${escHtml(state.auditorEmail)}</div>
+           <div class="auditor-name">${escHtml(u.nombre)}</div>
+           <div class="auditor-email">${escHtml(u.email)}</div>
          </div>
        </div>`
     : `<input class="form-control" id="inp-auditor" type="text"
@@ -905,6 +1059,166 @@ function renderError() {
 // EVENT LISTENERS
 // ============================================================
 function attachListeners() {
+  // Login
+  on('btn-login-submit', 'click', async () => {
+    const email = (document.getElementById('inp-login-email')?.value || '').trim().toLowerCase();
+    const pwd   =  document.getElementById('inp-login-pwd')?.value || '';
+    const errEl =  document.getElementById('login-error');
+    if (!email || !pwd) { if (errEl) errEl.textContent = 'Completá email y contraseña.'; return; }
+    const btn = document.getElementById('btn-login-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Ingresando...'; }
+    try {
+      const hash = await hashPwd(pwd);
+      const res  = await callAPI({ action: 'login', email, hash });
+      if (!res.success) {
+        if (errEl) errEl.textContent = res.error === 'Contraseña incorrecta' ? 'Contraseña incorrecta.' : res.error === 'Usuario no encontrado' ? 'Usuario no encontrado.' : res.error || 'Error al iniciar sesión.';
+        if (btn) { btn.disabled = false; btn.textContent = 'Ingresar'; }
+        return;
+      }
+      const userData = Object.assign({}, res.user, { token: hash });
+      if (res.user.primerLogin) {
+        state.user = userData;
+        setState({ screen: 'change-password' });
+      } else {
+        saveSession(userData);
+        state.user        = userData;
+        state.auditor     = userData.nombre;
+        state.auditorEmail = userData.email;
+        setState({ screen: 'welcome' });
+      }
+    } catch(err) {
+      if (errEl) errEl.textContent = 'Error de conexión. Intentá de nuevo.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Ingresar'; }
+    }
+  });
+
+  // Enter en campo de contraseña activa login
+  const inpLoginPwd = document.getElementById('inp-login-pwd');
+  if (inpLoginPwd) inpLoginPwd.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-login-submit')?.click(); });
+
+  // Cambio de contraseña
+  on('btn-changepwd-submit', 'click', async () => {
+    const pwd1  = document.getElementById('inp-newpwd')?.value  || '';
+    const pwd2  = document.getElementById('inp-newpwd2')?.value || '';
+    const errEl = document.getElementById('changepwd-error');
+    if (pwd1.length < 6) { if (errEl) errEl.textContent = 'La contraseña debe tener al menos 6 caracteres.'; return; }
+    if (pwd1 !== pwd2)   { if (errEl) errEl.textContent = 'Las contraseñas no coinciden.'; return; }
+    const btn = document.getElementById('btn-changepwd-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+      const oldHash = state.user.token;
+      const newHash = await hashPwd(pwd1);
+      const res = await callAPI({ action: 'changePassword', email: state.user.email, oldHash, newHash });
+      if (!res.success) {
+        if (errEl) errEl.textContent = res.error || 'Error al cambiar la contraseña.';
+        if (btn) { btn.disabled = false; btn.textContent = 'Cambiar contraseña'; }
+        return;
+      }
+      const updatedUser = Object.assign({}, state.user, { token: newHash, primerLogin: false });
+      saveSession(updatedUser);
+      state.user        = updatedUser;
+      state.auditor     = updatedUser.nombre;
+      state.auditorEmail = updatedUser.email;
+      setState({ screen: 'welcome' });
+    } catch(err) {
+      if (errEl) errEl.textContent = 'Error de conexión. Intentá de nuevo.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Cambiar contraseña'; }
+    }
+  });
+
+  // Logout
+  on('btn-logout', 'click', () => {
+    if (confirm('¿Cerrar sesión?')) logout();
+  });
+
+  // Ir a admin
+  on('btn-go-admin', 'click', async () => {
+    state.adminUsers   = [];
+    state.adminLoading = true;
+    state.adminError   = '';
+    setState({ screen: 'admin' });
+    try {
+      const res = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
+      state.adminUsers   = res.usuarios || [];
+      state.adminLoading = false;
+      state.adminError   = res.success ? '' : res.error || 'Error al cargar usuarios.';
+    } catch(err) {
+      state.adminLoading = false;
+      state.adminError   = 'Error de conexión.';
+    }
+    render();
+  });
+
+  on('btn-admin-back', 'click', () => setState({ screen: 'welcome' }));
+
+  // Admin: crear usuario
+  on('btn-admin-create', 'click', async () => {
+    const nombre  = (document.getElementById('inp-admin-nombre')?.value  || '').trim();
+    const email   = (document.getElementById('inp-admin-email')?.value   || '').trim().toLowerCase();
+    const rol     =  document.getElementById('sel-admin-rol')?.value     || 'Auditor';
+    const locales = (document.getElementById('inp-admin-locales')?.value || '').trim() || 'todos';
+    const errEl   =  document.getElementById('admin-create-error');
+    if (!nombre || !email) { if (errEl) errEl.textContent = 'Completá nombre y email.'; return; }
+    const btn = document.getElementById('btn-admin-create');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
+    try {
+      const res = await callAPI({ action: 'crearUsuario', adminEmail: state.user.email, adminToken: state.user.token, nombre, email, rol, locales });
+      if (res.success) {
+        if (errEl) { errEl.style.color = '#16a34a'; errEl.textContent = 'Usuario creado. Se envió un email con la contraseña temporal.'; }
+        document.getElementById('inp-admin-nombre').value = '';
+        document.getElementById('inp-admin-email').value  = '';
+        document.getElementById('inp-admin-locales').value = '';
+        // Recargar lista
+        const resU = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
+        state.adminUsers = resU.usuarios || [];
+      } else {
+        if (errEl) { errEl.style.color = '#ef4444'; errEl.textContent = res.error || 'Error al crear usuario.'; }
+      }
+    } catch(err) {
+      if (errEl) { errEl.style.color = '#ef4444'; errEl.textContent = 'Error de conexión.'; }
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Crear usuario y enviar email'; }
+    render();
+  });
+
+  // Admin: acciones por usuario (delegación en el contenedor)
+  document.querySelectorAll('[data-admin-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action     = btn.dataset.adminAction;
+      const targetEmail = btn.dataset.email;
+      if (action === 'reset') {
+        if (!confirm('¿Resetear la contraseña de ' + targetEmail + '? Se le enviará un email con una contraseña temporal.')) return;
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'resetPassword', adminEmail: state.user.email, adminToken: state.user.token, targetEmail });
+          alert(res.success ? 'Contraseña reseteada y email enviado.' : res.error || 'Error.');
+        } catch(e) { alert('Error de conexión.'); }
+        btn.disabled = false;
+      } else if (action === 'baja') {
+        if (!confirm('¿Dar de baja al usuario ' + targetEmail + '? Ya no podrá ingresar.')) return;
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'darDeBaja', adminEmail: state.user.email, adminToken: state.user.token, targetEmail });
+          if (res.success) {
+            const resU = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
+            state.adminUsers = resU.usuarios || [];
+            render();
+          } else { alert(res.error || 'Error.'); btn.disabled = false; }
+        } catch(e) { alert('Error de conexión.'); btn.disabled = false; }
+      } else if (action === 'reactivar') {
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'reactivarUsuario', adminEmail: state.user.email, adminToken: state.user.token, targetEmail });
+          if (res.success) {
+            const resU = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
+            state.adminUsers = resU.usuarios || [];
+            render();
+          } else { alert(res.error || 'Error.'); btn.disabled = false; }
+        } catch(e) { alert('Error de conexión.'); btn.disabled = false; }
+      }
+    });
+  });
+
   on('btn-go-setup',    'click', () => setState({ screen: 'setup' }));
   on('btn-back-welcome','click', () => setState({ screen: 'welcome' }));
 
@@ -1321,6 +1635,7 @@ async function submitAudit() {
     local:               state.local.nombre,
     marca:        state.local.isCausa ? 'Multimarca + Causa' : 'Multimarca',
     emailsLocal:  state.local.emails,
+    tipoAuditoria: state.user?.rol === 'Franquiciado' ? 'Interna' : 'Oficial',
     puntaje:      { pct: puntaje.pct, nivel: puntaje.nivel, obtenido: puntaje.obtenido, posible: puntaje.posible, reprobado: puntaje.reprobado },
     respuestas,
   };

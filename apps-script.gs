@@ -4,7 +4,8 @@
 
 const SPREADSHEET_ID  = '1zc1HGCNbS40D8c4cbaBcEtXiatg2-5r7JZiv8j5AMnI';
 const SHEET_NAME      = 'Resultados';
-const DRIVE_FOLDER_ID = '1a6RWhFsza7AhNl_HHSTh59c4xWUXMUZk';
+const DRIVE_FOLDER_ID = '1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P';
+const USUARIOS_SHEET  = 'Usuarios';
 
 function doPost(e) {
   try {
@@ -19,30 +20,44 @@ function doPost(e) {
         'AuditID','Fecha','Hora','Auditor','Local','Marca',
         'Categoría','Subcategoría','Control','Importancia',
         'Explicación','Respuesta','Observación','URL Foto','Email Auditor',
-        'Puntaje %','Nivel','Reprobado','Acompañante'
+        'Puntaje %','Nivel','Reprobado','Acompañante','Tipo'
       ]);
-      sheet.getRange(1,1,1,19).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+      sheet.getRange(1,1,1,20).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
 
-    // Carpeta de fotos para esta auditoría
+    // Carpeta de fotos para esta auditoría: Auditorias/Fotos Auditorias/[Local]/[fecha]/
     let auditFolder = null;
     if (DRIVE_FOLDER_ID) {
       try {
-        auditFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID).createFolder(data.auditId);
+        var rootDrive     = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+        var fotosMainIt   = rootDrive.getFoldersByName('Fotos Auditorias');
+        var fotosMain     = fotosMainIt.hasNext() ? fotosMainIt.next() : rootDrive.createFolder('Fotos Auditorias');
+        var localFotosIt  = fotosMain.getFoldersByName(data.local);
+        var localFotos    = localFotosIt.hasNext() ? localFotosIt.next() : fotosMain.createFolder(data.local);
+        auditFolder = localFotos.createFolder(formatFechaISO(data.fecha));
       } catch(e) { console.error('Drive folder error:', e); }
     }
 
     // Construir filas
     const rows = data.respuestas.map(r => {
-      let fotoURL = '';
-      if (r.fotoBase64 && auditFolder) {
-        try {
-          const blob = Utilities.newBlob(Utilities.base64Decode(r.fotoBase64), 'image/jpeg', r.fotoNombre || 'foto.jpg');
-          const file = auditFolder.createFile(blob);
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          fotoURL = file.getUrl();
-        } catch(imgErr) { console.error('Foto error:', imgErr); }
+      var fotoURL = '';
+      if (auditFolder) {
+        // Soporte para múltiples fotos (fotosBase64) y compatibilidad con fotoBase64 único
+        var fotoSources = r.fotosBase64 && r.fotosBase64.length
+          ? r.fotosBase64
+          : (r.fotoBase64 ? [{ base64: r.fotoBase64, nombre: r.fotoNombre || 'foto.jpg' }] : []);
+        var urls = [];
+        fotoSources.forEach(function(foto, idx) {
+          if (!foto.base64) return;
+          try {
+            var blob = Utilities.newBlob(Utilities.base64Decode(foto.base64), 'image/jpeg', foto.nombre || ('foto_' + (idx+1) + '.jpg'));
+            var file = auditFolder.createFile(blob);
+            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            urls.push(file.getUrl());
+          } catch(imgErr) { console.error('Foto error:', imgErr); }
+        });
+        fotoURL = urls.join(',');
       }
       return [
         data.auditId, data.fecha, data.hora,
@@ -56,11 +71,12 @@ function doPost(e) {
         data.puntaje?.nivel  || '',             // col Q — Nivel
         data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
         data.acompanante || '',                 // col S — Acompañante
+        data.tipoAuditoria || 'Oficial',        // col T — Tipo
       ];
     });
 
     if (rows.length > 0) {
-      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 19).setValues(rows);
+      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 20).setValues(rows);
       colorearDesvios(sheet, rows);
     }
 
@@ -158,6 +174,22 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
 }
 
 // ============================================================
+// HELPER: FECHA → YYYY-MM-DD (para nombres de archivo)
+// ============================================================
+function formatFechaISO(f) {
+  if (!f) return '';
+  var d = (f instanceof Date) ? f : new Date(f);
+  if (!isNaN(d.getTime())) {
+    var dd   = ('0' + d.getDate()).slice(-2);
+    var mm   = ('0' + (d.getMonth() + 1)).slice(-2);
+    return d.getFullYear() + '-' + mm + '-' + dd;
+  }
+  var s = String(f);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  return s;
+}
+
+// ============================================================
 // HELPER: FORMATEAR FECHA YYYY-MM-DD → DD/MM/AAAA
 // ============================================================
 function formatFecha(f) {
@@ -184,16 +216,21 @@ function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActu
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return null;
 
-    var allData = sheet.getRange(2, 1, lastRow - 1, 17).getValues();
+    var allData = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
 
     // Filas del mismo local, excluyendo la auditoría actual
     var rowsLocal = allData.filter(function(col) {
       return col[4] === local && col[0] !== auditIdActual && col[0];
     });
 
+    // Solo auditorías Oficiales para historial y promedio
+    var rowsOficial = rowsLocal.filter(function(col) {
+      return !col[19] || col[19] === 'Oficial';
+    });
+
     var prevAudit = null;
-    if (rowsLocal.length > 0) {
-      var last = rowsLocal[rowsLocal.length - 1];
+    if (rowsOficial.length > 0) {
+      var last = rowsOficial[rowsOficial.length - 1];
       prevAudit = {
         pct:       last[15],
         nivel:     last[16],
@@ -202,9 +239,9 @@ function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActu
       };
     }
 
-    // Promedio del mes (incluye la auditoría actual)
+    // Promedio del mes — solo Oficial (incluye la auditoría actual si también es Oficial)
     var yearMonth = String(fechaActual).substring(0, 7);
-    var rowsMes = rowsLocal.filter(function(col) {
+    var rowsMes = rowsOficial.filter(function(col) {
       return String(col[1]).substring(0, 7) === yearMonth;
     });
 
@@ -237,16 +274,21 @@ function generarPDF(data, rows, desviosRepetidos, historial) {
   pdfBlob.setName(docTitle + '.pdf');
   tempFile.setTrashed(true);
 
-  var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-  var pdfFolders = parentFolder.getFoldersByName('Informes PDF');
-  var pdfFolder = pdfFolders.hasNext() ? pdfFolders.next() : parentFolder.createFolder('Informes PDF');
+  // Guardar PDF en: Auditorias/Informes PDF/[Local]/Aud_[Local]_[fecha].pdf
+  var pdfRootFolder  = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  var pdfMainIt      = pdfRootFolder.getFoldersByName('Informes PDF');
+  var pdfMain        = pdfMainIt.hasNext() ? pdfMainIt.next() : pdfRootFolder.createFolder('Informes PDF');
+  var localPdfIt     = pdfMain.getFoldersByName(data.local);
+  var localPdfFolder = localPdfIt.hasNext() ? localPdfIt.next() : pdfMain.createFolder(data.local);
+  var pdfFileName    = 'Aud_' + data.local.replace(/\s+/g, '_') + '_' + formatFechaISO(data.fecha) + '.pdf';
+  pdfBlob.setName(pdfFileName);
 
-  var pdfFile = pdfFolder.createFile(pdfBlob);
+  var pdfFile = localPdfFolder.createFile(pdfBlob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   var pdfUrl = pdfFile.getUrl();
 
   var attachBlob = pdfFile.getBlob();
-  attachBlob.setName(docTitle + '.pdf');
+  attachBlob.setName(pdfFileName);
 
   return { blob: attachBlob, url: pdfUrl, nombre: docTitle + '.pdf' };
 }
@@ -302,8 +344,11 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + puntajeHtml + '</div>';
 
   // ---- 2. DATOS ----
-  var acompananteDiv = data.acompanante
-    ? '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Acompa&ntilde;ante</span><br><span style="font-weight:600;font-size:13px">' + data.acompanante + '</span></div>'
+  var acompananteLabel = data.acompanante
+    ? data.acompanante + (data.posicionAcompanante ? ' &mdash; ' + data.posicionAcompanante : '')
+    : '';
+  var acompananteDiv = acompananteLabel
+    ? '<div style="padding:3px 0"><span style="color:#666;font-size:13px">Acompa&ntilde;ante</span><br><span style="font-weight:600;font-size:13px">' + acompananteLabel + '</span></div>'
     : '';
 
   var datosHtml = '<div style="padding:20px 32px;border-bottom:1px solid #e5e7eb">'
@@ -590,9 +635,14 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
 // ============================================================
 function driveImgUrl(url) {
   if (!url) return '';
-  var m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  // thumbnail URL funciona sin auth para archivos compartidos con "anyone with link"
-  return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w600' : url;
+  var firstUrl = url.split(',')[0].trim(); // si hay varias, tomar la primera
+  var m = firstUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w600' : firstUrl;
+}
+
+function driveImgUrls(urlStr) {
+  if (!urlStr) return [];
+  return urlStr.split(',').map(function(u) { return driveImgUrl(u.trim()); }).filter(Boolean);
 }
 
 // Embebe imágenes de Drive como base64 en el HTML (necesario para PDF)
@@ -620,10 +670,6 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
   const emails = data.emailsLocal.split(',').map(function(e) { return e.trim(); }).filter(Boolean);
   if (!emails.length) return;
 
-  var cumple = rows.filter(function(r){ return (r[11]||'').toLowerCase() === 'cumple'; }).length;
-  var total  = rows.filter(function(r){ return r[11]; }).length;
-  var pct    = total ? Math.round(cumple / total * 100) : 0;
-
   var html = buildAuditHtml(data, rows, desviosRepetidos, historial, pdfResult ? pdfResult.url : '');
 
   var emailOpts = {
@@ -635,7 +681,8 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
     emailOpts.attachments = [pdfResult.blob];
   }
 
-  GmailApp.sendEmail(emails.join(','), 'Auditoria ' + data.local + ' - ' + formatFecha(data.fecha) + ' (' + (data.puntaje && data.puntaje.reprobado ? 'REPROBADO' : pct + '% cumplimiento') + ')', '', emailOpts);
+  var pctLabel = (data.puntaje && data.puntaje.reprobado) ? 'REPROBADO' : ((data.puntaje && data.puntaje.pct !== undefined) ? data.puntaje.pct + '% cumplimiento' : '');
+  GmailApp.sendEmail(emails.join(','), 'Auditoria ' + data.local + ' - ' + formatFecha(data.fecha) + ' (' + pctLabel + ')', '', emailOpts);
 }
 
 function getImpBg(imp) {
@@ -707,10 +754,193 @@ function recalcularPuntaje(rows) {
 }
 
 // ============================================================
+// ============================================================
+// AUTH — HELPERS
+// ============================================================
+function hashPassword(pwd) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, pwd, Utilities.Charset.UTF_8);
+  return bytes.map(function(b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+}
+
+function generarPasswordTemp() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  var pwd = '';
+  for (var i = 0; i < 8; i++) {
+    pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return pwd;
+}
+
+function ensureUsuariosSheet(ss) {
+  var sheet = ss.getSheetByName(USUARIOS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(USUARIOS_SHEET);
+    sheet.appendRow(['Email','Nombre','Rol','Locales','PasswordHash','PrimerLogin','Estado','FechaAlta']);
+    sheet.getRange(1,1,1,8).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function encontrarUsuarioRow(sheet, email) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var emails = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < emails.length; i++) {
+    if ((emails[i][0] || '').toString().toLowerCase() === email.toLowerCase()) return i + 2;
+  }
+  return -1;
+}
+
+function verificarAdmin(ss, adminEmail, adminToken) {
+  var sheet = ss.getSheetByName(USUARIOS_SHEET);
+  if (!sheet) return false;
+  var row = encontrarUsuarioRow(sheet, adminEmail);
+  if (row < 0) return false;
+  var data = sheet.getRange(row, 1, 1, 8).getValues()[0];
+  return data[2] === 'Admin' && data[4] === adminToken && data[6] === 'Activo';
+}
+
+// ============================================================
 // REENVÍO DE EMAIL POR AUDIT ID
 // ============================================================
 function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
+
+  if (action === 'login') {
+    var emailLog = ((e.parameter.email) || '').toLowerCase().trim();
+    var hashLog  = e.parameter.hash || '';
+    if (!emailLog || !hashLog) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssLog    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var sheetLog = ensureUsuariosSheet(ssLog);
+      var rowLog   = encontrarUsuarioRow(sheetLog, emailLog);
+      if (rowLog < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dLog = sheetLog.getRange(rowLog, 1, 1, 8).getValues()[0];
+      if (dLog[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      if (dLog[4] !== hashLog)  return jsonResponse({ success: false, error: 'Contraseña incorrecta' });
+      return jsonResponse({ success: true, user: {
+        email:      dLog[0],
+        nombre:     dLog[1],
+        rol:        dLog[2],
+        locales:    dLog[3],
+        primerLogin: dLog[5] === true || String(dLog[5]).toLowerCase() === 'true',
+      }});
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'changePassword') {
+    var emailCP  = ((e.parameter.email) || '').toLowerCase().trim();
+    var oldHash  = e.parameter.oldHash || '';
+    var newHash  = e.parameter.newHash || '';
+    if (!emailCP || !oldHash || !newHash) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssCP    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var sheetCP = ensureUsuariosSheet(ssCP);
+      var rowCP   = encontrarUsuarioRow(sheetCP, emailCP);
+      if (rowCP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dCP = sheetCP.getRange(rowCP, 1, 1, 8).getValues()[0];
+      if (dCP[4] !== oldHash) return jsonResponse({ success: false, error: 'Contraseña actual incorrecta' });
+      sheetCP.getRange(rowCP, 5).setValue(newHash);
+      sheetCP.getRange(rowCP, 6).setValue('false');
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'crearUsuario') {
+    var adminEm  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTok = e.parameter.adminToken || '';
+    var nombre   = e.parameter.nombre || '';
+    var newEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var rol      = e.parameter.rol || 'Auditor';
+    var locales  = e.parameter.locales || 'todos';
+    if (!adminEm || !adminTok || !nombre || !newEmail) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssCU = SpreadsheetApp.openById(SPREADSHEET_ID);
+      if (!verificarAdmin(ssCU, adminEm, adminTok)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var sheetCU = ensureUsuariosSheet(ssCU);
+      if (encontrarUsuarioRow(sheetCU, newEmail) > 0) return jsonResponse({ success: false, error: 'El email ya está registrado' });
+      var tempPwd = generarPasswordTemp();
+      var pwdHash = hashPassword(tempPwd);
+      sheetCU.appendRow([newEmail, nombre, rol, locales, pwdHash, 'true', 'Activo', new Date()]);
+      var bodyEmail = 'Hola ' + nombre + ',\n\nTu cuenta fue creada en el Sistema de Auditorías Sushi POP.\n\nUsuario: ' + newEmail + '\nContraseña temporal: ' + tempPwd + '\n\nAl ingresar por primera vez se te pedirá que cambies tu contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
+      GmailApp.sendEmail(newEmail, 'Acceso al Sistema de Auditorías Sushi POP', bodyEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
+      return jsonResponse({ success: true, message: 'Usuario creado y email enviado a ' + newEmail });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'resetPassword') {
+    var adminEmR  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokR = e.parameter.adminToken || '';
+    var targetEmR = ((e.parameter.targetEmail) || '').toLowerCase().trim();
+    if (!adminEmR || !adminTokR || !targetEmR) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssRP = SpreadsheetApp.openById(SPREADSHEET_ID);
+      if (!verificarAdmin(ssRP, adminEmR, adminTokR)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var sheetRP = ensureUsuariosSheet(ssRP);
+      var rowRP   = encontrarUsuarioRow(sheetRP, targetEmR);
+      if (rowRP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var nombreRP = sheetRP.getRange(rowRP, 2).getValue();
+      var tempPwdR = generarPasswordTemp();
+      sheetRP.getRange(rowRP, 5).setValue(hashPassword(tempPwdR));
+      sheetRP.getRange(rowRP, 6).setValue('true');
+      var bodyRP = 'Hola ' + nombreRP + ',\n\nTu contraseña fue restablecida.\n\nNueva contraseña temporal: ' + tempPwdR + '\n\nAl ingresar se te pedirá que elijas una nueva contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
+      GmailApp.sendEmail(targetEmR, 'Restablecimiento de contraseña - Auditorías Sushi POP', bodyRP, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
+      return jsonResponse({ success: true, message: 'Contraseña restablecida y email enviado' });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'darDeBaja') {
+    var adminEmB  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokB = e.parameter.adminToken || '';
+    var targetEmB = ((e.parameter.targetEmail) || '').toLowerCase().trim();
+    if (!adminEmB || !adminTokB || !targetEmB) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssBaja = SpreadsheetApp.openById(SPREADSHEET_ID);
+      if (!verificarAdmin(ssBaja, adminEmB, adminTokB)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var sheetBaja = ensureUsuariosSheet(ssBaja);
+      var rowBaja   = encontrarUsuarioRow(sheetBaja, targetEmB);
+      if (rowBaja < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      sheetBaja.getRange(rowBaja, 7).setValue('Inactivo');
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'reactivarUsuario') {
+    var adminEmA  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokA = e.parameter.adminToken || '';
+    var targetEmA = ((e.parameter.targetEmail) || '').toLowerCase().trim();
+    if (!adminEmA || !adminTokA || !targetEmA) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssReact = SpreadsheetApp.openById(SPREADSHEET_ID);
+      if (!verificarAdmin(ssReact, adminEmA, adminTokA)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var sheetReact = ensureUsuariosSheet(ssReact);
+      var rowReact   = encontrarUsuarioRow(sheetReact, targetEmA);
+      if (rowReact < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      sheetReact.getRange(rowReact, 7).setValue('Activo');
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'getUsuarios') {
+    var adminEmG  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokG = e.parameter.adminToken || '';
+    if (!adminEmG || !adminTokG) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssGU = SpreadsheetApp.openById(SPREADSHEET_ID);
+      if (!verificarAdmin(ssGU, adminEmG, adminTokG)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var sheetGU = ensureUsuariosSheet(ssGU);
+      var lastGU  = sheetGU.getLastRow();
+      if (lastGU < 2) return jsonResponse({ success: true, usuarios: [] });
+      var dataGU = sheetGU.getRange(2, 1, lastGU - 1, 8).getValues();
+      var usuarios = dataGU.filter(function(r){ return r[0]; }).map(function(r){
+        return { email: r[0], nombre: r[1], rol: r[2], locales: r[3],
+          primerLogin: r[5] === true || String(r[5]).toLowerCase() === 'true',
+          estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '' };
+      });
+      return jsonResponse({ success: true, usuarios: usuarios });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
 
   if (action === 'reenviar') {
     const auditId = e.parameter.auditId;
@@ -808,8 +1038,12 @@ function doGet(e) {
       catOrderVer.forEach(function(cat) {
         var filasHtml = '';
         catMapVer[cat].forEach(function(r) {
-          var fotoUrl = driveImgUrl(r[13]);
-          var fotoHtml = fotoUrl ? '<div style="margin-top:8px"><img src="' + fotoUrl + '" alt="Foto" style="max-width:200px;border-radius:6px;border:1px solid #e5e7eb"></div>' : '';
+          var fotoUrls = driveImgUrls(r[13]);
+          var fotoHtml = fotoUrls.length
+            ? '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">' + fotoUrls.map(function(fu) {
+                return '<img src="' + fu + '" alt="Foto" onclick="openLightbox(this.src)" style="max-width:280px;width:100%;border-radius:6px;border:1px solid #e5e7eb;cursor:zoom-in">';
+              }).join('') + '</div>'
+            : '';
           var obsHtml2 = r[12] ? '<div style="font-size:12px;color:#666;font-style:italic;margin-top:4px">"' + r[12] + '"</div>' : '';
           var explHtml3 = r[10] ? '<div style="font-size:12px;color:#888;font-style:italic;margin-bottom:4px">' + r[10] + '</div>' : '';
           filasHtml +=
@@ -834,8 +1068,15 @@ function doGet(e) {
 
       var pLabel = puntajeVer.reprobado ? 'REPROBADO' : puntajeVer.pct + '%';
       var headerColor = puntajeVer.reprobado ? '#e4001b' : '#16a34a';
-      var htmlVer = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Auditoría ' + firstVer[4] + ' — ' + formatFecha(firstVer[1]) + '</title></head>'
+      var htmlVer = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Auditor&iacute;a ' + firstVer[4] + ' &mdash; ' + formatFecha(firstVer[1]) + '</title>'
+        + '<style>'
+        + '#lightbox{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.92);z-index:9999;justify-content:center;align-items:center;cursor:zoom-out}'
+        + '#lightbox.open{display:flex}'
+        + '#lightbox img{max-width:95vw;max-height:95vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,0.5)}'
+        + '</style></head>'
         + '<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8f8f8;margin:0;padding:0">'
+        + '<div id="lightbox" onclick="this.classList.remove(\'open\')"><img id="lb-img" src=""></div>'
+        + '<script>function openLightbox(src){document.getElementById("lb-img").src=src;document.getElementById("lightbox").classList.add("open");}<\/script>'
         + '<div style="max-width:800px;margin:0 auto;background:#fff">'
         + '<div style="background:' + headerColor + ';padding:24px 32px;text-align:center">'
         + '<h1 style="color:#fff;margin:0 0 4px;font-size:20px">Auditoría Completa</h1>'
@@ -922,14 +1163,26 @@ function doGet(e) {
         sheetB.deleteRow(toDelete[d]);
       }
 
-      // Borrar carpeta de Drive si existe
+      // Borrar carpeta de fotos en: Auditorias/Fotos Auditorias/[Local]/[fecha]/
       var driveMsg = 'no encontrada';
       try {
-        var parentB = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-        var foldersB = parentB.getFoldersByName(auditIdB);
-        if (foldersB.hasNext()) {
-          foldersB.next().setTrashed(true);
-          driveMsg = 'eliminada';
+        var localB  = rowsAudit.length ? rowsAudit[0][4] : '';
+        var fechaB  = rowsAudit.length ? rowsAudit[0][1] : '';
+        if (localB && fechaB) {
+          var rootB      = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+          var fotosMainBIt = rootB.getFoldersByName('Fotos Auditorias');
+          if (fotosMainBIt.hasNext()) {
+            var fotosMainB = fotosMainBIt.next();
+            var localBIt   = fotosMainB.getFoldersByName(localB);
+            if (localBIt.hasNext()) {
+              var localBFolder = localBIt.next();
+              var fechaBIt     = localBFolder.getFoldersByName(String(fechaB));
+              if (fechaBIt.hasNext()) {
+                fechaBIt.next().setTrashed(true);
+                driveMsg = 'eliminada';
+              }
+            }
+          }
         }
       } catch(driveErrB) { driveMsg = 'error: ' + driveErrB.message; }
 
