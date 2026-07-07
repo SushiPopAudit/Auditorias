@@ -812,7 +812,7 @@ function doGet(e) {
     var hashLog  = e.parameter.hash || '';
     if (!emailLog || !hashLog) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssLog    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssLog    = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var sheetLog = ensureUsuariosSheet(ssLog);
       var rowLog   = encontrarUsuarioRow(sheetLog, emailLog);
       if (rowLog < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
@@ -835,7 +835,7 @@ function doGet(e) {
     var newHash  = e.parameter.newHash || '';
     if (!emailCP || !oldHash || !newHash) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssCP    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssCP    = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var sheetCP = ensureUsuariosSheet(ssCP);
       var rowCP   = encontrarUsuarioRow(sheetCP, emailCP);
       if (rowCP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
@@ -856,7 +856,7 @@ function doGet(e) {
     var locales  = e.parameter.locales || 'todos';
     if (!adminEm || !adminTok || !nombre || !newEmail) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssCU = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssCU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssCU, adminEm, adminTok)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
       var sheetCU = ensureUsuariosSheet(ssCU);
       if (encontrarUsuarioRow(sheetCU, newEmail) > 0) return jsonResponse({ success: false, error: 'El email ya está registrado' });
@@ -875,7 +875,7 @@ function doGet(e) {
     var targetEmR = ((e.parameter.targetEmail) || '').toLowerCase().trim();
     if (!adminEmR || !adminTokR || !targetEmR) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssRP = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssRP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssRP, adminEmR, adminTokR)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
       var sheetRP = ensureUsuariosSheet(ssRP);
       var rowRP   = encontrarUsuarioRow(sheetRP, targetEmR);
@@ -896,7 +896,7 @@ function doGet(e) {
     var targetEmB = ((e.parameter.targetEmail) || '').toLowerCase().trim();
     if (!adminEmB || !adminTokB || !targetEmB) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssBaja = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssBaja = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssBaja, adminEmB, adminTokB)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
       var sheetBaja = ensureUsuariosSheet(ssBaja);
       var rowBaja   = encontrarUsuarioRow(sheetBaja, targetEmB);
@@ -912,7 +912,7 @@ function doGet(e) {
     var targetEmA = ((e.parameter.targetEmail) || '').toLowerCase().trim();
     if (!adminEmA || !adminTokA || !targetEmA) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssReact = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssReact = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssReact, adminEmA, adminTokA)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
       var sheetReact = ensureUsuariosSheet(ssReact);
       var rowReact   = encontrarUsuarioRow(sheetReact, targetEmA);
@@ -927,7 +927,7 @@ function doGet(e) {
     var adminTokG = e.parameter.adminToken || '';
     if (!adminEmG || !adminTokG) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
-      var ssGU = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssGU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssGU, adminEmG, adminTokG)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
       var sheetGU = ensureUsuariosSheet(ssGU);
       var lastGU  = sheetGU.getLastRow();
@@ -939,6 +939,20 @@ function doGet(e) {
           estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '' };
       });
       return jsonResponse({ success: true, usuarios: usuarios });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'bootstrapAdmin') {
+    var bNombre = e.parameter.nombre || '';
+    var bEmail  = ((e.parameter.email) || '').toLowerCase().trim();
+    var bPwd    = e.parameter.pwd || '';
+    if (!bNombre || !bEmail || !bPwd) return jsonResponse({ success: false, error: 'Faltan parámetros: nombre, email, pwd' });
+    try {
+      var ssBoot  = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shBoot  = ensureUsuariosSheet(ssBoot);
+      if (shBoot.getLastRow() >= 2) return jsonResponse({ success: false, error: 'Ya existen usuarios. Por seguridad este endpoint solo funciona con la hoja vacía.' });
+      shBoot.appendRow([bEmail, bNombre, 'Admin', 'todos', hashPassword(bPwd), 'false', 'Activo', new Date()]);
+      return jsonResponse({ success: true, message: 'Admin creado: ' + bEmail + '. Ya podés ingresar con esa contraseña.' });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
