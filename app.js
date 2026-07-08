@@ -525,14 +525,14 @@ function renderAdminUsuarios() {
 
     const detail = (isExpanded && !isEditing) ? `
       <div style="padding-top:8px;padding-bottom:4px">
-        <div style="font-size:0.78rem;color:#64748b;margin-bottom:2px">Email</div>
-        <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:8px">${escHtml(usr.email)}</div>
+        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:2px">Email</div>
+        <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:8px">${escHtml(usr.email)}</div>
         <div style="display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap">
-          <div><div style="font-size:0.78rem;color:#64748b">Rol</div><div style="font-size:0.85rem;color:#e2e8f0">${escHtml(usr.rol)}</div></div>
-          <div><div style="font-size:0.78rem;color:#64748b">Estado</div><div style="font-size:0.85rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</div></div>
+          <div><div style="font-size:0.78rem;color:#6b7280">Rol</div><div style="font-size:0.85rem;color:#1a1a1a">${escHtml(usr.rol)}</div></div>
+          <div><div style="font-size:0.78rem;color:#6b7280">Estado</div><div style="font-size:0.85rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</div></div>
         </div>
-        <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px">Locales</div>
-        <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:10px">${escHtml(usr.locales||'Todos')}</div>
+        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:4px">Locales</div>
+        <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:10px">${escHtml(usr.locales||'Todos')}</div>
         ${isMe ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Editar</button>
           <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Reset contraseña</button>
@@ -543,16 +543,16 @@ function renderAdminUsuarios() {
       </div>` : '';
 
     return `
-      <div style="border-bottom:1px solid #1e293b;padding:10px 0;color:#e2e8f0">
+      <div style="border-bottom:1px solid #e5e7eb;padding:10px 0">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer" data-admin-action="expand" data-email="${escHtml(usr.email)}">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:1rem;color:#f1f5f9">${escHtml(usr.nombre)}</div>
+            <div style="font-weight:700;font-size:1rem;color:#1a1a1a">${escHtml(usr.nombre)}</div>
             <div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap">
-              <span style="font-size:0.75rem;color:#94a3b8">${escHtml(usr.rol)}</span>
+              <span style="font-size:0.75rem;color:#6b7280">${escHtml(usr.rol)}</span>
               <span style="font-size:0.75rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</span>
             </div>
           </div>
-          <span style="color:#64748b;font-size:1rem;flex-shrink:0">${isExpanded || isEditing ? '▲' : '▼'}</span>
+          <span style="color:#9ca3af;font-size:1rem;flex-shrink:0">${isExpanded || isEditing ? '▲' : '▼'}</span>
         </div>
         ${detail}${editForm}
       </div>`;
@@ -582,7 +582,7 @@ function renderAdminUsuarios() {
   return `
     ${createForm}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <h3 style="color:#e2e8f0;margin:0;flex:1">Usuarios (${users.length})</h3>
+      <h3 style="color:#1a1a1a;margin:0;flex:1">Usuarios (${users.length})</h3>
       ${loading ? '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' : ''}
       <button id="btn-admin-new-user" style="background:#f97316;color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700">+</button>
     </div>
@@ -633,7 +633,7 @@ function renderAdminLocales() {
     const detail = (isExpanded && !isEditing) ? `
       <div style="padding-top:8px;padding-bottom:4px">
         ${loc.isCausa ? '<div style="margin-bottom:8px"><span style="font-size:0.75rem;background:#7c3aed;color:#fff;padding:2px 8px;border-radius:999px">CAUSA</span></div>' : ''}
-        <div style="font-size:0.78rem;color:#64748b;margin-bottom:6px">Emails de resultados</div>
+        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:6px">Emails de resultados</div>
         <div style="margin-bottom:10px">${emailPills(loc.emails)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.8rem;padding:5px 12px">Editar</button>
@@ -642,13 +642,13 @@ function renderAdminLocales() {
       </div>` : '';
 
     return `
-      <div style="border-bottom:1px solid #1e293b;padding:10px 0;color:#e2e8f0">
+      <div style="border-bottom:1px solid #e5e7eb;padding:10px 0">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer" data-loc-action="expand" data-idx="${loc.idx}">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:1rem;color:#f1f5f9">${escHtml(loc.nombre)}</div>
-            <div style="font-size:0.75rem;color:#64748b;margin-top:2px">${loc.isCausa ? 'CAUSA · ' : ''}${loc.emails ? loc.emails.split(',').length + ' email' + (loc.emails.split(',').length > 1 ? 's' : '') : 'Sin email'}</div>
+            <div style="font-weight:700;font-size:1rem;color:#1a1a1a">${escHtml(loc.nombre)}</div>
+            <div style="font-size:0.75rem;color:#6b7280;margin-top:2px">${loc.isCausa ? 'CAUSA · ' : ''}${loc.emails ? loc.emails.split(',').length + ' email' + (loc.emails.split(',').length > 1 ? 's' : '') : 'Sin email'}</div>
           </div>
-          <span style="color:#64748b;font-size:1rem;flex-shrink:0">${isExpanded || isEditing ? '▲' : '▼'}</span>
+          <span style="color:#9ca3af;font-size:1rem;flex-shrink:0">${isExpanded || isEditing ? '▲' : '▼'}</span>
         </div>
         ${detail}${editForm}
       </div>`;
@@ -675,7 +675,7 @@ function renderAdminLocales() {
   return `
     ${createForm}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <h3 style="color:#e2e8f0;margin:0;flex:1">Locales (${locales.length})</h3>
+      <h3 style="color:#1a1a1a;margin:0;flex:1">Locales (${locales.length})</h3>
       ${loading ? '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' : ''}
       <button id="btn-admin-new-local" style="background:#f97316;color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700">+</button>
     </div>
@@ -685,9 +685,9 @@ function renderAdminLocales() {
 }
 
 function emailPills(emailsStr) {
-  if (!emailsStr) return '<span style="color:#64748b;font-size:0.8rem">Sin email configurado</span>';
+  if (!emailsStr) return '<span style="color:#6b7280;font-size:0.8rem">Sin email configurado</span>';
   return emailsStr.split(',').map(e => e.trim()).filter(Boolean)
-    .map(e => `<span style="display:inline-block;background:#1e293b;color:#93c5fd;border:1px solid #334155;border-radius:999px;padding:2px 8px;font-size:0.72rem;margin:2px 2px 2px 0">${escHtml(e)}</span>`)
+    .map(e => `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:999px;padding:2px 8px;font-size:0.72rem;margin:2px 2px 2px 0">${escHtml(e)}</span>`)
     .join('');
 }
 
