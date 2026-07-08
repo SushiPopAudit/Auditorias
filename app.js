@@ -519,23 +519,23 @@ function renderAdminUsuarios() {
       </div>` : '';
 
     return `
-      <div style="background:#1e293b;border-radius:10px;padding:12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div style="border-bottom:1px solid #1e293b;padding:10px 0;color:#e2e8f0">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:0.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.nombre)}</div>
-            <div style="font-size:0.76rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.email)}</div>
-            <div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">
-              <span style="font-size:0.7rem;background:#334155;color:#e2e8f0;padding:1px 6px;border-radius:999px">${escHtml(usr.rol)}</span>
-              <span style="font-size:0.7rem;color:${estadoColor};font-weight:600">${escHtml(usr.estado)}</span>
-              <span style="font-size:0.7rem;color:#64748b">${escHtml(usr.locales||'todos')}</span>
+            <div style="font-weight:700;font-size:0.9rem;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.nombre)}</div>
+            <div style="font-size:0.75rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.email)}</div>
+            <div style="margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:0.7rem;color:#94a3b8">${escHtml(usr.rol)}</span>
+              <span style="font-size:0.7rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</span>
+              ${usr.locales && usr.locales !== 'todos' ? `<span style="font-size:0.7rem;color:#64748b">${escHtml(usr.locales)}</span>` : ''}
             </div>
           </div>
-          ${isMe ? '' : `<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;flex-shrink:0">
-            <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;white-space:nowrap">Editar</button>
-            <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;white-space:nowrap">Reset pwd</button>
+          ${isMe ? '' : `<div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px">Editar</button>
+            <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px">Reset</button>
             ${usr.estado === 'Activo'
-              ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;background:#7f1d1d;color:#fff;border:none;border-radius:8px;white-space:nowrap">Dar de baja</button>`
-              : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;white-space:nowrap">Reactivar</button>`}
+              ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Baja</button>`
+              : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px">Activar</button>`}
           </div>`}
         </div>
         ${editForm}
@@ -557,8 +557,18 @@ function renderAdminUsuarios() {
         </select>
       </div>
       <div class="form-group"><label class="form-label">Locales asignados</label>
-        <input class="form-control" id="inp-admin-locales" type="text" placeholder="vacío = todos los locales">
-        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Separados por coma. Vacío = ve todos.</div>
+        ${(state.adminLocales||[]).length ? `
+        <div style="margin-bottom:4px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:#94a3b8;cursor:pointer">
+            <input type="checkbox" id="chk-todos-locales" style="accent-color:#f97316"> Todos los locales
+          </label>
+        </div>
+        <select class="form-control" id="sel-admin-locales" multiple style="min-height:100px;font-size:0.85rem">
+          ${(state.adminLocales||[]).map(l => `<option value="${escHtml(l.nombre)}">${escHtml(l.nombre)}</option>`).join('')}
+        </select>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Seleccioná uno o más. "Todos los locales" deja el campo vacío.</div>
+        ` : `<input class="form-control" id="inp-admin-locales" type="text" placeholder="vacío = todos los locales">
+        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Separados por coma. Vacío = ve todos.</div>`}
       </div>
       <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
       <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear y enviar email</button>
@@ -613,16 +623,18 @@ function renderAdminLocales() {
       </div>` : '';
 
     return `
-      <div style="background:#1e293b;border-radius:10px;padding:12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div style="border-bottom:1px solid #1e293b;padding:10px 0;color:#e2e8f0">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:0.92rem">${escHtml(loc.nombre)}</div>
-            ${loc.isCausa ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:999px">CAUSA</span>' : ''}
-            <div style="font-size:0.75rem;color:#64748b;margin-top:3px;word-break:break-all">${escHtml(loc.emails||'Sin email configurado')}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-weight:700;font-size:0.9rem;color:#f1f5f9">${escHtml(loc.nombre)}</span>
+              ${loc.isCausa ? '<span style="font-size:0.68rem;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:999px">CAUSA</span>' : ''}
+            </div>
+            <div style="font-size:0.75rem;color:#64748b;margin-top:2px;word-break:break-all">${escHtml(loc.emails||'Sin email configurado')}</div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;flex-shrink:0">
-            <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.72rem;padding:4px 8px">Editar</button>
-            <button class="btn" data-loc-action="delete" data-idx="${loc.idx}" data-nombre="${escHtml(loc.nombre)}" style="font-size:0.72rem;padding:4px 8px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Eliminar</button>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.72rem;padding:4px 9px">Editar</button>
+            <button class="btn" data-loc-action="delete" data-idx="${loc.idx}" data-nombre="${escHtml(loc.nombre)}" style="font-size:0.72rem;padding:4px 9px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Eliminar</button>
           </div>
         </div>
         ${editForm}
@@ -1364,23 +1376,45 @@ function attachListeners() {
   });
 
   // New user / new local toggle
-  on('btn-admin-new-user', 'click', () => setState({ adminShowCreateUser: true }));
+  on('btn-admin-new-user', 'click', async () => {
+    setState({ adminShowCreateUser: true });
+    if (!state.adminLocales.length) await recargarLocales();
+  });
   on('btn-admin-cancel-create', 'click', () => setState({ adminShowCreateUser: false }));
   on('btn-admin-new-local', 'click', () => setState({ adminShowCreateLocal: true }));
   on('btn-admin-cancel-create-loc', 'click', () => setState({ adminShowCreateLocal: false }));
 
-  // Buscadores
+  // Buscadores — restaurar foco después del render para no interrumpir la escritura
   const inpSearch = document.getElementById('inp-admin-search');
-  if (inpSearch) inpSearch.addEventListener('input', () => { state.adminSearch = inpSearch.value; render(); });
+  if (inpSearch) inpSearch.addEventListener('input', () => {
+    const val = inpSearch.value; const pos = inpSearch.selectionStart;
+    state.adminSearch = val; render();
+    const el = document.getElementById('inp-admin-search');
+    if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch(e){} }
+  });
   const inpLocSearch = document.getElementById('inp-locales-search');
-  if (inpLocSearch) inpLocSearch.addEventListener('input', () => { state.adminLocalesSearch = inpLocSearch.value; render(); });
+  if (inpLocSearch) inpLocSearch.addEventListener('input', () => {
+    const val = inpLocSearch.value; const pos = inpLocSearch.selectionStart;
+    state.adminLocalesSearch = val; render();
+    const el = document.getElementById('inp-locales-search');
+    if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch(e){} }
+  });
 
   // Admin: crear usuario
   on('btn-admin-create', 'click', async () => {
     const nombre  = (document.getElementById('inp-admin-nombre')?.value  || '').trim();
     const email   = (document.getElementById('inp-admin-email')?.value   || '').trim().toLowerCase();
     const rol     =  document.getElementById('sel-admin-rol')?.value     || 'Auditor';
-    const locales = (document.getElementById('inp-admin-locales')?.value || '').trim() || 'todos';
+    const todosChk = document.getElementById('chk-todos-locales');
+    const selLoc   = document.getElementById('sel-admin-locales');
+    const inpLoc   = document.getElementById('inp-admin-locales');
+    let locales = 'todos';
+    if (todosChk && !todosChk.checked && selLoc) {
+      const sel = Array.from(selLoc.selectedOptions).map(o => o.value).join(', ');
+      locales = sel || 'todos';
+    } else if (inpLoc) {
+      locales = inpLoc.value.trim() || 'todos';
+    }
     const errEl   =  document.getElementById('admin-create-error');
     if (!nombre || !email) { if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = 'Completá nombre y email.'; } return; }
     const btn = document.getElementById('btn-admin-create');
