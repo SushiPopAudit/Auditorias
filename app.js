@@ -42,9 +42,11 @@ const state = {
   adminLocalesLoading:   false,
   adminLocalesError:     '',
   adminEditingLocalIdx:  null,
-  adminLocalesSearch:    '',
-  adminShowCreateUser:   false,
-  adminShowCreateLocal:  false,
+  adminLocalesSearch:      '',
+  adminShowCreateUser:     false,
+  adminShowCreateLocal:    false,
+  adminExpandedUserEmail:  null,
+  adminExpandedLocalIdx:   null,
 };
 
 // ============================================================
@@ -489,12 +491,15 @@ function renderAdminUsuarios() {
     ? users.filter(usr => usr.nombre.toLowerCase().includes(search) || (usr.locales||'').toLowerCase().includes(search) || usr.email.toLowerCase().includes(search))
     : users;
 
+  const expandedEmail = state.adminExpandedUserEmail;
   const userRows = filtered.map(usr => {
     const isMe = usr.email.toLowerCase() === u.email.toLowerCase();
     const estadoColor = usr.estado === 'Activo' ? '#16a34a' : '#dc2626';
-    const isEditing = editingEmail === usr.email;
+    const isExpanded = expandedEmail === usr.email;
+    const isEditing  = editingEmail  === usr.email;
+
     const editForm = isEditing ? `
-      <div style="background:#0f172a;border-radius:8px;padding:12px;margin-top:10px">
+      <div style="padding-top:10px">
         <div class="form-group" style="margin-bottom:8px">
           <label class="form-label" style="font-size:0.78rem">Nombre</label>
           <input class="form-control" id="edit-usr-nombre" value="${escHtml(usr.nombre)}" style="font-size:0.85rem;padding:7px 10px">
@@ -508,8 +513,8 @@ function renderAdminUsuarios() {
           </select>
         </div>
         <div class="form-group" style="margin-bottom:8px">
-          <label class="form-label" style="font-size:0.78rem">Locales (separados por coma, o "todos")</label>
-          <input class="form-control" id="edit-usr-locales" value="${escHtml(usr.locales||'todos')}" style="font-size:0.85rem;padding:7px 10px">
+          <label class="form-label" style="font-size:0.78rem">Locales asignados</label>
+          ${localesCheckboxes(usr.locales)}
         </div>
         <div id="edit-usr-error" style="color:#ef4444;font-size:0.8rem;min-height:16px;margin-bottom:6px"></div>
         <div style="display:flex;gap:8px">
@@ -518,27 +523,38 @@ function renderAdminUsuarios() {
         </div>
       </div>` : '';
 
+    const detail = (isExpanded && !isEditing) ? `
+      <div style="padding-top:8px;padding-bottom:4px">
+        <div style="font-size:0.78rem;color:#64748b;margin-bottom:2px">Email</div>
+        <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:8px">${escHtml(usr.email)}</div>
+        <div style="display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap">
+          <div><div style="font-size:0.78rem;color:#64748b">Rol</div><div style="font-size:0.85rem;color:#e2e8f0">${escHtml(usr.rol)}</div></div>
+          <div><div style="font-size:0.78rem;color:#64748b">Estado</div><div style="font-size:0.85rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</div></div>
+        </div>
+        <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px">Locales</div>
+        <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:10px">${escHtml(usr.locales||'Todos')}</div>
+        ${isMe ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Editar</button>
+          <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Reset contraseña</button>
+          ${usr.estado === 'Activo'
+            ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Dar de baja</button>`
+            : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Reactivar</button>`}
+        </div>`}
+      </div>` : '';
+
     return `
       <div style="border-bottom:1px solid #1e293b;padding:10px 0;color:#e2e8f0">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer" data-admin-action="expand" data-email="${escHtml(usr.email)}">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:0.9rem;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.nombre)}</div>
-            <div style="font-size:0.75rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.email)}</div>
-            <div style="margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              <span style="font-size:0.7rem;color:#94a3b8">${escHtml(usr.rol)}</span>
-              <span style="font-size:0.7rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</span>
-              ${usr.locales && usr.locales !== 'todos' ? `<span style="font-size:0.7rem;color:#64748b">${escHtml(usr.locales)}</span>` : ''}
+            <div style="font-weight:700;font-size:1rem;color:#f1f5f9">${escHtml(usr.nombre)}</div>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap">
+              <span style="font-size:0.75rem;color:#94a3b8">${escHtml(usr.rol)}</span>
+              <span style="font-size:0.75rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</span>
             </div>
           </div>
-          ${isMe ? '' : `<div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px">Editar</button>
-            <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px">Reset</button>
-            ${usr.estado === 'Activo'
-              ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Baja</button>`
-              : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 9px">Activar</button>`}
-          </div>`}
+          <span style="color:#64748b;font-size:1rem;flex-shrink:0">${isExpanded || isEditing ? '▲' : '▼'}</span>
         </div>
-        ${editForm}
+        ${detail}${editForm}
       </div>`;
   }).join('');
 
@@ -557,18 +573,7 @@ function renderAdminUsuarios() {
         </select>
       </div>
       <div class="form-group"><label class="form-label">Locales asignados</label>
-        ${(state.adminLocales||[]).length ? `
-        <div style="margin-bottom:4px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:#94a3b8;cursor:pointer">
-            <input type="checkbox" id="chk-todos-locales" style="accent-color:#f97316"> Todos los locales
-          </label>
-        </div>
-        <select class="form-control" id="sel-admin-locales" multiple style="min-height:100px;font-size:0.85rem">
-          ${(state.adminLocales||[]).map(l => `<option value="${escHtml(l.nombre)}">${escHtml(l.nombre)}</option>`).join('')}
-        </select>
-        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Seleccioná uno o más. "Todos los locales" deja el campo vacío.</div>
-        ` : `<input class="form-control" id="inp-admin-locales" type="text" placeholder="vacío = todos los locales">
-        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Separados por coma. Vacío = ve todos.</div>`}
+        ${localesCheckboxes('todos')}
       </div>
       <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
       <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear y enviar email</button>
@@ -596,10 +601,13 @@ function renderAdminLocales() {
   const filtered = search
     ? locales.filter(l => l.nombre.toLowerCase().includes(search) || (l.emails||'').toLowerCase().includes(search))
     : locales;
+  const expandedIdx = state.adminExpandedLocalIdx;
   const filteredRows = filtered.map(loc => {
-    const isEditing = editingIdx === loc.idx;
+    const isExpanded = expandedIdx === loc.idx;
+    const isEditing  = editingIdx  === loc.idx;
+
     const editForm = isEditing ? `
-      <div style="background:#0f172a;border-radius:8px;padding:12px;margin-top:10px">
+      <div style="padding-top:10px">
         <div class="form-group" style="margin-bottom:8px">
           <label class="form-label" style="font-size:0.78rem">Nombre del local</label>
           <input class="form-control" id="edit-loc-nombre" value="${escHtml(loc.nombre)}" style="font-size:0.85rem;padding:7px 10px">
@@ -612,7 +620,7 @@ function renderAdminLocales() {
           </select>
         </div>
         <div class="form-group" style="margin-bottom:8px">
-          <label class="form-label" style="font-size:0.78rem">Emails de resultados (separados por coma)</label>
+          <label class="form-label" style="font-size:0.78rem">Emails de resultados (uno por línea o separados por coma)</label>
           <input class="form-control" id="edit-loc-emails" value="${escHtml(loc.emails||'')}" placeholder="mail1@..., mail2@..." style="font-size:0.85rem;padding:7px 10px">
         </div>
         <div id="edit-loc-error" style="color:#ef4444;font-size:0.8rem;min-height:16px;margin-bottom:6px"></div>
@@ -622,22 +630,27 @@ function renderAdminLocales() {
         </div>
       </div>` : '';
 
+    const detail = (isExpanded && !isEditing) ? `
+      <div style="padding-top:8px;padding-bottom:4px">
+        ${loc.isCausa ? '<div style="margin-bottom:8px"><span style="font-size:0.75rem;background:#7c3aed;color:#fff;padding:2px 8px;border-radius:999px">CAUSA</span></div>' : ''}
+        <div style="font-size:0.78rem;color:#64748b;margin-bottom:6px">Emails de resultados</div>
+        <div style="margin-bottom:10px">${emailPills(loc.emails)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.8rem;padding:5px 12px">Editar</button>
+          <button class="btn" data-loc-action="delete" data-idx="${loc.idx}" data-nombre="${escHtml(loc.nombre)}" style="font-size:0.8rem;padding:5px 12px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Eliminar</button>
+        </div>
+      </div>` : '';
+
     return `
       <div style="border-bottom:1px solid #1e293b;padding:10px 0;color:#e2e8f0">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer" data-loc-action="expand" data-idx="${loc.idx}">
           <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span style="font-weight:700;font-size:0.9rem;color:#f1f5f9">${escHtml(loc.nombre)}</span>
-              ${loc.isCausa ? '<span style="font-size:0.68rem;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:999px">CAUSA</span>' : ''}
-            </div>
-            <div style="font-size:0.75rem;color:#64748b;margin-top:2px;word-break:break-all">${escHtml(loc.emails||'Sin email configurado')}</div>
+            <div style="font-weight:700;font-size:1rem;color:#f1f5f9">${escHtml(loc.nombre)}</div>
+            <div style="font-size:0.75rem;color:#64748b;margin-top:2px">${loc.isCausa ? 'CAUSA · ' : ''}${loc.emails ? loc.emails.split(',').length + ' email' + (loc.emails.split(',').length > 1 ? 's' : '') : 'Sin email'}</div>
           </div>
-          <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.72rem;padding:4px 9px">Editar</button>
-            <button class="btn" data-loc-action="delete" data-idx="${loc.idx}" data-nombre="${escHtml(loc.nombre)}" style="font-size:0.72rem;padding:4px 9px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Eliminar</button>
-          </div>
+          <span style="color:#64748b;font-size:1rem;flex-shrink:0">${isExpanded || isEditing ? '▲' : '▼'}</span>
         </div>
-        ${editForm}
+        ${detail}${editForm}
       </div>`;
   }).join('');
 
@@ -669,6 +682,35 @@ function renderAdminLocales() {
     <input class="form-control" id="inp-locales-search" placeholder="Buscar por nombre o email..." value="${escHtml(state.adminLocalesSearch||'')}" style="margin-bottom:12px">
     ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
     ${filteredRows || (!loading ? `<p style="color:#64748b;font-size:0.85rem">${search ? 'Sin resultados.' : 'No hay locales cargados.'}</p>` : '')}`;
+}
+
+function emailPills(emailsStr) {
+  if (!emailsStr) return '<span style="color:#64748b;font-size:0.8rem">Sin email configurado</span>';
+  return emailsStr.split(',').map(e => e.trim()).filter(Boolean)
+    .map(e => `<span style="display:inline-block;background:#1e293b;color:#93c5fd;border:1px solid #334155;border-radius:999px;padding:2px 8px;font-size:0.72rem;margin:2px 2px 2px 0">${escHtml(e)}</span>`)
+    .join('');
+}
+
+function localesCheckboxes(selectedStr) {
+  const all = state.adminLocales || [];
+  if (!all.length) return `<input class="form-control" id="inp-loc-fallback" type="text" placeholder="vacío = todos" value="${escHtml(selectedStr||'')}">`;
+  const isTodos = !selectedStr || selectedStr === 'todos';
+  const sel = selectedStr ? selectedStr.split(',').map(l => l.trim().toLowerCase()) : [];
+  return `<div style="border:1px solid #334155;border-radius:8px;padding:8px;max-height:180px;overflow-y:auto;background:#0f172a">
+    <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem;cursor:pointer;border-bottom:1px solid #1e293b;margin-bottom:6px;color:#e2e8f0">
+      <input type="checkbox" class="chk-loc-todos" style="accent-color:#f97316;width:16px;height:16px" ${isTodos?'checked':''}> <strong>Todos los locales</strong>
+    </label>
+    ${all.map(l => `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:0.85rem;cursor:pointer;color:#e2e8f0">
+      <input type="checkbox" class="chk-loc-item" value="${escHtml(l.nombre)}" style="accent-color:#f97316;width:16px;height:16px" ${!isTodos && sel.includes(l.nombre.toLowerCase())?'checked':''}> ${escHtml(l.nombre)}
+    </label>`).join('')}
+  </div>`;
+}
+
+function getSelectedLocalesFromDOM() {
+  const todosChk = document.querySelector('.chk-loc-todos');
+  if (todosChk && todosChk.checked) return 'todos';
+  const items = Array.from(document.querySelectorAll('.chk-loc-item:checked')).map(c => c.value);
+  return items.length ? items.join(', ') : 'todos';
 }
 
 function getVisibleLocales() {
@@ -1405,16 +1447,7 @@ function attachListeners() {
     const nombre  = (document.getElementById('inp-admin-nombre')?.value  || '').trim();
     const email   = (document.getElementById('inp-admin-email')?.value   || '').trim().toLowerCase();
     const rol     =  document.getElementById('sel-admin-rol')?.value     || 'Auditor';
-    const todosChk = document.getElementById('chk-todos-locales');
-    const selLoc   = document.getElementById('sel-admin-locales');
-    const inpLoc   = document.getElementById('inp-admin-locales');
-    let locales = 'todos';
-    if (todosChk && !todosChk.checked && selLoc) {
-      const sel = Array.from(selLoc.selectedOptions).map(o => o.value).join(', ');
-      locales = sel || 'todos';
-    } else if (inpLoc) {
-      locales = inpLoc.value.trim() || 'todos';
-    }
+    const locales = getSelectedLocalesFromDOM();
     const errEl   =  document.getElementById('admin-create-error');
     if (!nombre || !email) { if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = 'Completá nombre y email.'; } return; }
     const btn = document.getElementById('btn-admin-create');
@@ -1444,14 +1477,18 @@ function attachListeners() {
     btn.addEventListener('click', async () => {
       const action      = btn.dataset.adminAction;
       const targetEmail = btn.dataset.email;
-      if (action === 'edit-open') {
-        state.adminEditingUserEmail = targetEmail; render();
-      } else if (action === 'edit-cancel') {
+      if (action === 'expand') {
+        const already = state.adminExpandedUserEmail === targetEmail;
+        state.adminExpandedUserEmail = already ? null : targetEmail;
         state.adminEditingUserEmail = null; render();
+      } else if (action === 'edit-open') {
+        state.adminEditingUserEmail = targetEmail; state.adminExpandedUserEmail = null; render();
+      } else if (action === 'edit-cancel') {
+        state.adminEditingUserEmail = null; state.adminExpandedUserEmail = targetEmail; render();
       } else if (action === 'edit-save') {
-        const nombre  = (document.getElementById('edit-usr-nombre')?.value  || '').trim();
-        const rol     =  document.getElementById('edit-usr-rol')?.value     || '';
-        const locales = (document.getElementById('edit-usr-locales')?.value || '').trim() || 'todos';
+        const nombre  = (document.getElementById('edit-usr-nombre')?.value || '').trim();
+        const rol     =  document.getElementById('edit-usr-rol')?.value    || '';
+        const locales = getSelectedLocalesFromDOM();
         const errEl   =  document.getElementById('edit-usr-error');
         if (!nombre) { if (errEl) errEl.textContent = 'El nombre no puede estar vacío.'; return; }
         btn.disabled = true;
@@ -1519,10 +1556,14 @@ function attachListeners() {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.locAction;
       const idx    = parseInt(btn.dataset.idx);
-      if (action === 'edit') {
-        state.adminEditingLocalIdx = idx; render();
-      } else if (action === 'cancel') {
+      if (action === 'expand') {
+        const already = state.adminExpandedLocalIdx === idx;
+        state.adminExpandedLocalIdx = already ? null : idx;
         state.adminEditingLocalIdx = null; render();
+      } else if (action === 'edit') {
+        state.adminEditingLocalIdx = idx; state.adminExpandedLocalIdx = null; render();
+      } else if (action === 'cancel') {
+        state.adminEditingLocalIdx = null; state.adminExpandedLocalIdx = idx; render();
       } else if (action === 'save') {
         const nombre  = (document.getElementById('edit-loc-nombre')?.value  || '').trim();
         const isCausa =  document.getElementById('edit-loc-causa')?.value   || 'false';
