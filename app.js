@@ -443,20 +443,22 @@ function renderAdminBottomNav() {
   const tab = state.adminTab || 'menu';
   const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success','welcome']);
   const isAudit = auditScreens.has(state.screen);
+  // Only highlight admin tabs when actually on admin screen
+  const onAdmin = state.screen === 'admin';
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
   const base   = 'flex:1;padding:8px 4px 6px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px';
   return `
     <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px);max-width:100vw">
-      <button id="nav-admin-inicio" style="${base};${tab==='menu'?active:idle}">
+      <button id="nav-admin-inicio" style="${base};${onAdmin&&tab==='menu'?active:idle}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         <span style="font-size:0.62rem">Inicio</span>
       </button>
-      <button id="nav-admin-usuarios" style="${base};${tab==='usuarios'?active:idle}">
+      <button id="nav-admin-usuarios" style="${base};${onAdmin&&tab==='usuarios'?active:idle}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         <span style="font-size:0.62rem">Usuarios</span>
       </button>
-      <button id="nav-admin-locales" style="${base};${tab==='locales'?active:idle}">
+      <button id="nav-admin-locales" style="${base};${onAdmin&&tab==='locales'?active:idle}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><line x1="9" y1="22" x2="9" y2="12"/><line x1="15" y1="12" x2="15" y2="22"/><circle cx="19" cy="8" r="3"/></svg>
         <span style="font-size:0.62rem">Locales</span>
       </button>
@@ -903,11 +905,13 @@ function renderCatSelect() {
     <div class="main" style="padding-bottom:120px;padding-top:12px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
         <div>
-          <button id="btn-back-to-setup" style="background:none;border:none;color:#6b7280;font-size:0.82rem;cursor:pointer;padding:0;margin-bottom:4px;display:block">← Editar datos</button>
-          <div style="font-size:1rem;font-weight:700;color:#1a1a1a">${escHtml(state.local.nombre)}</div>
+            <div style="font-size:1rem;font-weight:700;color:#1a1a1a">${escHtml(state.local.nombre)}</div>
           <div style="font-size:0.78rem;color:#6b7280">${totalAnswered} de ${allQs.length} preguntas respondidas</div>
         </div>
-        <button id="btn-borrar-auditoria" style="background:none;border:1px solid #fca5a5;color:#ef4444;font-size:0.78rem;font-weight:600;cursor:pointer;padding:4px 10px;border-radius:8px;white-space:nowrap">Borrar</button>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button id="btn-back-to-setup" style="background:none;border:1px solid #93c5fd;color:#2563eb;font-size:0.78rem;font-weight:600;cursor:pointer;padding:4px 10px;border-radius:8px;white-space:nowrap">Editar</button>
+          <button id="btn-borrar-auditoria" style="background:none;border:1px solid #fca5a5;color:#ef4444;font-size:0.78rem;font-weight:600;cursor:pointer;padding:4px 10px;border-radius:8px;white-space:nowrap">Borrar</button>
+        </div>
       </div>
       ${catCards}
     </div>
@@ -957,16 +961,15 @@ function renderAudit() {
       <div class="progress-bar-fill" style="width:${pct}%"></div>
     </div>
 
-    <div class="main" style="padding-bottom:110px;padding-top:10px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-        <div style="font-size:0.78rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em">${escHtml(cat.name)}</div>
-        <div style="font-size:0.78rem;color:#9ca3af">${state.questionIndex + 1} / ${totalQsInCat}</div>
-      </div>
+    <div style="padding:10px 16px 0;display:flex;justify-content:space-between;align-items:baseline">
+      <div style="font-size:0.78rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em">${escHtml(cat.name)}</div>
+      <div style="font-size:0.78rem;color:#9ca3af">${state.questionIndex + 1} / ${totalQsInCat}</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:10px 16px 8px">
       ${renderQuestionCard(q)}
     </div>
-
-    <div class="nav-footer" style="flex-direction:column;gap:6px;padding:8px 16px">
-      <div style="display:flex;gap:8px;width:100%">
+    <div style="position:sticky;bottom:68px;background:#fff;border-top:1px solid #e5e7eb;padding:8px 16px;display:flex;flex-direction:column;gap:6px;z-index:10">
+      <div style="display:flex;gap:8px">
         ${!isFirst
           ? `<button class="btn btn-outline" id="btn-prev-q-footer" style="flex:1;font-size:0.85rem;padding:9px 8px">← Anterior</button>`
           : `<div style="flex:1"></div>`}
@@ -1097,19 +1100,15 @@ function renderIncumplimientos() {
     });
   });
 
-  const backBtn = `<button class="header-back" id="btn-back-incumpl">‹</button>`;
-
   if (!items.length) {
     return `
-      <div class="header">${backBtn}
-        <div style="flex:1"><div class="header-title">Incumplimientos</div>
-        <div class="header-subtitle">${escHtml(state.local.nombre)}</div></div>
-      </div>
-      <div class="main" style="display:flex;flex-direction:column;align-items:center;padding:48px 24px;text-align:center">
+      <div class="main" style="display:flex;flex-direction:column;align-items:center;padding:48px 24px;text-align:center;padding-bottom:140px">
         <div style="font-size:52px;margin-bottom:12px">✓</div>
         <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:8px">Sin incumplimientos registrados</div>
         <div style="font-size:14px;color:#64748b">Todos los puntos respondidos cumplen.</div>
-        <button class="btn btn-outline" id="btn-back-incumpl" style="margin-top:24px">Volver</button>
+      </div>
+      <div class="nav-footer">
+        <button class="btn btn-outline" id="btn-back-incumpl">Volver</button>
       </div>`;
   }
 
@@ -1153,22 +1152,18 @@ function renderIncumplimientos() {
   }).join('');
 
   return `
-    <div class="header">${backBtn}
-      <div style="flex:1">
-        <div class="header-title">Incumplimientos (${items.length})</div>
-        <div class="header-subtitle">${escHtml(state.local.nombre)} · Revisión con acompañante</div>
-      </div>
-    </div>
-
-    <div class="main" style="padding-bottom:80px">
-      <div style="padding:8px 0 16px;font-size:13px;color:#64748b;text-align:center">
-        Revisá estos puntos con el acompañante antes de enviar la auditoría.
+    <div class="main" style="padding-bottom:140px;padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <div style="font-size:1rem;font-weight:700;color:#1a1a1a">Incumplimientos (${items.length})</div>
+          <div style="font-size:0.78rem;color:#6b7280">Revisá estos puntos con el acompañante.</div>
+        </div>
       </div>
       ${cardsHtml}
     </div>
 
     <div class="nav-footer">
-      <button class="btn btn-outline" id="btn-back-incumpl" style="width:100%">Volver</button>
+      <button class="btn btn-outline" id="btn-back-incumpl">Volver</button>
     </div>`;
 }
 
