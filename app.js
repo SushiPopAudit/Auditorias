@@ -803,17 +803,12 @@ function renderSetup() {
          placeholder="Tu nombre completo" value="${escHtml(state.auditor)}">`;
 
   return `
-    <div class="header">
-      <button class="header-back" id="btn-back-welcome">‹</button>
-      <div>
-        <div class="header-title">Nueva Auditoría</div>
-        <div class="header-subtitle">Configuración inicial</div>
-      </div>
-    </div>
-
-    <div class="main">
+    <div class="main" style="padding-top:16px">
       <div class="setup-card">
-        <h2>Datos de la visita</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2 style="margin:0">Datos de la visita</h2>
+          <button id="btn-back-welcome" style="background:none;border:none;color:#6b7280;font-size:0.82rem;cursor:pointer;padding:0">← Volver</button>
+        </div>
 
         <div class="form-group">
           <label class="form-label">Local auditado</label>
@@ -901,21 +896,18 @@ function renderCatSelect() {
   );
 
   return `
-    <div class="header">
-      <button class="header-back" id="btn-back-to-setup">‹</button>
-      <div style="flex:1">
-        <div class="header-title">${escHtml(state.local.nombre)}</div>
-        <div class="header-subtitle">Seleccioná una categoría</div>
-      </div>
-      <button id="btn-borrar-auditoria" style="background:none;border:none;color:#ef4444;font-size:13px;font-weight:600;cursor:pointer;padding:4px 8px">Borrar</button>
-    </div>
     <div class="progress-bar-wrap">
       <div class="progress-bar-fill" style="width:${pct}%"></div>
     </div>
 
-    <div class="main" style="padding-bottom:100px">
-      <div style="padding:8px 0 16px;font-size:13px;color:#64748b;text-align:center">
-        ${totalAnswered} de ${allQs.length} preguntas respondidas
+    <div class="main" style="padding-bottom:120px;padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div>
+          <button id="btn-back-to-setup" style="background:none;border:none;color:#6b7280;font-size:0.82rem;cursor:pointer;padding:0;margin-bottom:4px;display:block">← Editar datos</button>
+          <div style="font-size:1rem;font-weight:700;color:#1a1a1a">${escHtml(state.local.nombre)}</div>
+          <div style="font-size:0.78rem;color:#6b7280">${totalAnswered} de ${allQs.length} preguntas respondidas</div>
+        </div>
+        <button id="btn-borrar-auditoria" style="background:none;border:1px solid #fca5a5;color:#ef4444;font-size:0.78rem;font-weight:600;cursor:pointer;padding:4px 10px;border-radius:8px;white-space:nowrap">Borrar</button>
       </div>
       ${catCards}
     </div>
@@ -961,39 +953,28 @@ function renderAudit() {
   const skippedInCat = cat.questions.filter(q2 => state.skipped[q2.id]).length;
 
   return `
-    <div class="header">
-      <button class="header-back" id="btn-back-to-cats">‹</button>
-      <div style="flex:1">
-        <div class="header-title">${escHtml(cat.name)}</div>
-        <div class="header-subtitle">${escHtml(state.local.nombre)}</div>
-      </div>
-      <div class="header-info">
-        <div style="font-size:0.85rem;color:#fff;font-weight:700">${state.questionIndex + 1}<span style="color:#94a3b8;font-weight:400"> / ${totalQsInCat}</span></div>
-        <button id="btn-borrar-audit-header" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;padding:2px 0">borrar</button>
-      </div>
-    </div>
     <div class="progress-bar-wrap">
       <div class="progress-bar-fill" style="width:${pct}%"></div>
     </div>
 
-    <div class="main" style="padding-bottom:88px">
-      <div class="question-step-label">
-        Pregunta ${state.questionIndex + 1} de ${totalQsInCat}
-        <span class="step-cat-name">· ${escHtml(cat.name)}</span>
+    <div class="main" style="padding-bottom:110px;padding-top:10px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <div style="font-size:0.78rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em">${escHtml(cat.name)}</div>
+        <div style="font-size:0.78rem;color:#9ca3af">${state.questionIndex + 1} / ${totalQsInCat}</div>
       </div>
       ${renderQuestionCard(q)}
     </div>
 
-    <div class="nav-footer" style="flex-direction:column;gap:8px">
+    <div class="nav-footer" style="flex-direction:column;gap:6px;padding:8px 16px">
       <div style="display:flex;gap:8px;width:100%">
         ${!isFirst
-          ? `<button class="btn btn-outline" id="btn-prev-q-footer" style="flex:1">← Anterior</button>`
+          ? `<button class="btn btn-outline" id="btn-prev-q-footer" style="flex:1;font-size:0.85rem;padding:9px 8px">← Anterior</button>`
           : `<div style="flex:1"></div>`}
         ${isLast
-          ? `<button class="btn btn-success" id="btn-next-q" style="flex:2">Completar categoría →</button>`
-          : `<button class="btn btn-primary" id="btn-next-q" style="flex:2">Siguiente →</button>`}
+          ? `<button class="btn btn-success" id="btn-next-q" style="flex:2;font-size:0.85rem;padding:9px 8px">Completar →</button>`
+          : `<button class="btn btn-primary" id="btn-next-q" style="flex:2;font-size:0.85rem;padding:9px 8px">Siguiente →</button>`}
       </div>
-      <button class="btn btn-outline" id="btn-back-to-cats-footer" style="width:100%;font-size:13px;color:#64748b;border-color:#e2e8f0">‹ Volver a categorías</button>
+      <button class="btn btn-outline" id="btn-back-to-cats-footer" style="width:100%;font-size:0.82rem;color:#6b7280;border-color:#e5e7eb;padding:7px">‹ Volver a categorías</button>
     </div>`;
 }
 
