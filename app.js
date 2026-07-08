@@ -1476,20 +1476,19 @@ function attachListeners() {
 
   // Menu cards + bottom nav → usuarios
   async function goToUsuarios() {
-    state.adminTab = 'usuarios'; state.adminShowCreateUser = false; state.adminEditingUserEmail = null; state.adminSearch = '';
+    state.screen = 'admin'; state.adminTab = 'usuarios'; state.adminShowCreateUser = false; state.adminEditingUserEmail = null; state.adminSearch = '';
     render();
     if (!state.adminUsers.length) await recargarUsuarios();
   }
-  // Menu cards + bottom nav → locales
   async function goToLocales() {
-    state.adminTab = 'locales'; state.adminShowCreateLocal = false; state.adminEditingLocalIdx = null; state.adminLocalesSearch = '';
+    state.screen = 'admin'; state.adminTab = 'locales'; state.adminShowCreateLocal = false; state.adminEditingLocalIdx = null; state.adminLocalesSearch = '';
     render();
     if (!state.adminLocales.length) await recargarLocales();
   }
 
   on('btn-admin-go-usuarios',  'click', goToUsuarios);
   on('btn-admin-go-locales',   'click', goToLocales);
-  on('nav-admin-inicio',       'click', () => setState({ adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
+  on('nav-admin-inicio',       'click', () => setState({ screen: 'admin', adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
   on('nav-admin-usuarios',     'click', goToUsuarios);
   on('nav-admin-locales',      'click', goToLocales);
   on('nav-admin-auditoria',    'click', () => setState({ screen: 'setup' }));
