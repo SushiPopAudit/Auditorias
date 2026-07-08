@@ -942,6 +942,19 @@ function doGet(e) {
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
+  if (action === 'verificarAudit') {
+    var vId = e.parameter.auditId || '';
+    if (!vId) return jsonResponse({ found: false, error: 'Falta auditId' });
+    try {
+      var ssV    = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shV    = ssV.getSheetByName(SHEET_NAME);
+      if (!shV || shV.getLastRow() < 2) return jsonResponse({ found: false });
+      var ids = shV.getRange(2, 1, shV.getLastRow() - 1, 1).getValues();
+      var found = ids.some(function(r) { return String(r[0]) === vId; });
+      return jsonResponse({ found: found });
+    } catch(err) { return jsonResponse({ found: false, error: err.message }); }
+  }
+
   if (action === 'bootstrapAdmin') {
     var bNombre = e.parameter.nombre || '';
     var bEmail  = ((e.parameter.email) || '').toLowerCase().trim();

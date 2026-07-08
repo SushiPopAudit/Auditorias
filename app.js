@@ -25,10 +25,11 @@ const state = {
   skipped:       {},
 
   // Submit
-  submitting:    false,
-  auditId:       '',
-  error:         '',
-  returnScreen:  '',
+  submitting:      false,
+  auditId:         '',
+  error:           '',
+  returnScreen:    '',
+  sendUnconfirmed: false,
 
   // Admin
   adminUsers:   [],
@@ -1025,13 +1026,23 @@ function renderSuccess() {
       ${!p.reprobado ? `<div class="puntaje-detalle">${p.obtenido} / ${p.posible} pts</div>` : '<div class="puntaje-detalle">Desvío crítico sin resolver</div>'}
     </div>` : '';
 
+  const unconfirmedBanner = state.sendUnconfirmed ? `
+    <div style="background:#fff7ed;border:2px solid #f97316;border-radius:12px;padding:16px;margin:12px 0;text-align:left">
+      <div style="font-weight:700;color:#c2410c;margin-bottom:6px">⚠ No se pudo confirmar la recepción</div>
+      <p style="font-size:0.83rem;color:#92400e;margin:0 0 10px">El servidor no confirmó que guardó la auditoría. Puede deberse a conexión inestable. El borrador se mantuvo guardado.</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="btn-reenviar-audit" style="flex:1;font-size:0.85rem">Reenviar auditoría</button>
+        <button class="btn btn-outline" id="btn-confirmar-igualmente" style="flex:1;font-size:0.85rem">Llegó igual, descartar</button>
+      </div>
+    </div>` : `<p class="success-sub">✓ Confirmado en el servidor.</p>`;
+
   return `
     <div class="screen-success">
-      <div class="success-icon">✓</div>
-      <h1 class="success-title">¡Auditoría enviada!</h1>
+      <div class="success-icon">${state.sendUnconfirmed ? '⚠' : '✓'}</div>
+      <h1 class="success-title">${state.sendUnconfirmed ? 'Auditoría enviada' : '¡Auditoría enviada!'}</h1>
       ${puntajeHtml}
-      <p class="success-sub">Los datos fueron guardados correctamente.</p>
-      ${state.local?.emails ? `<p class="success-sub" style="font-size:0.85rem">📧 Informe enviado a ${escHtml(state.local.emails)}</p>` : ''}
+      ${unconfirmedBanner}
+      ${!state.sendUnconfirmed && state.local?.emails ? `<p class="success-sub" style="font-size:0.85rem">📧 Informe enviado a ${escHtml(state.local.emails)}</p>` : ''}
       ${state.desviosRepetidos?.length ? `
         <div style="background:#fff7ed;border:2px solid #fb923c;border-radius:12px;padding:16px;margin:16px 0;text-align:left">
           <div style="font-size:0.95rem;font-weight:700;color:#c2410c;margin-bottom:8px">🔁 Desvíos reiterados (${state.desviosRepetidos.length})</div>
@@ -1039,7 +1050,7 @@ function renderSuccess() {
           ${state.desviosRepetidos.map(d => `<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid #fed7aa;color:#1a1a1a;display:flex;justify-content:space-between;align-items:center"><span><strong>${escHtml(d.control)}</strong> <span style="color:#92400e">${escHtml(d.categoria)} › ${escHtml(d.subcategoria)}</span></span><span style="font-size:0.75rem;font-weight:700;color:${d.repeticiones>=2?'#e4001b':'#ea580c'}">${d.repeticiones>=2?'3 auditorías':'2 auditorías'}</span></div>`).join('')}
         </div>` : ''}
       <p class="success-id">ID: ${state.auditId}</p>
-      <button class="btn btn-primary btn-large" id="btn-new-audit">Nueva Auditoría</button>
+      ${!state.sendUnconfirmed ? `<button class="btn btn-primary btn-large" id="btn-new-audit">Nueva Auditoría</button>` : ''}
     </div>`;
 }
 
@@ -1413,6 +1424,14 @@ function attachListeners() {
     });
   });
 
+  on('btn-reenviar-audit', 'click', () => {
+    setState({ screen: 'summary' });
+  });
+  on('btn-confirmar-igualmente', 'click', () => {
+    borrarBorrador();
+    setState({ screen: 'success', sendUnconfirmed: false });
+  });
+
   on('btn-submit',    'click', submitAudit);
   on('btn-new-audit', 'click', () => {
     Object.assign(state, {
@@ -1646,32 +1665,47 @@ async function submitAudit() {
   document.body.appendChild(overlay);
 
   try {
+    // Enviar la auditoría (no-cors: no podemos leer la respuesta)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    let fetchOk = false;
+    const timeoutId  = setTimeout(() => controller.abort(), 45000);
+    const sendStart  = Date.now();
     try {
       await fetch(CONFIG.appsScriptURL, {
         method: 'POST',
-        body: JSON.stringify(payload),
-        mode: 'no-cors',
+        body:   JSON.stringify(payload),
+        mode:   'no-cors',
         signal: controller.signal,
       });
-      fetchOk = true;
     } catch (fetchErr) {
-      if (fetchErr.name === 'AbortError') {
-        // Con mode:'no-cors' el servidor ya procesó el request antes del timeout — tratar como éxito
-        fetchOk = true;
-      } else {
-        throw fetchErr;
+      if (fetchErr.name !== 'AbortError') throw fetchErr;
+      // AbortError: solo continuar si el request estuvo en vuelo bastante tiempo
+      // (< 3s probablemente fue rechazado antes de llegar al servidor)
+      if (Date.now() - sendStart < 3000) {
+        throw new Error('La auditoría no pudo enviarse. Verificá tu conexión e intentá de nuevo.');
       }
     } finally {
       clearTimeout(timeoutId);
     }
-    // Con mode:'no-cors' la respuesta es opaca — si no hubo error de red, la auditoría llegó
-    if (!fetchOk) throw new Error('Error de red al enviar la auditoría.');
-    let data = { success: true, email: '', desviosRepetidos: [] };
-    setState({ screen: 'success', auditId, emailStatus: data.email || '', lastPuntaje: puntaje, desviosRepetidos: data.desviosRepetidos || [] });
-    borrarBorrador();
+
+    // Verificar con GET que el auditId quedó guardado en el sheet (hasta 4 intentos, 6s entre c/u)
+    overlay.querySelector('.overlay-text').textContent = 'Verificando que llegó al servidor...';
+    let confirmed = false;
+    for (let i = 0; i < 4; i++) {
+      await new Promise(r => setTimeout(r, 6000));
+      try {
+        const vRes = await callAPI({ action: 'verificarAudit', auditId });
+        if (vRes.found) { confirmed = true; break; }
+      } catch(e) { /* red inestable, reintentar */ }
+    }
+
+    if (confirmed) {
+      setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [] });
+      borrarBorrador();
+    } else {
+      // El POST llegó (o creemos que sí) pero no aparece en el sheet todavía
+      setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], sendUnconfirmed: true });
+      // NO borramos el borrador — el usuario puede reenviar si es necesario
+    }
   } catch (err) {
     console.error(err);
     alert('Error al enviar: ' + err.message);
