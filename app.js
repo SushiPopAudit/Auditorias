@@ -32,9 +32,16 @@ const state = {
   sendUnconfirmed: false,
 
   // Admin
-  adminUsers:   [],
-  adminLoading: false,
-  adminError:   '',
+  adminTab:              'usuarios',
+  adminUsers:            [],
+  adminLoading:          false,
+  adminError:            '',
+  adminSearch:           '',
+  adminEditingUserEmail: null,
+  adminLocales:          [],
+  adminLocalesLoading:   false,
+  adminLocalesError:     '',
+  adminEditingLocalIdx:  null,
 };
 
 // ============================================================
@@ -401,84 +408,191 @@ function renderChangePassword() {
 // ============================================================
 // PANTALLA: ADMIN
 // ============================================================
+// PANTALLA: ADMIN
+// ============================================================
 function renderAdmin() {
   const u = state.user;
   if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
-
-  const users = state.adminUsers || [];
-  const loading = state.adminLoading;
-  const err = state.adminError || '';
-
-  const userRows = users.map(usr => {
-    const estadoColor = usr.estado === 'Activo' ? '#16a34a' : '#dc2626';
-    const isMe = usr.email.toLowerCase() === u.email.toLowerCase();
-    return `
-      <div style="background:#1e293b;border-radius:10px;padding:14px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-          <div>
-            <div style="font-weight:700;font-size:0.95rem">${escHtml(usr.nombre)}</div>
-            <div style="font-size:0.78rem;color:#94a3b8">${escHtml(usr.email)}</div>
-            <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
-              <span style="font-size:0.72rem;background:#334155;color:#e2e8f0;padding:1px 7px;border-radius:999px">${escHtml(usr.rol)}</span>
-              <span style="font-size:0.72rem;color:${estadoColor};font-weight:600">${escHtml(usr.estado)}</span>
-            </div>
-            <div style="font-size:0.75rem;color:#64748b;margin-top:2px">Locales: ${escHtml(usr.locales || 'todos')}</div>
-          </div>
-        </div>
-        ${isMe ? '' : `
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.75rem;padding:5px 10px">Reset contraseña</button>
-          ${usr.estado === 'Activo'
-            ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.75rem;padding:5px 10px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Dar de baja</button>`
-            : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.75rem;padding:5px 10px">Reactivar</button>`
-          }
-        </div>`}
-      </div>`;
-  }).join('');
-
+  const tab = state.adminTab || 'usuarios';
   return `
     <div class="header">
       <button class="header-back" id="btn-admin-back">‹</button>
       <div>
         <div class="header-title">Administración</div>
-        <div class="header-subtitle">Gestión de usuarios</div>
+        <div class="header-subtitle">${tab === 'usuarios' ? 'Usuarios' : 'Locales'}</div>
       </div>
+    </div>
+    <div style="display:flex;border-bottom:2px solid #1e293b;background:#0f172a;position:sticky;top:0;z-index:10">
+      <button id="btn-admin-tab-usuarios" style="flex:1;padding:12px;border:none;background:none;color:${tab==='usuarios'?'#f97316':'#64748b'};font-weight:${tab==='usuarios'?'700':'400'};border-bottom:${tab==='usuarios'?'2px solid #f97316':'2px solid transparent'};margin-bottom:-2px;cursor:pointer;font-size:0.95rem">Usuarios</button>
+      <button id="btn-admin-tab-locales"  style="flex:1;padding:12px;border:none;background:none;color:${tab==='locales' ?'#f97316':'#64748b'};font-weight:${tab==='locales' ?'700':'400'};border-bottom:${tab==='locales' ?'2px solid #f97316':'2px solid transparent'};margin-bottom:-2px;cursor:pointer;font-size:0.95rem">Locales</button>
     </div>
     <div class="main">
-      <div class="setup-card">
-        <h2>Nuevo usuario</h2>
-        <div class="form-group">
-          <label class="form-label">Nombre completo</label>
-          <input class="form-control" id="inp-admin-nombre" type="text" placeholder="Nombre Apellido">
+      ${tab === 'usuarios' ? renderAdminUsuarios() : renderAdminLocales()}
+      <div style="height:32px"></div>
+    </div>`;
+}
+
+function renderAdminUsuarios() {
+  const u = state.user;
+  const users   = state.adminUsers   || [];
+  const loading = state.adminLoading;
+  const err     = state.adminError   || '';
+  const search  = (state.adminSearch || '').toLowerCase();
+  const editingEmail = state.adminEditingUserEmail || null;
+
+  const filtered = search
+    ? users.filter(usr => usr.nombre.toLowerCase().includes(search) || (usr.locales||'').toLowerCase().includes(search) || usr.email.toLowerCase().includes(search))
+    : users;
+
+  const userRows = filtered.map(usr => {
+    const isMe = usr.email.toLowerCase() === u.email.toLowerCase();
+    const estadoColor = usr.estado === 'Activo' ? '#16a34a' : '#dc2626';
+    const isEditing = editingEmail === usr.email;
+    const editForm = isEditing ? `
+      <div style="background:#0f172a;border-radius:8px;padding:12px;margin-top:10px">
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label" style="font-size:0.78rem">Nombre</label>
+          <input class="form-control" id="edit-usr-nombre" value="${escHtml(usr.nombre)}" style="font-size:0.85rem;padding:7px 10px">
         </div>
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input class="form-control" id="inp-admin-email" type="email" placeholder="usuario@email.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Rol</label>
-          <select class="form-control" id="sel-admin-rol">
-            <option value="Auditor">Auditor</option>
-            <option value="Franquiciado">Franquiciado</option>
-            <option value="Admin">Admin</option>
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label" style="font-size:0.78rem">Rol</label>
+          <select class="form-control" id="edit-usr-rol" style="font-size:0.85rem;padding:7px 10px">
+            <option value="Auditor" ${usr.rol==='Auditor'?'selected':''}>Auditor</option>
+            <option value="Franquiciado" ${usr.rol==='Franquiciado'?'selected':''}>Franquiciado</option>
+            <option value="Admin" ${usr.rol==='Admin'?'selected':''}>Admin</option>
           </select>
         </div>
-        <div class="form-group" id="admin-locales-group">
-          <label class="form-label">Locales asignados</label>
-          <input class="form-control" id="inp-admin-locales" type="text" placeholder="Local 1, Local 2 (vacío = todos)">
-          <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Dejá vacío para que vea todos los locales.</div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label" style="font-size:0.78rem">Locales (separados por coma, o "todos")</label>
+          <input class="form-control" id="edit-usr-locales" value="${escHtml(usr.locales||'todos')}" style="font-size:0.85rem;padding:7px 10px">
         </div>
-        <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
-        <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear usuario y enviar email</button>
-      </div>
+        <div id="edit-usr-error" style="color:#ef4444;font-size:0.8rem;min-height:16px;margin-bottom:6px"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" data-admin-action="edit-save" data-email="${escHtml(usr.email)}" style="flex:1;font-size:0.8rem;padding:7px">Guardar</button>
+          <button class="btn btn-outline" data-admin-action="edit-cancel" style="flex:1;font-size:0.8rem;padding:7px">Cancelar</button>
+        </div>
+      </div>` : '';
 
-      <h3 style="color:#e2e8f0;margin-bottom:12px">Usuarios registrados</h3>
-      ${loading ? '<div class="screen-center"><div class="spinner"></div></div>' : ''}
-      ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
-      ${userRows || (!loading ? '<p style="color:#64748b;font-size:0.85rem">No hay usuarios registrados.</p>' : '')}
-      <div style="height:24px"></div>
+    return `
+      <div style="background:#1e293b;border-radius:10px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:0.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.nombre)}</div>
+            <div style="font-size:0.76rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(usr.email)}</div>
+            <div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+              <span style="font-size:0.7rem;background:#334155;color:#e2e8f0;padding:1px 6px;border-radius:999px">${escHtml(usr.rol)}</span>
+              <span style="font-size:0.7rem;color:${estadoColor};font-weight:600">${escHtml(usr.estado)}</span>
+              <span style="font-size:0.7rem;color:#64748b">${escHtml(usr.locales||'todos')}</span>
+            </div>
+          </div>
+          ${isMe ? '' : `<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;flex-shrink:0">
+            <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;white-space:nowrap">Editar</button>
+            <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;white-space:nowrap">Reset pwd</button>
+            ${usr.estado === 'Activo'
+              ? `<button class="btn" data-admin-action="baja" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;background:#7f1d1d;color:#fff;border:none;border-radius:8px;white-space:nowrap">Dar de baja</button>`
+              : `<button class="btn btn-outline" data-admin-action="reactivar" data-email="${escHtml(usr.email)}" style="font-size:0.72rem;padding:4px 8px;white-space:nowrap">Reactivar</button>`}
+          </div>`}
+        </div>
+        ${editForm}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="setup-card" style="margin-bottom:16px">
+      <h2 style="margin-bottom:12px">Nuevo usuario</h2>
+      <div class="form-group"><label class="form-label">Nombre completo</label><input class="form-control" id="inp-admin-nombre" type="text" placeholder="Nombre Apellido"></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-control" id="inp-admin-email" type="email" placeholder="usuario@email.com"></div>
+      <div class="form-group"><label class="form-label">Rol</label>
+        <select class="form-control" id="sel-admin-rol">
+          <option value="Auditor">Auditor</option><option value="Franquiciado">Franquiciado</option><option value="Admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Locales asignados</label>
+        <input class="form-control" id="inp-admin-locales" type="text" placeholder="Local 1, Local 2 (vacío = todos)">
+        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Vacío = ve todos los locales.</div>
+      </div>
+      <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
+      <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear y enviar email</button>
     </div>
-  `;
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <h3 style="color:#e2e8f0;margin:0;flex:1">Usuarios (${users.length})</h3>
+      ${loading ? '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' : ''}
+    </div>
+    <input class="form-control" id="inp-admin-search" placeholder="Buscar por nombre, email o local..." value="${escHtml(state.adminSearch||'')}" style="margin-bottom:12px">
+    ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
+    ${userRows || (!loading ? `<p style="color:#64748b;font-size:0.85rem">${search ? 'Sin resultados.' : 'No hay usuarios.'}</p>` : '')}`;
+}
+
+function renderAdminLocales() {
+  const loading = state.adminLocalesLoading;
+  const err     = state.adminLocalesError || '';
+  const locales = state.adminLocales || [];
+  const editingIdx = state.adminEditingLocalIdx;
+
+  const rows = locales.map(loc => {
+    const isEditing = editingIdx === loc.idx;
+    const editForm = isEditing ? `
+      <div style="background:#0f172a;border-radius:8px;padding:12px;margin-top:10px">
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label" style="font-size:0.78rem">Nombre del local</label>
+          <input class="form-control" id="edit-loc-nombre" value="${escHtml(loc.nombre)}" style="font-size:0.85rem;padding:7px 10px">
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label" style="font-size:0.78rem">Marca CAUSA</label>
+          <select class="form-control" id="edit-loc-causa" style="font-size:0.85rem;padding:7px 10px">
+            <option value="false" ${!loc.isCausa?'selected':''}>No</option>
+            <option value="true"  ${loc.isCausa ?'selected':''}>Sí</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label" style="font-size:0.78rem">Emails de resultados (separados por coma)</label>
+          <input class="form-control" id="edit-loc-emails" value="${escHtml(loc.emails||'')}" placeholder="mail1@..., mail2@..." style="font-size:0.85rem;padding:7px 10px">
+        </div>
+        <div id="edit-loc-error" style="color:#ef4444;font-size:0.8rem;min-height:16px;margin-bottom:6px"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" data-loc-action="save" data-idx="${loc.idx}" style="flex:1;font-size:0.8rem;padding:7px">Guardar</button>
+          <button class="btn btn-outline" data-loc-action="cancel" style="flex:1;font-size:0.8rem;padding:7px">Cancelar</button>
+        </div>
+      </div>` : '';
+
+    return `
+      <div style="background:#1e293b;border-radius:10px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:0.92rem">${escHtml(loc.nombre)}</div>
+            ${loc.isCausa ? '<span style="font-size:0.7rem;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:999px">CAUSA</span>' : ''}
+            <div style="font-size:0.75rem;color:#64748b;margin-top:3px;word-break:break-all">${escHtml(loc.emails||'Sin email configurado')}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;flex-shrink:0">
+            <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.72rem;padding:4px 8px">Editar</button>
+            <button class="btn" data-loc-action="delete" data-idx="${loc.idx}" data-nombre="${escHtml(loc.nombre)}" style="font-size:0.72rem;padding:4px 8px;background:#7f1d1d;color:#fff;border:none;border-radius:8px">Eliminar</button>
+          </div>
+        </div>
+        ${editForm}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="setup-card" style="margin-bottom:16px">
+      <h2 style="margin-bottom:12px">Nuevo local</h2>
+      <div class="form-group"><label class="form-label">Nombre</label><input class="form-control" id="inp-loc-nombre" type="text" placeholder="Nombre del local"></div>
+      <div class="form-group"><label class="form-label">Marca CAUSA</label>
+        <select class="form-control" id="sel-loc-causa"><option value="false">No</option><option value="true">Sí</option></select>
+      </div>
+      <div class="form-group"><label class="form-label">Emails de resultados</label>
+        <input class="form-control" id="inp-loc-emails" type="text" placeholder="mail@local.com, otro@local.com">
+      </div>
+      <div id="admin-loc-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
+      <button class="btn btn-primary" id="btn-loc-create" style="width:100%">Agregar local</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <h3 style="color:#e2e8f0;margin:0;flex:1">Locales (${locales.length})</h3>
+      ${loading ? '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' : ''}
+    </div>
+    ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
+    ${rows || (!loading ? '<p style="color:#64748b;font-size:0.85rem">No hay locales cargados.</p>' : '')}`;
 }
 
 function getVisibleLocales() {
@@ -1142,25 +1256,55 @@ function attachListeners() {
     if (confirm('¿Cerrar sesión?')) logout();
   });
 
-  // Ir a admin
-  on('btn-go-admin', 'click', async () => {
-    state.adminUsers   = [];
-    state.adminLoading = true;
-    state.adminError   = '';
-    setState({ screen: 'admin' });
+  // Helpers para recargar datos de admin
+  async function recargarUsuarios() {
+    state.adminLoading = true; render();
     try {
       const res = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
       state.adminUsers   = res.usuarios || [];
       state.adminLoading = false;
-      state.adminError   = res.success ? '' : res.error || 'Error al cargar usuarios.';
-    } catch(err) {
-      state.adminLoading = false;
-      state.adminError   = 'Error de conexión.';
-    }
+      state.adminError   = res.success ? '' : (res.error || 'Error al cargar usuarios.');
+    } catch(e) { state.adminLoading = false; state.adminError = 'Error de conexión.'; }
     render();
+  }
+  async function recargarLocales() {
+    state.adminLocalesLoading = true; render();
+    try {
+      const res = await callAPI({ action: 'getLocales', adminEmail: state.user.email, adminToken: state.user.token });
+      state.adminLocales        = res.locales || [];
+      state.adminLocalesLoading = false;
+      state.adminLocalesError   = res.success ? '' : (res.error || 'Error al cargar locales.');
+    } catch(e) { state.adminLocalesLoading = false; state.adminLocalesError = 'Error de conexión.'; }
+    render();
+  }
+
+  // Ir a admin
+  on('btn-go-admin', 'click', async () => {
+    state.adminTab = 'usuarios'; state.adminSearch = ''; state.adminEditingUserEmail = null;
+    state.adminUsers = []; state.adminLoading = true; state.adminError = '';
+    setState({ screen: 'admin' });
+    await recargarUsuarios();
   });
 
   on('btn-admin-back', 'click', () => setState({ screen: 'welcome' }));
+
+  // Tabs
+  on('btn-admin-tab-usuarios', 'click', async () => {
+    if (state.adminTab === 'usuarios') return;
+    state.adminTab = 'usuarios'; state.adminEditingUserEmail = null; state.adminSearch = '';
+    render();
+    if (!state.adminUsers.length) await recargarUsuarios();
+  });
+  on('btn-admin-tab-locales', 'click', async () => {
+    if (state.adminTab === 'locales') return;
+    state.adminTab = 'locales'; state.adminEditingLocalIdx = null;
+    render();
+    if (!state.adminLocales.length) await recargarLocales();
+  });
+
+  // Buscador usuarios
+  const inpSearch = document.getElementById('inp-admin-search');
+  if (inpSearch) inpSearch.addEventListener('input', () => { state.adminSearch = inpSearch.value; render(); });
 
   // Admin: crear usuario
   on('btn-admin-create', 'click', async () => {
@@ -1169,36 +1313,52 @@ function attachListeners() {
     const rol     =  document.getElementById('sel-admin-rol')?.value     || 'Auditor';
     const locales = (document.getElementById('inp-admin-locales')?.value || '').trim() || 'todos';
     const errEl   =  document.getElementById('admin-create-error');
-    if (!nombre || !email) { if (errEl) errEl.textContent = 'Completá nombre y email.'; return; }
+    if (!nombre || !email) { if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = 'Completá nombre y email.'; } return; }
     const btn = document.getElementById('btn-admin-create');
     if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
     try {
       const res = await callAPI({ action: 'crearUsuario', adminEmail: state.user.email, adminToken: state.user.token, nombre, email, rol, locales });
       if (res.success) {
         if (errEl) { errEl.style.color = '#16a34a'; errEl.textContent = 'Usuario creado. Se envió un email con la contraseña temporal.'; }
-        document.getElementById('inp-admin-nombre').value = '';
-        document.getElementById('inp-admin-email').value  = '';
+        document.getElementById('inp-admin-nombre').value  = '';
+        document.getElementById('inp-admin-email').value   = '';
         document.getElementById('inp-admin-locales').value = '';
-        // Recargar lista
-        const resU = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
-        state.adminUsers = resU.usuarios || [];
+        await recargarUsuarios();
       } else {
         if (errEl) { errEl.style.color = '#ef4444'; errEl.textContent = res.error || 'Error al crear usuario.'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Crear y enviar email'; }
+        render();
       }
-    } catch(err) {
+    } catch(e) {
       if (errEl) { errEl.style.color = '#ef4444'; errEl.textContent = 'Error de conexión.'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Crear y enviar email'; }
+      render();
     }
-    if (btn) { btn.disabled = false; btn.textContent = 'Crear usuario y enviar email'; }
-    render();
   });
 
-  // Admin: acciones por usuario (delegación en el contenedor)
+  // Admin: acciones por usuario
   document.querySelectorAll('[data-admin-action]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const action     = btn.dataset.adminAction;
+      const action      = btn.dataset.adminAction;
       const targetEmail = btn.dataset.email;
-      if (action === 'reset') {
-        if (!confirm('¿Resetear la contraseña de ' + targetEmail + '? Se le enviará un email con una contraseña temporal.')) return;
+      if (action === 'edit-open') {
+        state.adminEditingUserEmail = targetEmail; render();
+      } else if (action === 'edit-cancel') {
+        state.adminEditingUserEmail = null; render();
+      } else if (action === 'edit-save') {
+        const nombre  = (document.getElementById('edit-usr-nombre')?.value  || '').trim();
+        const rol     =  document.getElementById('edit-usr-rol')?.value     || '';
+        const locales = (document.getElementById('edit-usr-locales')?.value || '').trim() || 'todos';
+        const errEl   =  document.getElementById('edit-usr-error');
+        if (!nombre) { if (errEl) errEl.textContent = 'El nombre no puede estar vacío.'; return; }
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'editarUsuario', adminEmail: state.user.email, adminToken: state.user.token, targetEmail, nombre, rol, locales });
+          if (res.success) { state.adminEditingUserEmail = null; await recargarUsuarios(); }
+          else { if (errEl) errEl.textContent = res.error || 'Error.'; btn.disabled = false; }
+        } catch(e) { if (errEl) errEl.textContent = 'Error de conexión.'; btn.disabled = false; }
+      } else if (action === 'reset') {
+        if (!confirm('¿Resetear la contraseña de ' + targetEmail + '? Se le enviará un email.')) return;
         btn.disabled = true;
         try {
           const res = await callAPI({ action: 'resetPassword', adminEmail: state.user.email, adminToken: state.user.token, targetEmail });
@@ -1206,25 +1366,80 @@ function attachListeners() {
         } catch(e) { alert('Error de conexión.'); }
         btn.disabled = false;
       } else if (action === 'baja') {
-        if (!confirm('¿Dar de baja al usuario ' + targetEmail + '? Ya no podrá ingresar.')) return;
+        if (!confirm('¿Dar de baja a ' + targetEmail + '?')) return;
         btn.disabled = true;
         try {
           const res = await callAPI({ action: 'darDeBaja', adminEmail: state.user.email, adminToken: state.user.token, targetEmail });
-          if (res.success) {
-            const resU = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
-            state.adminUsers = resU.usuarios || [];
-            render();
-          } else { alert(res.error || 'Error.'); btn.disabled = false; }
+          if (res.success) await recargarUsuarios();
+          else { alert(res.error || 'Error.'); btn.disabled = false; }
         } catch(e) { alert('Error de conexión.'); btn.disabled = false; }
       } else if (action === 'reactivar') {
         btn.disabled = true;
         try {
           const res = await callAPI({ action: 'reactivarUsuario', adminEmail: state.user.email, adminToken: state.user.token, targetEmail });
-          if (res.success) {
-            const resU = await callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token });
-            state.adminUsers = resU.usuarios || [];
-            render();
-          } else { alert(res.error || 'Error.'); btn.disabled = false; }
+          if (res.success) await recargarUsuarios();
+          else { alert(res.error || 'Error.'); btn.disabled = false; }
+        } catch(e) { alert('Error de conexión.'); btn.disabled = false; }
+      }
+    });
+  });
+
+  // Admin: crear local
+  on('btn-loc-create', 'click', async () => {
+    const nombre  = (document.getElementById('inp-loc-nombre')?.value  || '').trim();
+    const isCausa =  document.getElementById('sel-loc-causa')?.value   || 'false';
+    const emails  = (document.getElementById('inp-loc-emails')?.value  || '').trim();
+    const errEl   =  document.getElementById('admin-loc-create-error');
+    if (!nombre) { if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = 'Ingresá el nombre del local.'; } return; }
+    const btn = document.getElementById('btn-loc-create');
+    if (btn) { btn.disabled = true; btn.textContent = 'Agregando...'; }
+    try {
+      const res = await callAPI({ action: 'crearLocal', adminEmail: state.user.email, adminToken: state.user.token, nombre, isCausa, emails });
+      if (res.success) {
+        document.getElementById('inp-loc-nombre').value = '';
+        document.getElementById('inp-loc-emails').value = '';
+        await recargarLocales();
+      } else {
+        if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = res.error || 'Error.'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Agregar local'; }
+        render();
+      }
+    } catch(e) {
+      if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = 'Error de conexión.'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Agregar local'; }
+      render();
+    }
+  });
+
+  // Admin: acciones por local
+  document.querySelectorAll('[data-loc-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.locAction;
+      const idx    = parseInt(btn.dataset.idx);
+      if (action === 'edit') {
+        state.adminEditingLocalIdx = idx; render();
+      } else if (action === 'cancel') {
+        state.adminEditingLocalIdx = null; render();
+      } else if (action === 'save') {
+        const nombre  = (document.getElementById('edit-loc-nombre')?.value  || '').trim();
+        const isCausa =  document.getElementById('edit-loc-causa')?.value   || 'false';
+        const emails  = (document.getElementById('edit-loc-emails')?.value  || '').trim();
+        const errEl   =  document.getElementById('edit-loc-error');
+        if (!nombre) { if (errEl) errEl.textContent = 'El nombre no puede estar vacío.'; return; }
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'updateLocal', adminEmail: state.user.email, adminToken: state.user.token, idx, nombre, isCausa, emails });
+          if (res.success) { state.adminEditingLocalIdx = null; await recargarLocales(); }
+          else { if (errEl) errEl.textContent = res.error || 'Error.'; btn.disabled = false; }
+        } catch(e) { if (errEl) errEl.textContent = 'Error de conexión.'; btn.disabled = false; }
+      } else if (action === 'delete') {
+        const nombre = btn.dataset.nombre || '';
+        if (!confirm('¿Eliminar el local "' + nombre + '"? Esta acción no se puede deshacer.')) return;
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'eliminarLocal', adminEmail: state.user.email, adminToken: state.user.token, idx });
+          if (res.success) await recargarLocales();
+          else { alert(res.error || 'Error.'); btn.disabled = false; }
         } catch(e) { alert('Error de conexión.'); btn.disabled = false; }
       }
     });

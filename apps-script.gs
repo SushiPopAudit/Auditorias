@@ -943,6 +943,96 @@ function doGet(e) {
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
+  if (action === 'editarUsuario') {
+    var adminEmE  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokE = e.parameter.adminToken || '';
+    var targetEmE = ((e.parameter.targetEmail) || '').toLowerCase().trim();
+    var newNombre = e.parameter.nombre   || '';
+    var newRol    = e.parameter.rol      || '';
+    var newLocales= e.parameter.locales  || '';
+    var newEstado = e.parameter.estado   || '';
+    if (!adminEmE || !adminTokE || !targetEmE) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssE = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssE, adminEmE, adminTokE)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shE = ensureUsuariosSheet(ssE);
+      var rowE = encontrarUsuarioRow(shE, targetEmE);
+      if (rowE < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      if (newNombre) shE.getRange(rowE, 2).setValue(newNombre);
+      if (newRol)    shE.getRange(rowE, 3).setValue(newRol);
+      if (newLocales !== undefined && newLocales !== '') shE.getRange(rowE, 4).setValue(newLocales);
+      if (newEstado) shE.getRange(rowE, 7).setValue(newEstado);
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'getLocales') {
+    var adminEmL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokL = e.parameter.adminToken || '';
+    if (!adminEmL || !adminTokL) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssL  = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssL, adminEmL, adminTokL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shL  = ssL.getSheetByName('Locales');
+      if (!shL || shL.getLastRow() < 2) return jsonResponse({ success: true, locales: [] });
+      var dataL = shL.getRange(2, 1, shL.getLastRow() - 1, 3).getValues();
+      var locales = dataL.filter(function(r){ return r[0]; }).map(function(r, i){
+        return { idx: i + 2, nombre: r[0], isCausa: String(r[1]).toUpperCase() === 'TRUE', emails: r[2] || '' };
+      });
+      return jsonResponse({ success: true, locales: locales });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'crearLocal') {
+    var adminEmCL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokCL = e.parameter.adminToken || '';
+    var lNombre    = e.parameter.nombre  || '';
+    var lCausa     = e.parameter.isCausa === 'true' ? 'TRUE' : 'FALSE';
+    var lEmails    = e.parameter.emails  || '';
+    if (!adminEmCL || !adminTokCL || !lNombre) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssCL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssCL, adminEmCL, adminTokCL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shCL = ssCL.getSheetByName('Locales');
+      if (!shCL) return jsonResponse({ success: false, error: 'Hoja Locales no encontrada' });
+      shCL.appendRow([lNombre, lCausa, lEmails]);
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'updateLocal') {
+    var adminEmUL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokUL = e.parameter.adminToken || '';
+    var ulIdx      = parseInt(e.parameter.idx) || 0;
+    var ulNombre   = e.parameter.nombre  || '';
+    var ulCausa    = e.parameter.isCausa === 'true' ? 'TRUE' : 'FALSE';
+    var ulEmails   = e.parameter.emails  || '';
+    if (!adminEmUL || !adminTokUL || !ulIdx || !ulNombre) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssUL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssUL, adminEmUL, adminTokUL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shUL = ssUL.getSheetByName('Locales');
+      if (!shUL) return jsonResponse({ success: false, error: 'Hoja Locales no encontrada' });
+      shUL.getRange(ulIdx, 1, 1, 3).setValues([[ulNombre, ulCausa, ulEmails]]);
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
+  if (action === 'eliminarLocal') {
+    var adminEmDL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var adminTokDL = e.parameter.adminToken || '';
+    var dlIdx      = parseInt(e.parameter.idx) || 0;
+    if (!adminEmDL || !adminTokDL || !dlIdx) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssDL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssDL, adminEmDL, adminTokDL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shDL = ssDL.getSheetByName('Locales');
+      if (!shDL) return jsonResponse({ success: false, error: 'Hoja Locales no encontrada' });
+      shDL.deleteRow(dlIdx);
+      return jsonResponse({ success: true });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
   if (action === 'verificarAudit') {
     var vId = e.parameter.auditId || '';
     if (!vId) return jsonResponse({ found: false, error: 'Falta auditId' });
