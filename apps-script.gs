@@ -1046,6 +1046,26 @@ function doGet(e) {
     } catch(err) { return jsonResponse({ found: false, error: err.message }); }
   }
 
+  if (action === 'forgotPassword') {
+    var fpEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    if (!fpEmail) return jsonResponse({ success: false, error: 'Falta el email' });
+    try {
+      var ssFP    = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var sheetFP = ensureUsuariosSheet(ssFP);
+      var rowFP   = encontrarUsuarioRow(sheetFP, fpEmail);
+      if (rowFP < 0) return jsonResponse({ success: false, error: 'Email no encontrado' });
+      var estadoFP = sheetFP.getRange(rowFP, 7).getValue();
+      if (estadoFP === 'Inactivo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      var nombreFP = sheetFP.getRange(rowFP, 2).getValue();
+      var tempFP   = generarPasswordTemp();
+      sheetFP.getRange(rowFP, 5).setValue(hashPassword(tempFP));
+      sheetFP.getRange(rowFP, 6).setValue('true');
+      var bodyFP = 'Hola ' + nombreFP + ',\n\nRecibimos una solicitud para restablecer tu contraseña.\n\nContraseña temporal: ' + tempFP + '\n\nAl ingresar se te pedirá que elijas una nueva contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
+      GmailApp.sendEmail(fpEmail, 'Recuperación de contraseña - Auditorías Sushi POP', bodyFP, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
+      return jsonResponse({ success: true, message: 'Email enviado con contraseña temporal' });
+    } catch(err) { return jsonResponse({ success: false, error: err.message }); }
+  }
+
   if (action === 'bootstrapAdmin') {
     var bNombre = e.parameter.nombre || '';
     var bEmail  = ((e.parameter.email) || '').toLowerCase().trim();

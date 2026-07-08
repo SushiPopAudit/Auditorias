@@ -47,6 +47,8 @@ const state = {
   adminShowCreateLocal:    false,
   adminExpandedUserEmail:  null,
   adminExpandedLocalIdx:   null,
+  adminAddEmailLocalIdx:   null,
+  loginShowForgot:         false,
 };
 
 // ============================================================
@@ -364,6 +366,24 @@ function renderWelcome() {
 // PANTALLA: LOGIN
 // ============================================================
 function renderLogin() {
+  const showForgot = state.loginShowForgot;
+  if (showForgot) {
+    return `
+      <div class="screen-welcome">
+        <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
+        <h1 class="welcome-title" style="font-size:1.4rem">Recuperar contraseña</h1>
+        <p class="welcome-sub" style="margin-bottom:24px">Ingresá tu email y te enviamos una contraseña temporal</p>
+        <div style="width:100%;max-width:340px;text-align:left">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-control" id="inp-forgot-email" type="email" placeholder="tu@email.com" autocomplete="email" inputmode="email">
+          </div>
+          <div id="forgot-msg" style="font-size:0.85rem;margin-bottom:12px;min-height:20px"></div>
+          <button class="btn btn-primary btn-large" id="btn-forgot-submit" style="width:100%;margin-bottom:12px">Enviar email</button>
+          <button class="btn btn-outline" id="btn-forgot-back" style="width:100%">Volver al login</button>
+        </div>
+      </div>`;
+  }
   return `
     <div class="screen-welcome">
       <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
@@ -379,10 +399,10 @@ function renderLogin() {
           <input class="form-control" id="inp-login-pwd" type="password" placeholder="••••••••" autocomplete="current-password">
         </div>
         <div id="login-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:12px;min-height:20px"></div>
-        <button class="btn btn-primary btn-large" id="btn-login-submit" style="width:100%">Ingresar</button>
+        <button class="btn btn-primary btn-large" id="btn-login-submit" style="width:100%;margin-bottom:12px">Ingresar</button>
+        <button class="btn btn-outline" id="btn-show-forgot" style="width:100%;font-size:0.85rem;color:#6b7280;border-color:#e5e7eb">Olvidé mi contraseña</button>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 // ============================================================
@@ -630,10 +650,22 @@ function renderAdminLocales() {
         </div>
       </div>` : '';
 
+    const isAddingEmail = state.adminAddEmailLocalIdx === loc.idx;
+    const addEmailForm = isAddingEmail ? `
+      <div style="display:flex;gap:6px;margin-top:6px;margin-bottom:8px">
+        <input class="form-control" id="inp-add-email" type="email" placeholder="nuevo@email.com" style="flex:1;font-size:0.85rem;padding:6px 10px">
+        <button class="btn btn-primary" data-loc-action="add-email-save" data-idx="${loc.idx}" style="font-size:0.8rem;padding:6px 10px;white-space:nowrap">Agregar</button>
+        <button class="btn btn-outline" data-loc-action="add-email-cancel" style="font-size:0.8rem;padding:6px 8px">✕</button>
+      </div>` : '';
+
     const detail = (isExpanded && !isEditing) ? `
       <div style="padding-top:8px;padding-bottom:4px">
         ${loc.isCausa ? '<div style="margin-bottom:8px"><span style="font-size:0.75rem;background:#7c3aed;color:#fff;padding:2px 8px;border-radius:999px">CAUSA</span></div>' : ''}
-        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:6px">Emails de resultados</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:0.78rem;color:#6b7280">Emails de resultados</span>
+          ${!isAddingEmail ? `<button data-loc-action="add-email-open" data-idx="${loc.idx}" style="background:#16a34a;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:0.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">+</button>` : ''}
+        </div>
+        ${addEmailForm}
         <div style="margin-bottom:10px">${emailPills(loc.emails)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline" data-loc-action="edit" data-idx="${loc.idx}" style="font-size:0.8rem;padding:5px 12px">Editar</button>
@@ -693,14 +725,15 @@ function emailPills(emailsStr) {
 
 function localesCheckboxes(selectedStr) {
   const all = state.adminLocales || [];
+  if (state.adminLocalesLoading) return `<div style="color:#6b7280;font-size:0.85rem;padding:8px 0">Cargando locales…</div>`;
   if (!all.length) return `<input class="form-control" id="inp-loc-fallback" type="text" placeholder="vacío = todos" value="${escHtml(selectedStr||'')}">`;
   const isTodos = !selectedStr || selectedStr === 'todos';
   const sel = selectedStr ? selectedStr.split(',').map(l => l.trim().toLowerCase()) : [];
-  return `<div style="border:1px solid #334155;border-radius:8px;padding:8px;max-height:180px;overflow-y:auto;background:#0f172a">
-    <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem;cursor:pointer;border-bottom:1px solid #1e293b;margin-bottom:6px;color:#e2e8f0">
+  return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;max-height:180px;overflow-y:auto;background:#fff">
+    <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem;cursor:pointer;border-bottom:1px solid #e5e7eb;margin-bottom:6px;color:#1a1a1a">
       <input type="checkbox" class="chk-loc-todos" style="accent-color:#f97316;width:16px;height:16px" ${isTodos?'checked':''}> <strong>Todos los locales</strong>
     </label>
-    ${all.map(l => `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:0.85rem;cursor:pointer;color:#e2e8f0">
+    ${all.map(l => `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.85rem;cursor:pointer;color:#1a1a1a">
       <input type="checkbox" class="chk-loc-item" value="${escHtml(l.nombre)}" style="accent-color:#f97316;width:16px;height:16px" ${!isTodos && sel.includes(l.nombre.toLowerCase())?'checked':''}> ${escHtml(l.nombre)}
     </label>`).join('')}
   </div>`;
@@ -1339,6 +1372,30 @@ function attachListeners() {
   const inpLoginPwd = document.getElementById('inp-login-pwd');
   if (inpLoginPwd) inpLoginPwd.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-login-submit')?.click(); });
 
+  // Olvidé mi contraseña
+  on('btn-show-forgot', 'click', () => setState({ loginShowForgot: true }));
+  on('btn-forgot-back', 'click', () => setState({ loginShowForgot: false }));
+  on('btn-forgot-submit', 'click', async () => {
+    const email = (document.getElementById('inp-forgot-email')?.value || '').trim().toLowerCase();
+    const msgEl = document.getElementById('forgot-msg');
+    if (!email) { if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent='Ingresá tu email.'; } return; }
+    const btn = document.getElementById('btn-forgot-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+      const res = await callAPI({ action: 'forgotPassword', email });
+      if (res.success) {
+        if (msgEl) { msgEl.style.color='#16a34a'; msgEl.textContent='Email enviado. Revisá tu casilla y seguí las instrucciones.'; }
+        if (btn) btn.textContent = 'Enviado ✓';
+      } else {
+        if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent = res.error || 'Error al enviar.'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Enviar email'; }
+      }
+    } catch(e) {
+      if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent='Error de conexión.'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar email'; }
+    }
+  });
+
   // Cambio de contraseña
   on('btn-changepwd-submit', 'click', async () => {
     const pwd1  = document.getElementById('inp-newpwd')?.value  || '';
@@ -1483,6 +1540,7 @@ function attachListeners() {
         state.adminEditingUserEmail = null; render();
       } else if (action === 'edit-open') {
         state.adminEditingUserEmail = targetEmail; state.adminExpandedUserEmail = null; render();
+        if (!state.adminLocales.length) recargarLocales();
       } else if (action === 'edit-cancel') {
         state.adminEditingUserEmail = null; state.adminExpandedUserEmail = targetEmail; render();
       } else if (action === 'edit-save') {
@@ -1556,9 +1614,30 @@ function attachListeners() {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.locAction;
       const idx    = parseInt(btn.dataset.idx);
-      if (action === 'expand') {
+      if (action === 'add-email-open') {
+        state.adminAddEmailLocalIdx = idx; render();
+        document.getElementById('inp-add-email')?.focus();
+      } else if (action === 'add-email-cancel') {
+        state.adminAddEmailLocalIdx = null; render();
+      } else if (action === 'add-email-save') {
+        const newEmail = (document.getElementById('inp-add-email')?.value || '').trim().toLowerCase();
+        if (!newEmail) return;
+        const loc = (state.adminLocales||[]).find(l => l.idx === idx);
+        if (!loc) return;
+        const current = loc.emails ? loc.emails.split(',').map(e => e.trim()).filter(Boolean) : [];
+        if (current.includes(newEmail)) { alert('Ese email ya está en la lista.'); return; }
+        current.push(newEmail);
+        const emails = current.join(', ');
+        btn.disabled = true;
+        try {
+          const res = await callAPI({ action: 'updateLocal', adminEmail: state.user.email, adminToken: state.user.token, idx, nombre: loc.nombre, isCausa: loc.isCausa, emails });
+          if (res.success) { state.adminAddEmailLocalIdx = null; await recargarLocales(); }
+          else { alert(res.error || 'Error.'); btn.disabled = false; }
+        } catch(e) { alert('Error de conexión.'); btn.disabled = false; }
+      } else if (action === 'expand') {
         const already = state.adminExpandedLocalIdx === idx;
         state.adminExpandedLocalIdx = already ? null : idx;
+        state.adminAddEmailLocalIdx = null;
         state.adminEditingLocalIdx = null; render();
       } else if (action === 'edit') {
         state.adminEditingLocalIdx = idx; state.adminExpandedLocalIdx = null; render();
