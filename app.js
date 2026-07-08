@@ -517,13 +517,9 @@ function renderAdminMenu() {
 
 function renderAdminSubscreen(title, content) {
   return `
-    <div class="header">
-      <button class="header-back" id="btn-admin-back">‹</button>
-      <div><div class="header-title">${title}</div></div>
-    </div>
-    <div class="main" style="padding-top:12px">
+    <div class="main" style="padding-top:16px">
       ${content}
-      <div style="height:40px"></div>
+      <div style="height:24px"></div>
     </div>`;
 }
 
