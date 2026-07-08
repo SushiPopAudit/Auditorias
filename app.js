@@ -290,6 +290,11 @@ const NO_NAV_SCREENS = new Set(['loading', 'login', 'change-password', 'error'])
 
 function render() {
   const app = document.getElementById('app');
+  // Sync body class so CSS can position nav-footer correctly
+  document.body.classList.toggle(
+    'admin-nav',
+    state.user?.rol === 'Admin' && !NO_NAV_SCREENS.has(state.screen)
+  );
   switch (state.screen) {
     case 'loading':          app.innerHTML = renderLoading();          break;
     case 'login':            app.innerHTML = renderLogin();            break;
@@ -331,18 +336,38 @@ function renderWelcome() {
     if (raw) {
       const draft = JSON.parse(raw);
       const age = Date.now() - (draft.ts || 0);
-      if (age < 86400000 && draft.local && draft.local.nombre) {
-        draftBanner = `
-          <div id="draft-banner" style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;width:100%;box-sizing:border-box">
-            <div style="font-size:0.9rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
-            <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:12px">
-              <strong>${escHtml(draft.local.nombre)}</strong> &mdash; ${escHtml(draft.fecha || '')}
-            </div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.85rem">Continuar auditoría</button>
-              <button class="btn btn-outline" id="btn-draft-discard" style="flex:1;font-size:0.85rem">Descartar</button>
-            </div>
-          </div>`;
+      const isUnconfirmed = !!localStorage.getItem('audit_unconfirmed');
+      if (age < 259200000 && draft.local && draft.local.nombre) { // 72h window
+        const tsStr = draft.ts ? new Date(draft.ts).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+        if (isUnconfirmed) {
+          draftBanner = `
+            <div id="draft-banner" style="background:#fff1f2;border:2px solid #e4001b;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;width:100%;box-sizing:border-box">
+              <div style="font-size:0.9rem;font-weight:700;color:#b80015;margin-bottom:4px">⚠ Auditoría enviada sin confirmar</div>
+              <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:4px">
+                <strong>${escHtml(draft.local.nombre)}</strong> &mdash; ${escHtml(draft.fecha || '')}
+              </div>
+              <div style="font-size:0.78rem;color:#6b7280;margin-bottom:12px">El servidor no confirmó la recepción. Puede que igual haya llegado.</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-danger" id="btn-draft-reenviar" style="flex:1;font-size:0.82rem;min-width:120px">Reenviar ahora</button>
+                <button class="btn btn-outline" id="btn-draft-export" style="flex:1;font-size:0.82rem;min-width:100px">Exportar datos</button>
+                <button class="btn" id="btn-confirmar-igualmente" style="flex:1;font-size:0.82rem;min-width:100px;border:1px solid #d1d5db;color:#6b7280">Llegó igual</button>
+              </div>
+            </div>`;
+        } else {
+          draftBanner = `
+            <div id="draft-banner" style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;width:100%;box-sizing:border-box">
+              <div style="font-size:0.9rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
+              <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:4px">
+                <strong>${escHtml(draft.local.nombre)}</strong> &mdash; ${escHtml(draft.fecha || '')}
+              </div>
+              ${tsStr ? `<div style="font-size:0.78rem;color:#6b7280;margin-bottom:12px">Guardada: ${tsStr}</div>` : '<div style="margin-bottom:12px"></div>'}
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.85rem">Continuar</button>
+                <button class="btn btn-outline" id="btn-draft-export" style="flex:1;font-size:0.85rem">Exportar</button>
+                <button class="btn btn-ghost" id="btn-draft-discard" style="flex:1;font-size:0.85rem;border:1px solid #d1d5db">Descartar</button>
+              </div>
+            </div>`;
+        }
       }
     }
   } catch(e) {}
@@ -467,7 +492,7 @@ function renderAdminBottomNav() {
         <span style="font-size:0.62rem">Auditoría</span>
       </button>
     </nav>
-    <div style="height:68px"></div>`;
+    <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
 }
 
 function renderAdmin() {
@@ -486,16 +511,31 @@ function renderAdminMenu() {
     const raw = localStorage.getItem('audit_draft');
     if (raw) {
       const d = JSON.parse(raw);
-      if (Date.now() - (d.ts||0) < 86400000 && d.local?.nombre) {
-        draftBanner = `
-          <div style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left">
-            <div style="font-size:0.88rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
-            <div style="font-size:0.83rem;color:#1a1a1a;margin-bottom:10px"><strong>${escHtml(d.local.nombre)}</strong> &mdash; ${escHtml(d.fecha||'')}</div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.83rem">Continuar auditoría</button>
-              <button class="btn btn-outline" id="btn-draft-discard" style="flex:1;font-size:0.83rem">Descartar</button>
-            </div>
-          </div>`;
+      const isUnconfirmed = !!localStorage.getItem('audit_unconfirmed');
+      if (Date.now() - (d.ts||0) < 259200000 && d.local?.nombre) {
+        if (isUnconfirmed) {
+          draftBanner = `
+            <div style="background:#fff1f2;border:2px solid #e4001b;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left">
+              <div style="font-size:0.88rem;font-weight:700;color:#b80015;margin-bottom:4px">⚠ Auditoría enviada sin confirmar</div>
+              <div style="font-size:0.83rem;color:#1a1a1a;margin-bottom:10px"><strong>${escHtml(d.local.nombre)}</strong> &mdash; ${escHtml(d.fecha||'')}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-danger" id="btn-draft-reenviar" style="flex:1;font-size:0.82rem;min-width:100px">Reenviar</button>
+                <button class="btn btn-outline" id="btn-draft-export" style="flex:1;font-size:0.82rem;min-width:100px">Exportar</button>
+                <button class="btn" id="btn-confirmar-igualmente" style="flex:1;font-size:0.82rem;min-width:80px;border:1px solid #d1d5db;color:#6b7280">Llegó igual</button>
+              </div>
+            </div>`;
+        } else {
+          draftBanner = `
+            <div style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left">
+              <div style="font-size:0.88rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
+              <div style="font-size:0.83rem;color:#1a1a1a;margin-bottom:10px"><strong>${escHtml(d.local.nombre)}</strong> &mdash; ${escHtml(d.fecha||'')}</div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.83rem">Continuar</button>
+                <button class="btn btn-outline" id="btn-draft-export" style="flex:1;font-size:0.83rem">Exportar</button>
+                <button class="btn btn-ghost" id="btn-draft-discard" style="flex:1;font-size:0.83rem;border:1px solid #d1d5db">Descartar</button>
+              </div>
+            </div>`;
+        }
       }
     }
   } catch(e) {}
@@ -1301,10 +1341,11 @@ function renderSuccess() {
   const unconfirmedBanner = state.sendUnconfirmed ? `
     <div style="background:#fff7ed;border:2px solid #f97316;border-radius:12px;padding:16px;margin:12px 0;text-align:left">
       <div style="font-weight:700;color:#c2410c;margin-bottom:6px">⚠ No se pudo confirmar la recepción</div>
-      <p style="font-size:0.83rem;color:#92400e;margin:0 0 10px">El servidor no confirmó que guardó la auditoría. Puede deberse a conexión inestable. El borrador se mantuvo guardado.</p>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" id="btn-reenviar-audit" style="flex:1;font-size:0.85rem">Reenviar auditoría</button>
-        <button class="btn btn-outline" id="btn-confirmar-igualmente" style="flex:1;font-size:0.85rem">Llegó igual, descartar</button>
+      <p style="font-size:0.83rem;color:#92400e;margin:0 0 10px">El servidor no confirmó la llegada. Puede que igual haya llegado, o podés reenviar. El borrador está guardado.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-reenviar-audit" style="flex:1;font-size:0.82rem;min-width:100px">Reenviar</button>
+        <button class="btn btn-outline" id="btn-export-unconfirmed" style="flex:1;font-size:0.82rem;min-width:100px">Exportar datos</button>
+        <button class="btn" id="btn-confirmar-igualmente" style="flex:1;font-size:0.82rem;min-width:100px;border:1px solid #d1d5db;color:#6b7280">Llegó igual</button>
       </div>
     </div>` : `<p class="success-sub">✓ Confirmado en el servidor.</p>`;
 
@@ -1759,6 +1800,34 @@ function attachListeners() {
     borrarBorrador();
     render();
   });
+  on('btn-draft-export', 'click', exportarBorrador);
+  on('btn-draft-reenviar', 'click', () => {
+    // Restaurar el estado del borrador y reenviar
+    try {
+      const raw = localStorage.getItem('audit_draft');
+      if (!raw) { alert('No hay borrador para reenviar.'); return; }
+      const draft = JSON.parse(raw);
+      if (!draft.local) return;
+      const cats = buildCategories(draft.local.isCausa);
+      Object.assign(state, {
+        auditor:             draft.auditor             || state.auditor,
+        auditorEmail:        draft.auditorEmail        || state.auditorEmail,
+        acompanante:         draft.acompanante         || '',
+        posicionAcompanante: draft.posicionAcompanante || '',
+        local:               draft.local,
+        fecha:               draft.fecha               || state.fecha,
+        categories:          cats,
+        categoryIndex:       draft.categoryIndex       || 0,
+        questionIndex:       draft.questionIndex       || 0,
+        answers:             draft.answers             || {},
+        skipped:             draft.skipped             || {},
+        sendUnconfirmed:     false,
+      });
+      submitAudit();
+    } catch(e) {
+      alert('No se pudo reenviar el borrador: ' + e.message);
+    }
+  });
 
   // Setup — local
   const selLocal = document.getElementById('sel-local');
@@ -1879,9 +1948,8 @@ function attachListeners() {
     });
   });
 
-  on('btn-reenviar-audit', 'click', () => {
-    setState({ screen: 'summary' });
-  });
+  on('btn-reenviar-audit', 'click', submitAudit);
+  on('btn-export-unconfirmed', 'click', exportarBorrador);
   on('btn-confirmar-igualmente', 'click', () => {
     borrarBorrador();
     setState({ screen: 'success', sendUnconfirmed: false });
@@ -2033,7 +2101,9 @@ function compressImage(file, maxWidth, quality) {
 // BORRADOR (auto-guardado)
 // ============================================================
 function guardarBorrador() {
-  if (!state.local || state.screen === 'success') return;
+  if (!state.local) return;
+  // No guardar en success a menos que haya quedado sin confirmar (necesitamos el borrador para reenviar)
+  if (state.screen === 'success' && !state.sendUnconfirmed) return;
   try {
     const draft = {
       ts:                  Date.now(),
@@ -2068,6 +2138,68 @@ function guardarBorrador() {
 
 function borrarBorrador() {
   try { localStorage.removeItem('audit_draft'); } catch(e) {}
+  try { localStorage.removeItem('audit_unconfirmed'); } catch(e) {}
+}
+
+function exportarBorrador() {
+  try {
+    const raw = localStorage.getItem('audit_draft');
+    if (!raw) { alert('No hay borrador guardado.'); return; }
+    const draft = JSON.parse(raw);
+    let txt = '=== AUDITORÍA EXPORTADA ===\n';
+    txt += `Local: ${draft.local?.nombre || ''}\n`;
+    txt += `Fecha: ${draft.fecha || ''}\n`;
+    txt += `Auditor: ${draft.auditor || ''}\n`;
+    if (draft.ts) txt += `Guardada: ${new Date(draft.ts).toLocaleString('es-AR')}\n`;
+    txt += '\n--- RESPUESTAS ---\n\n';
+    const answers = draft.answers || {};
+    const allQs = state.categories?.length
+      ? state.categories.flatMap(c => c.questions)
+      : [];
+    if (allQs.length) {
+      allQs.forEach(q => {
+        const a = answers[q.id] || {};
+        txt += `[${q.categoria}] ${q.control}\n`;
+        txt += `  Respuesta: ${a.valor || '(sin responder)'}\n`;
+        if (a.observacion) txt += `  Obs: ${a.observacion}\n`;
+        txt += '\n';
+      });
+    } else {
+      txt += JSON.stringify(answers, null, 2);
+    }
+    if (navigator.share) {
+      navigator.share({ title: 'Auditoría exportada', text: txt }).catch(() => copiarAlPortapapeles(txt));
+    } else {
+      copiarAlPortapapeles(txt);
+    }
+  } catch(e) {
+    alert('No se pudieron exportar las respuestas.');
+  }
+}
+
+function copiarAlPortapapeles(txt) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(txt)
+      .then(() => alert('✓ Texto copiado al portapapeles.\nPodés pegarlo en un email o WhatsApp.'))
+      .catch(() => mostrarTextoExportado(txt));
+  } else {
+    mostrarTextoExportado(txt);
+  }
+}
+
+function mostrarTextoExportado(txt) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;flex-direction:column;padding:16px;gap:12px';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:16px;flex:1;display:flex;flex-direction:column;gap:8px;overflow:hidden">
+      <div style="font-weight:700;font-size:0.95rem">Seleccioná y copiá el texto</div>
+      <textarea readonly style="flex:1;font-size:0.75rem;border:1px solid #e5e7eb;border-radius:8px;padding:8px;resize:none;font-family:monospace;-webkit-user-select:all;user-select:all">${txt.replace(/</g,'&lt;')}</textarea>
+      <button style="background:#e4001b;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:600;font-size:0.9rem;cursor:pointer" id="btn-close-export">Cerrar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const ta = overlay.querySelector('textarea');
+  ta.focus(); ta.select();
+  overlay.querySelector('#btn-close-export').addEventListener('click', () => overlay.remove());
 }
 
 // ============================================================
@@ -2159,7 +2291,8 @@ async function submitAudit() {
     } else {
       // El POST llegó (o creemos que sí) pero no aparece en el sheet todavía
       setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], sendUnconfirmed: true });
-      // NO borramos el borrador — el usuario puede reenviar si es necesario
+      // Guardar flag en localStorage para que persista si el usuario cierra la app
+      try { localStorage.setItem('audit_unconfirmed', auditId); } catch(e) {}
     }
   } catch (err) {
     console.error(err);

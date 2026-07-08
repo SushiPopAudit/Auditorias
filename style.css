@@ -37,7 +37,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-#app { min-height: 100vh; display: flex; flex-direction: column; }
+#app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 
 /* ============================================================
    TYPOGRAPHY
@@ -118,6 +118,8 @@ p  { line-height: 1.6; }
   transition: all 0.15s;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-height: 44px;
 }
 .btn:active { transform: scale(0.97); }
 
@@ -167,6 +169,7 @@ p  { line-height: 1.6; }
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 40px 32px;
   background: #ffffff;
   color: #1a1a1a;
@@ -455,7 +458,7 @@ select.form-control {
 .answer-radio { display: none; } /* ocultar radio nativo */
 
 .answer-label {
-  padding: 11px 14px;
+  padding: 13px 14px;
   border: 2px solid var(--border);
   border-radius: 8px;
   background: #fff;
@@ -468,7 +471,9 @@ select.form-control {
   gap: 10px;
   transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   user-select: none;
+  min-height: 48px;
 }
 .answer-label::before {
   content: '';
@@ -546,7 +551,7 @@ select.form-control {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 13px 14px;
   border: 2px dashed #cbd5e1;
   border-radius: 8px;
   background: #f8fafc;
@@ -557,6 +562,8 @@ select.form-control {
   width: 100%;
   transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-height: 48px;
 }
 .photo-btn.required {
   border-color: var(--alta);
@@ -603,7 +610,8 @@ select.form-control {
 /* Navigation */
 .nav-footer {
   position: fixed;
-  bottom: 68px; /* above admin bottom nav */
+  bottom: 0;
+  bottom: env(safe-area-inset-bottom, 0px);
   left: 0;
   right: 0;
   background: var(--card);
@@ -612,6 +620,10 @@ select.form-control {
   display: flex;
   gap: 10px;
   z-index: 90;
+}
+/* Push nav-footer above admin bottom nav when admin nav is visible */
+body.admin-nav .nav-footer {
+  bottom: calc(68px + env(safe-area-inset-bottom, 0px));
 }
 .nav-footer .btn { flex: 1; }
 
@@ -691,6 +703,7 @@ select.form-control {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 32px 24px;
   text-align: center;
 }
@@ -747,6 +760,7 @@ select.form-control {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   gap: 16px;
   color: var(--text-muted);
 }
