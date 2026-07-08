@@ -42,6 +42,9 @@ const state = {
   adminLocalesLoading:   false,
   adminLocalesError:     '',
   adminEditingLocalIdx:  null,
+  adminLocalesSearch:    '',
+  adminShowCreateUser:   false,
+  adminShowCreateLocal:  false,
 };
 
 // ============================================================
@@ -75,10 +78,10 @@ async function init() {
 
     const session = loadSession();
     if (session) {
-      state.user        = session;
-      state.auditor     = session.nombre;
+      state.user         = session;
+      state.auditor      = session.nombre;
       state.auditorEmail = session.email;
-      setState({ screen: 'welcome' });
+      setState({ screen: session.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
     } else {
       setState({ screen: 'login' });
     }
@@ -408,27 +411,69 @@ function renderChangePassword() {
 // ============================================================
 // PANTALLA: ADMIN
 // ============================================================
-// PANTALLA: ADMIN
-// ============================================================
 function renderAdmin() {
   const u = state.user;
   if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
-  const tab = state.adminTab || 'usuarios';
+  const tab = state.adminTab || 'menu';
+  if (tab === 'menu')     return renderAdminMenu();
+  if (tab === 'usuarios') return renderAdminSubscreen('Usuarios',  renderAdminUsuarios());
+  if (tab === 'locales')  return renderAdminSubscreen('Locales',   renderAdminLocales());
+  return renderAdminMenu();
+}
+
+function renderAdminMenu() {
+  let draftBanner = '';
+  try {
+    const raw = localStorage.getItem('audit_draft');
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (Date.now() - (d.ts||0) < 86400000 && d.local?.nombre) {
+        draftBanner = `
+          <div style="background:#fffbeb;border:2px solid #f97316;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left">
+            <div style="font-size:0.88rem;font-weight:700;color:#92400e;margin-bottom:4px">Auditoría incompleta guardada</div>
+            <div style="font-size:0.83rem;color:#1a1a1a;margin-bottom:10px"><strong>${escHtml(d.local.nombre)}</strong> &mdash; ${escHtml(d.fecha||'')}</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" id="btn-draft-continue" style="flex:1;font-size:0.83rem">Continuar auditoría</button>
+              <button class="btn btn-outline" id="btn-draft-discard" style="flex:1;font-size:0.83rem">Descartar</button>
+            </div>
+          </div>`;
+      }
+    }
+  } catch(e) {}
+  const u = state.user;
+  return `
+    <div class="screen-welcome" style="padding-top:40px">
+      <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
+      <h1 class="welcome-title" style="margin-bottom:4px">Sistema de Auditorías</h1>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+        <span style="font-size:0.75rem;background:#7c3aed;color:#fff;padding:2px 8px;border-radius:999px;font-weight:600">Admin</span>
+        <span style="font-size:0.88rem;color:#94a3b8">${escHtml(u?.nombre||'')}</span>
+      </div>
+      ${draftBanner}
+      <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-primary btn-large" id="btn-go-setup" style="width:100%">Nueva Auditoría</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button id="btn-admin-go-usuarios" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:12px;padding:20px 12px;font-size:0.95rem;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">
+            <span style="font-size:1.6rem">👥</span>Usuarios
+          </button>
+          <button id="btn-admin-go-locales" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:12px;padding:20px 12px;font-size:0.95rem;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">
+            <span style="font-size:1.6rem">🏪</span>Locales
+          </button>
+        </div>
+        <button class="btn btn-outline" id="btn-logout" style="width:100%;color:#94a3b8;border-color:#334155;font-size:0.85rem">Cerrar sesión</button>
+      </div>
+    </div>`;
+}
+
+function renderAdminSubscreen(title, content) {
   return `
     <div class="header">
       <button class="header-back" id="btn-admin-back">‹</button>
-      <div>
-        <div class="header-title">Administración</div>
-        <div class="header-subtitle">${tab === 'usuarios' ? 'Usuarios' : 'Locales'}</div>
-      </div>
+      <div><div class="header-title">${title}</div></div>
     </div>
-    <div style="display:flex;border-bottom:2px solid #1e293b;background:#0f172a;position:sticky;top:0;z-index:10">
-      <button id="btn-admin-tab-usuarios" style="flex:1;padding:12px;border:none;background:none;color:${tab==='usuarios'?'#f97316':'#64748b'};font-weight:${tab==='usuarios'?'700':'400'};border-bottom:${tab==='usuarios'?'2px solid #f97316':'2px solid transparent'};margin-bottom:-2px;cursor:pointer;font-size:0.95rem">Usuarios</button>
-      <button id="btn-admin-tab-locales"  style="flex:1;padding:12px;border:none;background:none;color:${tab==='locales' ?'#f97316':'#64748b'};font-weight:${tab==='locales' ?'700':'400'};border-bottom:${tab==='locales' ?'2px solid #f97316':'2px solid transparent'};margin-bottom:-2px;cursor:pointer;font-size:0.95rem">Locales</button>
-    </div>
-    <div class="main">
-      ${tab === 'usuarios' ? renderAdminUsuarios() : renderAdminLocales()}
-      <div style="height:32px"></div>
+    <div class="main" style="padding-top:12px">
+      ${content}
+      <div style="height:40px"></div>
     </div>`;
 }
 
@@ -497,9 +542,13 @@ function renderAdminUsuarios() {
       </div>`;
   }).join('');
 
-  return `
+  const showCreate = state.adminShowCreateUser;
+  const createForm = showCreate ? `
     <div class="setup-card" style="margin-bottom:16px">
-      <h2 style="margin-bottom:12px">Nuevo usuario</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">Nuevo usuario</h2>
+        <button id="btn-admin-cancel-create" style="background:none;border:none;color:#64748b;font-size:1.3rem;cursor:pointer;line-height:1">✕</button>
+      </div>
       <div class="form-group"><label class="form-label">Nombre completo</label><input class="form-control" id="inp-admin-nombre" type="text" placeholder="Nombre Apellido"></div>
       <div class="form-group"><label class="form-label">Email</label><input class="form-control" id="inp-admin-email" type="email" placeholder="usuario@email.com"></div>
       <div class="form-group"><label class="form-label">Rol</label>
@@ -508,16 +557,19 @@ function renderAdminUsuarios() {
         </select>
       </div>
       <div class="form-group"><label class="form-label">Locales asignados</label>
-        <input class="form-control" id="inp-admin-locales" type="text" placeholder="Local 1, Local 2 (vacío = todos)">
-        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Vacío = ve todos los locales.</div>
+        <input class="form-control" id="inp-admin-locales" type="text" placeholder="vacío = todos los locales">
+        <div style="font-size:0.75rem;color:#64748b;margin-top:4px">Separados por coma. Vacío = ve todos.</div>
       </div>
       <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
       <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear y enviar email</button>
-    </div>
+    </div>` : '';
 
+  return `
+    ${createForm}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <h3 style="color:#e2e8f0;margin:0;flex:1">Usuarios (${users.length})</h3>
       ${loading ? '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' : ''}
+      <button id="btn-admin-new-user" style="background:#f97316;color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700">+</button>
     </div>
     <input class="form-control" id="inp-admin-search" placeholder="Buscar por nombre, email o local..." value="${escHtml(state.adminSearch||'')}" style="margin-bottom:12px">
     ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
@@ -530,7 +582,11 @@ function renderAdminLocales() {
   const locales = state.adminLocales || [];
   const editingIdx = state.adminEditingLocalIdx;
 
-  const rows = locales.map(loc => {
+  const search = (state.adminLocalesSearch || '').toLowerCase();
+  const filtered = search
+    ? locales.filter(l => l.nombre.toLowerCase().includes(search) || (l.emails||'').toLowerCase().includes(search))
+    : locales;
+  const filteredRows = filtered.map(loc => {
     const isEditing = editingIdx === loc.idx;
     const editForm = isEditing ? `
       <div style="background:#0f172a;border-radius:8px;padding:12px;margin-top:10px">
@@ -573,9 +629,13 @@ function renderAdminLocales() {
       </div>`;
   }).join('');
 
-  return `
+  const showCreate = state.adminShowCreateLocal;
+  const createForm = showCreate ? `
     <div class="setup-card" style="margin-bottom:16px">
-      <h2 style="margin-bottom:12px">Nuevo local</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">Nuevo local</h2>
+        <button id="btn-admin-cancel-create-loc" style="background:none;border:none;color:#64748b;font-size:1.3rem;cursor:pointer;line-height:1">✕</button>
+      </div>
       <div class="form-group"><label class="form-label">Nombre</label><input class="form-control" id="inp-loc-nombre" type="text" placeholder="Nombre del local"></div>
       <div class="form-group"><label class="form-label">Marca CAUSA</label>
         <select class="form-control" id="sel-loc-causa"><option value="false">No</option><option value="true">Sí</option></select>
@@ -585,14 +645,18 @@ function renderAdminLocales() {
       </div>
       <div id="admin-loc-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
       <button class="btn btn-primary" id="btn-loc-create" style="width:100%">Agregar local</button>
-    </div>
+    </div>` : '';
 
+  return `
+    ${createForm}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <h3 style="color:#e2e8f0;margin:0;flex:1">Locales (${locales.length})</h3>
       ${loading ? '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' : ''}
+      <button id="btn-admin-new-local" style="background:#f97316;color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700">+</button>
     </div>
+    <input class="form-control" id="inp-locales-search" placeholder="Buscar por nombre o email..." value="${escHtml(state.adminLocalesSearch||'')}" style="margin-bottom:12px">
     ${err ? `<p style="color:#ef4444;font-size:0.85rem">${escHtml(err)}</p>` : ''}
-    ${rows || (!loading ? '<p style="color:#64748b;font-size:0.85rem">No hay locales cargados.</p>' : '')}`;
+    ${filteredRows || (!loading ? `<p style="color:#64748b;font-size:0.85rem">${search ? 'Sin resultados.' : 'No hay locales cargados.'}</p>` : '')}`;
 }
 
 function getVisibleLocales() {
@@ -1206,10 +1270,10 @@ function attachListeners() {
         setState({ screen: 'change-password' });
       } else {
         saveSession(userData);
-        state.user        = userData;
-        state.auditor     = userData.nombre;
+        state.user         = userData;
+        state.auditor      = userData.nombre;
         state.auditorEmail = userData.email;
-        setState({ screen: 'welcome' });
+        setState({ screen: userData.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
       }
     } catch(err) {
       if (errEl) errEl.textContent = 'Error de conexión. Intentá de nuevo.';
@@ -1241,10 +1305,10 @@ function attachListeners() {
       }
       const updatedUser = Object.assign({}, state.user, { token: newHash, primerLogin: false });
       saveSession(updatedUser);
-      state.user        = updatedUser;
-      state.auditor     = updatedUser.nombre;
+      state.user         = updatedUser;
+      state.auditor      = updatedUser.nombre;
       state.auditorEmail = updatedUser.email;
-      setState({ screen: 'welcome' });
+      setState({ screen: updatedUser.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
     } catch(err) {
       if (errEl) errEl.textContent = 'Error de conexión. Intentá de nuevo.';
       if (btn) { btn.disabled = false; btn.textContent = 'Cambiar contraseña'; }
@@ -1279,32 +1343,37 @@ function attachListeners() {
   }
 
   // Ir a admin
-  on('btn-go-admin', 'click', async () => {
-    state.adminTab = 'usuarios'; state.adminSearch = ''; state.adminEditingUserEmail = null;
-    state.adminUsers = []; state.adminLoading = true; state.adminError = '';
-    setState({ screen: 'admin' });
-    await recargarUsuarios();
+  on('btn-go-admin', 'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
+
+  on('btn-admin-back', 'click', () => {
+    if (state.adminTab === 'menu') { setState({ screen: 'welcome' }); return; }
+    setState({ adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false,
+               adminSearch: '', adminLocalesSearch: '', adminEditingUserEmail: null, adminEditingLocalIdx: null });
   });
 
-  on('btn-admin-back', 'click', () => setState({ screen: 'welcome' }));
-
-  // Tabs
-  on('btn-admin-tab-usuarios', 'click', async () => {
-    if (state.adminTab === 'usuarios') return;
-    state.adminTab = 'usuarios'; state.adminEditingUserEmail = null; state.adminSearch = '';
+  // Menu nav
+  on('btn-admin-go-usuarios', 'click', async () => {
+    state.adminTab = 'usuarios'; state.adminShowCreateUser = false; state.adminEditingUserEmail = null; state.adminSearch = '';
     render();
     if (!state.adminUsers.length) await recargarUsuarios();
   });
-  on('btn-admin-tab-locales', 'click', async () => {
-    if (state.adminTab === 'locales') return;
-    state.adminTab = 'locales'; state.adminEditingLocalIdx = null;
+  on('btn-admin-go-locales', 'click', async () => {
+    state.adminTab = 'locales'; state.adminShowCreateLocal = false; state.adminEditingLocalIdx = null; state.adminLocalesSearch = '';
     render();
     if (!state.adminLocales.length) await recargarLocales();
   });
 
-  // Buscador usuarios
+  // New user / new local toggle
+  on('btn-admin-new-user', 'click', () => setState({ adminShowCreateUser: true }));
+  on('btn-admin-cancel-create', 'click', () => setState({ adminShowCreateUser: false }));
+  on('btn-admin-new-local', 'click', () => setState({ adminShowCreateLocal: true }));
+  on('btn-admin-cancel-create-loc', 'click', () => setState({ adminShowCreateLocal: false }));
+
+  // Buscadores
   const inpSearch = document.getElementById('inp-admin-search');
   if (inpSearch) inpSearch.addEventListener('input', () => { state.adminSearch = inpSearch.value; render(); });
+  const inpLocSearch = document.getElementById('inp-locales-search');
+  if (inpLocSearch) inpLocSearch.addEventListener('input', () => { state.adminLocalesSearch = inpLocSearch.value; render(); });
 
   // Admin: crear usuario
   on('btn-admin-create', 'click', async () => {
@@ -1446,7 +1515,10 @@ function attachListeners() {
   });
 
   on('btn-go-setup',    'click', () => setState({ screen: 'setup' }));
-  on('btn-back-welcome','click', () => setState({ screen: 'welcome' }));
+  on('btn-back-welcome','click', () => {
+    const backScreen = state.user?.rol === 'Admin' ? 'admin' : 'welcome';
+    setState({ screen: backScreen, adminTab: 'menu' });
+  });
 
   // Borrar auditoría (aparece en cat-select y en header de audit)
   on('btn-borrar-auditoria',   'click', borrarAuditoria);
