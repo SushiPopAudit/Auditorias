@@ -433,14 +433,42 @@ function renderChangePassword() {
 // ============================================================
 // PANTALLA: ADMIN
 // ============================================================
+function renderAdminBottomNav() {
+  const tab = state.adminTab || 'menu';
+  const active = 'color:#e4001b;font-weight:700';
+  const idle   = 'color:#9ca3af;font-weight:400';
+  const base   = 'flex:1;padding:8px 4px 6px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px';
+  return `
+    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px);max-width:100vw">
+      <button id="nav-admin-inicio" style="${base};${tab==='menu'?active:idle}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span style="font-size:0.62rem">Inicio</span>
+      </button>
+      <button id="nav-admin-usuarios" style="${base};${tab==='usuarios'?active:idle}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        <span style="font-size:0.62rem">Usuarios</span>
+      </button>
+      <button id="nav-admin-locales" style="${base};${tab==='locales'?active:idle}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><line x1="9" y1="22" x2="9" y2="12"/><line x1="15" y1="12" x2="15" y2="22"/><circle cx="19" cy="8" r="3"/></svg>
+        <span style="font-size:0.62rem">Locales</span>
+      </button>
+      <button id="nav-admin-auditoria" style="${base};color:#9ca3af;font-weight:400">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        <span style="font-size:0.62rem">Auditoría</span>
+      </button>
+    </nav>
+    <div style="height:68px"></div>`;
+}
+
 function renderAdmin() {
   const u = state.user;
   if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
   const tab = state.adminTab || 'menu';
-  if (tab === 'menu')     return renderAdminMenu();
-  if (tab === 'usuarios') return renderAdminSubscreen('Usuarios',  renderAdminUsuarios());
-  if (tab === 'locales')  return renderAdminSubscreen('Locales',   renderAdminLocales());
-  return renderAdminMenu();
+  const nav = renderAdminBottomNav();
+  if (tab === 'menu')     return renderAdminMenu()     + nav;
+  if (tab === 'usuarios') return renderAdminSubscreen('Usuarios', renderAdminUsuarios()) + nav;
+  if (tab === 'locales')  return renderAdminSubscreen('Locales',  renderAdminLocales())  + nav;
+  return renderAdminMenu() + nav;
 }
 
 function renderAdminMenu() {
@@ -1462,17 +1490,25 @@ function attachListeners() {
                adminSearch: '', adminLocalesSearch: '', adminEditingUserEmail: null, adminEditingLocalIdx: null });
   });
 
-  // Menu nav
-  on('btn-admin-go-usuarios', 'click', async () => {
+  // Menu cards + bottom nav → usuarios
+  async function goToUsuarios() {
     state.adminTab = 'usuarios'; state.adminShowCreateUser = false; state.adminEditingUserEmail = null; state.adminSearch = '';
     render();
     if (!state.adminUsers.length) await recargarUsuarios();
-  });
-  on('btn-admin-go-locales', 'click', async () => {
+  }
+  // Menu cards + bottom nav → locales
+  async function goToLocales() {
     state.adminTab = 'locales'; state.adminShowCreateLocal = false; state.adminEditingLocalIdx = null; state.adminLocalesSearch = '';
     render();
     if (!state.adminLocales.length) await recargarLocales();
-  });
+  }
+
+  on('btn-admin-go-usuarios',  'click', goToUsuarios);
+  on('btn-admin-go-locales',   'click', goToLocales);
+  on('nav-admin-inicio',       'click', () => setState({ adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
+  on('nav-admin-usuarios',     'click', goToUsuarios);
+  on('nav-admin-locales',      'click', goToLocales);
+  on('nav-admin-auditoria',    'click', () => setState({ screen: 'setup' }));
 
   // New user / new local toggle
   on('btn-admin-new-user', 'click', async () => {
