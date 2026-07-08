@@ -286,6 +286,8 @@ function setState(patch) {
 // ============================================================
 // RENDER
 // ============================================================
+const NO_NAV_SCREENS = new Set(['loading', 'login', 'change-password', 'error']);
+
 function render() {
   const app = document.getElementById('app');
   switch (state.screen) {
@@ -301,6 +303,10 @@ function render() {
     case 'success':          app.innerHTML = renderSuccess();          break;
     case 'admin':            app.innerHTML = renderAdmin();            break;
     case 'error':            app.innerHTML = renderError();            break;
+  }
+  // Bottom nav for Admin on all screens except login/loading/error
+  if (state.user?.rol === 'Admin' && !NO_NAV_SCREENS.has(state.screen)) {
+    app.insertAdjacentHTML('beforeend', renderAdminBottomNav());
   }
   attachListeners();
 }
@@ -435,6 +441,8 @@ function renderChangePassword() {
 // ============================================================
 function renderAdminBottomNav() {
   const tab = state.adminTab || 'menu';
+  const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success','welcome']);
+  const isAudit = auditScreens.has(state.screen);
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
   const base   = 'flex:1;padding:8px 4px 6px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px';
@@ -452,7 +460,7 @@ function renderAdminBottomNav() {
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><line x1="9" y1="22" x2="9" y2="12"/><line x1="15" y1="12" x2="15" y2="22"/><circle cx="19" cy="8" r="3"/></svg>
         <span style="font-size:0.62rem">Locales</span>
       </button>
-      <button id="nav-admin-auditoria" style="${base};color:#9ca3af;font-weight:400">
+      <button id="nav-admin-auditoria" style="${base};${isAudit?active:idle}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         <span style="font-size:0.62rem">Auditoría</span>
       </button>
@@ -464,11 +472,10 @@ function renderAdmin() {
   const u = state.user;
   if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
   const tab = state.adminTab || 'menu';
-  const nav = renderAdminBottomNav();
-  if (tab === 'menu')     return renderAdminMenu()     + nav;
-  if (tab === 'usuarios') return renderAdminSubscreen('Usuarios', renderAdminUsuarios()) + nav;
-  if (tab === 'locales')  return renderAdminSubscreen('Locales',  renderAdminLocales())  + nav;
-  return renderAdminMenu() + nav;
+  if (tab === 'menu')     return renderAdminMenu();
+  if (tab === 'usuarios') return renderAdminSubscreen('Usuarios', renderAdminUsuarios());
+  if (tab === 'locales')  return renderAdminSubscreen('Locales',  renderAdminLocales());
+  return renderAdminMenu();
 }
 
 function renderAdminMenu() {
