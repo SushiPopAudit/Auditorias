@@ -5,7 +5,8 @@
 const SPREADSHEET_ID  = '1zc1HGCNbS40D8c4cbaBcEtXiatg2-5r7JZiv8j5AMnI';
 const SHEET_NAME      = 'Resultados';
 const DRIVE_FOLDER_ID = '1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P';
-const USUARIOS_SHEET  = 'Usuarios';
+const USUARIOS_SHEET          = 'Usuarios';
+const USUARIOS_SPREADSHEET_ID = '1TeeKe1eYsKIZ6-8uEPOY0UT-wrtrwl0FW4hAgBoIkzY';
 
 function doPost(e) {
   try {
