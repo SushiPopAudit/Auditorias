@@ -1008,7 +1008,7 @@ function renderAudit() {
     <div style="flex:1;overflow-y:auto;padding:10px 16px 8px">
       ${renderQuestionCard(q)}
     </div>
-    <div style="position:sticky;bottom:68px;background:#fff;border-top:1px solid #e5e7eb;padding:8px 16px;display:flex;flex-direction:column;gap:6px;z-index:10">
+    <div class="audit-q-footer">
       <div style="display:flex;gap:8px">
         ${!isFirst
           ? `<button class="btn btn-outline" id="btn-prev-q-footer" style="flex:1;font-size:0.85rem;padding:9px 8px">← Anterior</button>`
