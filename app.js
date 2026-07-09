@@ -1044,8 +1044,8 @@ function renderQuestionCard(q) {
   } else if (type === 'number') {
     inputHtml = `
       <div class="number-input-wrap">
-        <input class="number-input" type="number" step="0.1"
-          inputmode="decimal" pattern="[0-9.,]*"
+        <input class="number-input" type="text" inputmode="decimal"
+          pattern="[0-9.,]*" autocomplete="off"
           id="num_${q.id}" placeholder="0.0" value="${ans.valor || ''}"
           data-qid="${q.id}">
         <span class="number-unit">°C</span>
@@ -1902,7 +1902,9 @@ function attachListeners() {
     inp.addEventListener('input', () => {
       const qid = inp.dataset.qid;
       if (!state.answers[qid]) state.answers[qid] = {};
-      state.answers[qid].valor = inp.value;
+      // Normalizar coma decimal → punto para compatibilidad con teclados móviles
+      const normalized = inp.value.replace(',', '.');
+      state.answers[qid].valor = normalized;
     });
   });
 
