@@ -1330,6 +1330,116 @@ function doGet(e) {
     }
   }
 
+  if (action === 'getAuditorias') {
+    var gaEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var gaToken = e.parameter.token || '';
+    if (!gaEmail || !gaToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssAuthGA = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shAuthGA = ensureUsuariosSheet(ssAuthGA);
+      var rowAuthGA = encontrarUsuarioRow(shAuthGA, gaEmail);
+      if (rowAuthGA < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dAuthGA = shAuthGA.getRange(rowAuthGA, 1, 1, 8).getValues()[0];
+      if (dAuthGA[4] !== gaToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dAuthGA[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      var gaRol     = String(dAuthGA[2] || '');
+      var gaLocales = String(dAuthGA[3] || '');
+
+      var ssGA = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shGA = ssGA.getSheetByName(SHEET_NAME);
+      if (!shGA || shGA.getLastRow() < 2) return jsonResponse({ success: true, auditorias: [] });
+
+      var lastGA = shGA.getLastRow();
+      var dataGA = shGA.getRange(2, 1, lastGA - 1, 20).getValues();
+
+      var seenGA = {};
+      var listaGA = [];
+      dataGA.forEach(function(r) {
+        var id = String(r[0] || '').trim();
+        if (!id || seenGA[id]) return;
+        if (gaRol === 'Auditor') {
+          if ((String(r[14] || '')).toLowerCase().trim() !== gaEmail) return;
+        } else if (gaRol === 'Franquiciado' && gaLocales !== 'todos') {
+          var gaAllowed = gaLocales.split(',').map(function(l){ return l.trim().toLowerCase(); });
+          if (gaAllowed.indexOf((String(r[4] || '')).toLowerCase().trim()) === -1) return;
+        }
+        seenGA[id] = true;
+        listaGA.push({
+          auditId:  id,
+          fecha:    formatFecha(r[1]),
+          fechaISO: formatFechaISO(r[1]),
+          hora:     r[2] ? String(r[2]) : '',
+          auditor:  r[3] ? String(r[3]) : '',
+          local:    r[4] ? String(r[4]) : '',
+          pct:      r[15] !== '' ? Number(r[15]) : null,
+          nivel:    r[16] ? String(r[16]) : '',
+          reprobado: String(r[17]) === 'Sí',
+          tipo:     r[19] ? String(r[19]) : 'Oficial',
+        });
+      });
+      listaGA.reverse();
+      return jsonResponse({ success: true, auditorias: listaGA });
+    } catch(gaErr) { return jsonResponse({ success: false, error: gaErr.message }); }
+  }
+
+  if (action === 'getAuditoria') {
+    var gdEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var gdToken = e.parameter.token || '';
+    var gdId    = e.parameter.auditId || '';
+    if (!gdEmail || !gdToken || !gdId) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssAuthGD = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shAuthGD = ensureUsuariosSheet(ssAuthGD);
+      var rowAuthGD = encontrarUsuarioRow(shAuthGD, gdEmail);
+      if (rowAuthGD < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dAuthGD = shAuthGD.getRange(rowAuthGD, 1, 1, 8).getValues()[0];
+      if (dAuthGD[4] !== gdToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dAuthGD[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      var gdRol     = String(dAuthGD[2] || '');
+      var gdLocales = String(dAuthGD[3] || '');
+
+      var ssGD = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shGD = ssGD.getSheetByName(SHEET_NAME);
+      if (!shGD || shGD.getLastRow() < 2) return jsonResponse({ success: false, error: 'Sin datos' });
+
+      var lastGD = shGD.getLastRow();
+      var allGD  = shGD.getRange(2, 1, lastGD - 1, 20).getValues();
+      var rowsGD = allGD.filter(function(r){ return String(r[0]).trim() === gdId; })
+        .map(function(r){ return r.map(function(v){ return v == null ? '' : String(v); }); });
+      if (!rowsGD.length) return jsonResponse({ success: false, error: 'Auditoría no encontrada' });
+
+      var fGD = rowsGD[0];
+      if (gdRol === 'Auditor' && (fGD[14]||'').toLowerCase() !== gdEmail)
+        return jsonResponse({ success: false, error: 'Sin acceso' });
+      if (gdRol === 'Franquiciado' && gdLocales !== 'todos') {
+        var gdAllow = gdLocales.split(',').map(function(l){ return l.trim().toLowerCase(); });
+        if (gdAllow.indexOf((fGD[4]||'').toLowerCase()) === -1) return jsonResponse({ success: false, error: 'Sin acceso' });
+      }
+
+      return jsonResponse({
+        success: true,
+        auditId: gdId,
+        fecha:   formatFecha(fGD[1]),
+        hora:    fGD[2],
+        auditor: fGD[3],
+        auditorEmail: fGD[14],
+        local:   fGD[4],
+        marca:   fGD[5],
+        acompanante: fGD[18],
+        tipo:    fGD[19] || 'Oficial',
+        puntaje: recalcularPuntaje(rowsGD),
+        respuestas: rowsGD.map(function(r){
+          return {
+            categoria:   r[6], subcategoria: r[7], control: r[8],
+            importancia: r[9], explicacion:  r[10], respuesta: r[11],
+            observacion: r[12],
+            fotoUrls:    r[13] ? r[13].split(',').map(function(u){ return u.trim(); }).filter(Boolean) : [],
+          };
+        }),
+      });
+    } catch(gdErr) { return jsonResponse({ success: false, error: gdErr.message }); }
+  }
+
   return jsonResponse({ version: '2026-06-16-v1' });
 }
 

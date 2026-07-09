@@ -49,6 +49,14 @@ const state = {
   adminExpandedLocalIdx:   null,
   adminAddEmailLocalIdx:   null,
   loginShowForgot:         false,
+
+  historial:              null,
+  historialLoading:       false,
+  historialError:         '',
+  historialSearch:        '',
+  historialDetalle:       null,
+  historialDetalleLoading: false,
+  historialDetalleError:  '',
 };
 
 // ============================================================
@@ -307,6 +315,8 @@ function render() {
     case 'summary':          app.innerHTML = renderSummary();          break;
     case 'success':          app.innerHTML = renderSuccess();          break;
     case 'admin':            app.innerHTML = renderAdmin();            break;
+    case 'historial':         app.innerHTML = renderHistorial();         break;
+    case 'historial-detalle': app.innerHTML = renderHistorialDetalle();  break;
     case 'error':            app.innerHTML = renderError();            break;
   }
   // Bottom nav for Admin on all screens except login/loading/error
@@ -375,6 +385,9 @@ function renderWelcome() {
   const adminBtn = u && u.rol === 'Admin'
     ? `<button class="btn btn-outline" id="btn-go-admin" style="width:100%;margin-bottom:8px">Administración de usuarios</button>`
     : '';
+  const historialBtn = u
+    ? `<button class="btn btn-outline" id="btn-go-historial" style="width:100%;margin-bottom:8px;color:#475569;border-color:#cbd5e1">📋 Ver auditorías anteriores</button>`
+    : '';
 
   return `
     <div class="screen-welcome">
@@ -383,7 +396,7 @@ function renderWelcome() {
       ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span></div>` : ''}
       <p class="welcome-sub" style="margin-bottom:20px">${u && u.rol === 'Franquiciado' ? 'Auditoría interna' : 'Auditoría oficial'}</p>
       ${draftBanner}
-      ${adminBtn}
+      ${adminBtn}${historialBtn}
       <button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>
       <button class="btn btn-outline" id="btn-logout" style="width:100%;margin-top:8px;color:#94a3b8;border-color:#94a3b8;font-size:0.85rem">Cerrar sesión</button>
     </div>
@@ -465,31 +478,33 @@ function renderChangePassword() {
 // PANTALLA: ADMIN
 // ============================================================
 function renderAdminBottomNav() {
-  const tab = state.adminTab || 'menu';
+  const tab        = state.adminTab || 'menu';
   const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success','welcome']);
-  const isAudit = auditScreens.has(state.screen);
-  // Only highlight admin tabs when actually on admin screen
-  const onAdmin = state.screen === 'admin';
+  const histScreens  = new Set(['historial','historial-detalle']);
+  const isAudit    = auditScreens.has(state.screen);
+  const isHistorial = histScreens.has(state.screen);
+  const onAdmin    = state.screen === 'admin';
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
-  const base   = 'flex:1;padding:8px 4px 6px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px';
+  const base   = 'flex:1;padding:6px 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation';
+  const iconStyle = 'font-size:1.2rem;line-height:1';
+  const labelStyle = 'font-size:0.6rem;letter-spacing:0.01em';
   return `
-    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px);max-width:100vw">
+    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
       <button id="nav-admin-inicio" style="${base};${onAdmin&&tab==='menu'?active:idle}">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        <span style="font-size:0.62rem">Inicio</span>
+        <span style="${iconStyle}">🏠</span><span style="${labelStyle}">Inicio</span>
       </button>
       <button id="nav-admin-usuarios" style="${base};${onAdmin&&tab==='usuarios'?active:idle}">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-        <span style="font-size:0.62rem">Usuarios</span>
+        <span style="${iconStyle}">👥</span><span style="${labelStyle}">Usuarios</span>
       </button>
       <button id="nav-admin-locales" style="${base};${onAdmin&&tab==='locales'?active:idle}">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><line x1="9" y1="22" x2="9" y2="12"/><line x1="15" y1="12" x2="15" y2="22"/><circle cx="19" cy="8" r="3"/></svg>
-        <span style="font-size:0.62rem">Locales</span>
+        <span style="${iconStyle}">🏪</span><span style="${labelStyle}">Locales</span>
+      </button>
+      <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
+        <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
       </button>
       <button id="nav-admin-auditoria" style="${base};${isAudit?active:idle}">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        <span style="font-size:0.62rem">Auditoría</span>
+        <span style="${iconStyle}">✅</span><span style="${labelStyle}">Nueva</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -569,6 +584,192 @@ function renderAdminSubscreen(title, content) {
     <div class="main" style="padding-top:16px">
       ${content}
       <div style="height:24px"></div>
+    </div>`;
+}
+
+// ============================================================
+// PANTALLA: HISTORIAL
+// ============================================================
+function renderHistorial() {
+  const loading = state.historialLoading;
+  const err     = state.historialError || '';
+  const lista   = state.historial;
+  const search  = (state.historialSearch || '').toLowerCase().trim();
+
+  if (loading || lista === null) return `
+    <div class="main" style="padding-top:24px;display:flex;align-items:center;gap:12px">
+      <div class="spinner"></div>
+      <span style="color:#6b7280;font-size:0.9rem">Cargando auditorías...</span>
+    </div>`;
+
+  if (err) return `
+    <div class="main" style="padding-top:24px">
+      <div class="error-box"><h2>Error</h2><p>${escHtml(err)}</p>
+        <button class="btn btn-primary" id="btn-historial-retry" style="margin-top:12px">Reintentar</button>
+      </div>
+    </div>`;
+
+  const filtered = search
+    ? lista.filter(a =>
+        a.local.toLowerCase().includes(search) ||
+        a.auditor.toLowerCase().includes(search) ||
+        a.fecha.toLowerCase().includes(search)
+      )
+    : lista;
+
+  function scoreColor(a) {
+    if (a.reprobado) return '#e4001b';
+    if (a.pct >= 90) return '#16a34a';
+    if (a.pct >= 75) return '#ca8a04';
+    if (a.pct >= 60) return '#ea580c';
+    return '#e4001b';
+  }
+  function scoreBg(a) {
+    if (a.reprobado) return '#fff1f2';
+    if (a.pct >= 90) return '#f0fdf4';
+    if (a.pct >= 75) return '#fefce8';
+    if (a.pct >= 60) return '#fff7ed';
+    return '#fff1f2';
+  }
+
+  const cardsHtml = filtered.length === 0
+    ? `<div style="text-align:center;padding:48px 16px;color:#6b7280">
+        <div style="font-size:2.5rem;margin-bottom:8px">📋</div>
+        <div style="font-weight:600;margin-bottom:4px">${search ? 'Sin resultados' : 'Sin auditorías'}</div>
+        <div style="font-size:0.85rem">${search ? 'Probá con otro término' : 'Todavía no hay auditorías registradas'}</div>
+       </div>`
+    : filtered.map(a => `
+        <button class="historial-card" data-audit-id="${escHtml(a.auditId)}"
+          style="width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);touch-action:manipulation">
+          <div style="background:${scoreBg(a)};color:${scoreColor(a)};font-weight:800;font-size:0.95rem;min-width:50px;padding:8px 4px;border-radius:8px;text-align:center;flex-shrink:0;line-height:1.1">
+            ${a.reprobado ? '⛔' : (a.pct !== null ? a.pct + '%' : '—')}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.local)}</div>
+            <div style="font-size:0.78rem;color:#6b7280;margin-top:2px">${escHtml(a.fecha)}${a.hora ? ' · ' + escHtml(a.hora) : ''}</div>
+            <div style="font-size:0.78rem;color:#6b7280">${escHtml(a.auditor)}</div>
+            ${a.tipo === 'Interna' ? `<span style="font-size:0.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:99px;font-weight:600;margin-top:3px;display:inline-block">Interna</span>` : ''}
+          </div>
+          <div style="color:#9ca3af;font-size:1.3rem;flex-shrink:0">›</div>
+        </button>`).join('');
+
+  return `
+    <div class="main" style="padding-top:16px;padding-bottom:120px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="font-size:1.05rem;font-weight:700;color:#1a1a1a;margin:0">Auditorías (${filtered.length})</h2>
+        <button class="btn" id="btn-historial-refresh" style="font-size:0.78rem;color:#6b7280;border:1px solid #e5e7eb;padding:4px 10px;min-height:0">↻ Actualizar</button>
+      </div>
+      <div style="position:relative;margin-bottom:14px">
+        <input class="form-control" id="inp-historial-search" type="search"
+          placeholder="Buscar local, auditor o fecha..."
+          value="${escHtml(state.historialSearch || '')}" autocomplete="off"
+          style="padding-left:36px">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:1rem;pointer-events:none">🔍</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+function renderHistorialDetalle() {
+  const loading = state.historialDetalleLoading;
+  const err     = state.historialDetalleError || '';
+  const d       = state.historialDetalle;
+
+  if (loading || (!d && !err)) return `
+    <div class="main" style="padding-top:24px;display:flex;align-items:center;gap:12px">
+      <div class="spinner"></div>
+      <span style="color:#6b7280;font-size:0.9rem">Cargando auditoría...</span>
+    </div>
+    <div class="nav-footer">
+      <button class="btn btn-outline" id="btn-historial-detalle-back">← Volver</button>
+    </div>`;
+
+  if (err || !d) return `
+    <div class="main" style="padding-top:24px">
+      <div class="error-box"><h2>Error</h2><p>${escHtml(err || 'No se pudo cargar la auditoría.')}</p></div>
+    </div>
+    <div class="nav-footer">
+      <button class="btn btn-outline" id="btn-historial-detalle-back">← Volver</button>
+    </div>`;
+
+  const p = d.puntaje || {};
+  const pctColor = p.reprobado ? '#e4001b' : (p.pct||0) >= 90 ? '#16a34a' : (p.pct||0) >= 75 ? '#ca8a04' : (p.pct||0) >= 60 ? '#ea580c' : '#e4001b';
+  const pctBg    = p.reprobado ? '#fff1f2' : (p.pct||0) >= 90 ? '#f0fdf4' : (p.pct||0) >= 75 ? '#fefce8' : (p.pct||0) >= 60 ? '#fff7ed' : '#fff1f2';
+
+  const byCat = {}, catOrder = [];
+  (d.respuestas || []).forEach(r => {
+    if (!byCat[r.categoria]) { byCat[r.categoria] = []; catOrder.push(r.categoria); }
+    byCat[r.categoria].push(r);
+  });
+
+  const catHtml = catOrder.map(cat => {
+    const rows   = byCat[cat];
+    const ncCnt  = rows.filter(r => { const v = (r.respuesta||'').toLowerCase(); return v.includes('no cumple')||v==='nocumple'; }).length;
+    const rowsHtml = rows.map(r => {
+      const v        = (r.respuesta||'').toLowerCase();
+      const isNC     = v.includes('no cumple') || v === 'nocumple';
+      const isParcial = v.includes('parcial');
+      const isCumple  = v === 'cumple';
+      const resColor  = isNC ? '#e4001b' : isParcial ? '#d97706' : isCumple ? '#16a34a' : '#6b7280';
+      const resBg     = isNC ? '#fff1f2' : isParcial ? '#fffbeb' : isCumple ? '#f0fdf4' : '#f1f5f9';
+      const imp_i     = (r.importancia||'').toLowerCase().replace(/í/g,'i');
+      const impC      = imp_i==='critico'?'#e4001b':imp_i==='alta'?'#ea580c':imp_i==='media'?'#d97706':'#16a34a';
+      const impB      = imp_i==='critico'?'#fff1f2':imp_i==='alta'?'#fff7ed':imp_i==='media'?'#fffbeb':'#f0fdf4';
+      return `
+        <div style="padding:11px 0;border-bottom:1px solid #f3f4f6">
+          <div style="font-size:0.75rem;color:#9ca3af;margin-bottom:1px">${escHtml(r.subcategoria)}</div>
+          <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;margin-bottom:5px">${escHtml(r.control)}</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <span style="font-size:0.68rem;background:${impB};color:${impC};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.importancia)}</span>
+            <span style="font-size:0.68rem;background:${resBg};color:${resColor};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.respuesta||'—')}</span>
+          </div>
+          ${r.observacion ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:5px;font-style:italic">"${escHtml(r.observacion)}"</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <div style="background:#fff;border-radius:12px;border:1px solid #e5e7eb;margin-bottom:10px;overflow:hidden">
+        <div style="padding:11px 16px;background:#f8fafc;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:0.88rem;font-weight:700;color:#1a1a1a">${escHtml(cat)}</div>
+          <div style="font-size:0.72rem;font-weight:700;color:${ncCnt>0?'#e4001b':'#16a34a'}">${ncCnt>0?ncCnt+' incumpl.':'✓ OK'}</div>
+        </div>
+        <div style="padding:0 16px">${rowsHtml}</div>
+      </div>`;
+  }).join('');
+
+  const tipoBadge = d.tipo === 'Interna'
+    ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:99px;font-weight:600">Interna</span>`
+    : `<span style="font-size:0.72rem;background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:99px;font-weight:600">Oficial</span>`;
+
+  const canEdit = state.user?.rol === 'Admin' || state.user?.email === d.auditorEmail;
+
+  return `
+    <div class="main" style="padding-top:16px;padding-bottom:${canEdit?'160px':'120px'}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <button id="btn-historial-detalle-back" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;color:#6b7280;font-size:0.82rem;flex-shrink:0;touch-action:manipulation">← Volver</button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.98rem;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(d.local)}</div>
+          <div style="font-size:0.75rem;color:#6b7280">${escHtml(d.fecha)}${d.hora ? ' · ' + escHtml(d.hora) : ''}</div>
+        </div>
+        <div style="background:${pctBg};color:${pctColor};font-weight:800;font-size:0.9rem;padding:7px 10px;border-radius:8px;flex-shrink:0;text-align:center;min-width:48px">
+          ${p.reprobado ? '⛔' : (p.pct !== null && p.pct !== undefined ? p.pct + '%' : '—')}
+        </div>
+      </div>
+
+      <div style="background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:14px 16px;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.82rem">
+          <div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">AUDITOR</div><div style="font-weight:600">${escHtml(d.auditor)}</div></div>
+          <div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">RESULTADO</div><div style="font-weight:700;color:${pctColor}">${p.reprobado ? 'Reprobado' : (p.pct + '% — ' + p.nivel)}</div></div>
+          ${d.acompanante ? `<div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">ACOMPAÑANTE</div><div style="font-weight:600">${escHtml(d.acompanante)}</div></div>` : ''}
+          <div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">TIPO</div><div>${tipoBadge}</div></div>
+        </div>
+      </div>
+
+      ${catHtml}
+    </div>
+
+    <div class="nav-footer" style="flex-direction:column;gap:8px">
+      ${canEdit ? `<button class="btn btn-primary" id="btn-historial-editar" style="width:100%">Editar auditoría</button>` : ''}
+      <button class="btn btn-outline" id="btn-historial-detalle-back-footer" style="width:100%">← Volver al historial</button>
     </div>`;
 }
 
@@ -1480,6 +1681,20 @@ function attachListeners() {
   });
 
   // Helpers para recargar datos de admin
+  async function recargarHistorial() {
+    setState({ historialLoading: true, historialError: '' });
+    try {
+      const res = await callAPI({ action: 'getAuditorias', email: state.user.email, token: state.user.token });
+      if (res.success) {
+        setState({ historial: res.auditorias || [], historialLoading: false });
+      } else {
+        setState({ historialLoading: false, historialError: res.error || 'Error al cargar auditorías' });
+      }
+    } catch(e) {
+      setState({ historialLoading: false, historialError: 'Error de conexión: ' + e.message });
+    }
+  }
+
   async function recargarUsuarios() {
     state.adminLoading = true; render();
     try {
@@ -1965,6 +2180,90 @@ function attachListeners() {
       answers: {}, skipped: {}, auditId: '', error: '', submitting: false,
     });
     if (!state.auditorEmail) state.auditor = ''; // limpiar si no es Google
+    render();
+  });
+
+  // ============================================================
+  // HISTORIAL
+  // ============================================================
+  on('btn-go-historial', 'click', async () => {
+    setState({ screen: 'historial', historialDetalle: null });
+    if (!state.historial) await recargarHistorial();
+  });
+  on('nav-admin-historial', 'click', async () => {
+    setState({ screen: 'historial', historialDetalle: null });
+    if (!state.historial) await recargarHistorial();
+  });
+  on('btn-historial-refresh', 'click', async () => {
+    setState({ historial: null });
+    await recargarHistorial();
+  });
+  on('btn-historial-retry', 'click', recargarHistorial);
+
+  // Search input
+  const inpHistSearch = document.getElementById('inp-historial-search');
+  if (inpHistSearch) {
+    inpHistSearch.addEventListener('input', () => {
+      const val = inpHistSearch.value;
+      const pos = inpHistSearch.selectionStart;
+      state.historialSearch = val;
+      render();
+      const el = document.getElementById('inp-historial-search');
+      if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch(e){} }
+    });
+  }
+
+  // Audit card click → load detail
+  document.querySelectorAll('.historial-card').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const auditId = btn.dataset.auditId;
+      if (!auditId) return;
+      setState({ screen: 'historial-detalle', historialDetalleLoading: true, historialDetalle: null, historialDetalleError: '' });
+      try {
+        const res = await callAPI({ action: 'getAuditoria', email: state.user.email, token: state.user.token, auditId });
+        if (res.success) {
+          setState({ historialDetalle: res, historialDetalleLoading: false });
+        } else {
+          setState({ historialDetalleLoading: false, historialDetalleError: res.error || 'Error al cargar' });
+        }
+      } catch(e) {
+        setState({ historialDetalleLoading: false, historialDetalleError: 'Error de conexión: ' + e.message });
+      }
+    });
+  });
+
+  on('btn-historial-detalle-back',        'click', () => setState({ screen: 'historial' }));
+  on('btn-historial-detalle-back-footer', 'click', () => setState({ screen: 'historial' }));
+
+  // Edit: load answers back into state and open cat-select
+  on('btn-historial-editar', 'click', () => {
+    const d = state.historialDetalle;
+    if (!d) return;
+    const localObj = state.locales.find(l => l.nombre === d.local) || { nombre: d.local, isCausa: false, emails: '' };
+    const cats = buildCategories(localObj.isCausa);
+    const newAnswers = {};
+    cats.forEach(cat => {
+      cat.questions.forEach(q => {
+        const row = d.respuestas.find(r => r.control === q.control);
+        if (row) {
+          newAnswers[q.id] = { valor: row.respuesta || '', observacion: row.observacion || '' };
+        }
+      });
+    });
+    Object.assign(state, {
+      screen:              'cat-select',
+      local:               localObj,
+      fecha:               d.fechaISO || d.fecha || state.fecha,
+      auditor:             d.auditor  || state.auditor,
+      auditorEmail:        d.auditorEmail || state.auditorEmail,
+      acompanante:         d.acompanante || '',
+      posicionAcompanante: '',
+      categories:          cats,
+      categoryIndex:       0,
+      questionIndex:       0,
+      answers:             newAnswers,
+      skipped:             {},
+    });
     render();
   });
 }
