@@ -1607,6 +1607,13 @@ function renderError() {
 
 // ============================================================
 // EVENT LISTENERS
+function recargarHistorialSilente() {
+  if (!state.user || state.historial) return;
+  callAPI({ action: 'getAuditorias', email: state.user.email, token: state.user.token })
+    .then(res => { if (res.success) state.historial = res.auditorias || []; })
+    .catch(() => {});
+}
+
 // ============================================================
 function attachListeners() {
   // Login
@@ -1719,13 +1726,6 @@ function attachListeners() {
     } catch(e) {
       setState({ historialLoading: false, historialError: 'Error de conexión: ' + e.message });
     }
-  }
-
-  function recargarHistorialSilente() {
-    if (state.historial) return; // already loaded
-    callAPI({ action: 'getAuditorias', email: state.user.email, token: state.user.token })
-      .then(res => { if (res.success) state.historial = res.auditorias || []; })
-      .catch(() => {});
   }
 
   async function recargarUsuarios() {
