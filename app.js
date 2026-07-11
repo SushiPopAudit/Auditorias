@@ -1077,16 +1077,16 @@ function renderSetup() {
         </div>
 
         <div class="form-group">
+          <label class="form-label">Auditor</label>
+          ${auditorField}
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Local auditado</label>
           <select class="form-control" id="sel-local">
             <option value="">— Seleccioná un local —</option>
             ${localesOpts}
           </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Auditor</label>
-          ${auditorField}
         </div>
 
         <div class="form-group">
