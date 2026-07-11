@@ -300,12 +300,9 @@ function setState(patch) {
 const NO_NAV_SCREENS = new Set(['loading', 'login', 'change-password', 'error']);
 
 function render() {
-  const app = document.getElementById('app');
-  // Sync body class so CSS can position nav-footer correctly
-  document.body.classList.toggle(
-    'admin-nav',
-    state.user?.rol === 'Admin' && !NO_NAV_SCREENS.has(state.screen)
-  );
+  const app    = document.getElementById('app');
+  const hasNav = !!state.user && !NO_NAV_SCREENS.has(state.screen);
+  document.body.classList.toggle('admin-nav', hasNav);
   switch (state.screen) {
     case 'loading':          app.innerHTML = renderLoading();          break;
     case 'login':            app.innerHTML = renderLogin();            break;
@@ -322,9 +319,10 @@ function render() {
     case 'historial-detalle': app.innerHTML = renderHistorialDetalle();  break;
     case 'error':            app.innerHTML = renderError();            break;
   }
-  // Bottom nav for Admin on all screens except login/loading/error
-  if (state.user?.rol === 'Admin' && !NO_NAV_SCREENS.has(state.screen)) {
-    app.insertAdjacentHTML('beforeend', renderAdminBottomNav());
+  if (hasNav) {
+    app.insertAdjacentHTML('beforeend',
+      state.user.rol === 'Admin' ? renderAdminBottomNav() : renderUserBottomNav()
+    );
   }
   attachListeners();
 }
@@ -385,13 +383,6 @@ function renderWelcome() {
     }
   } catch(e) {}
 
-  const adminBtn = u && u.rol === 'Admin'
-    ? `<button class="btn btn-outline" id="btn-go-admin" style="width:100%;margin-bottom:8px">Administración de usuarios</button>`
-    : '';
-  const historialBtn = u
-    ? `<button class="btn btn-outline" id="btn-go-historial" style="width:100%;margin-bottom:8px;color:#475569;border-color:#cbd5e1">📋 Ver auditorías anteriores</button>`
-    : '';
-
   return `
     <div class="screen-welcome">
       <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
@@ -399,9 +390,7 @@ function renderWelcome() {
       ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span></div>` : ''}
       <p class="welcome-sub" style="margin-bottom:20px">${u && u.rol === 'Franquiciado' ? 'Auditoría interna' : 'Auditoría oficial'}</p>
       ${draftBanner}
-      ${adminBtn}${historialBtn}
-      <button class="welcome-btn" id="btn-go-setup">Comenzar Auditoría</button>
-      <button class="btn btn-outline" id="btn-logout" style="width:100%;margin-top:8px;color:#94a3b8;border-color:#94a3b8;font-size:0.85rem">Cerrar sesión</button>
+      <button class="btn btn-outline" id="btn-logout" style="width:100%;max-width:340px;margin-top:8px;color:#94a3b8;border-color:#94a3b8;font-size:0.85rem">Cerrar sesión</button>
     </div>
   `;
 }
@@ -511,6 +500,34 @@ function renderAdminBottomNav() {
       </button>
       <button id="nav-admin-locales" style="${base};${onAdmin&&tab==='locales'?active:idle}">
         <span style="${iconStyle}">🏪</span><span style="${labelStyle}">Locales</span>
+      </button>
+    </nav>
+    <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
+}
+
+function renderUserBottomNav() {
+  const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success']);
+  const histScreens  = new Set(['historial','historial-detalle']);
+  const isAudit     = auditScreens.has(state.screen);
+  const isHistorial = histScreens.has(state.screen);
+  const onWelcome   = state.screen === 'welcome';
+  const active = 'color:#e4001b;font-weight:700';
+  const idle   = 'color:#9ca3af;font-weight:400';
+  const base   = 'flex:1;padding:6px 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation';
+  const labelStyle = 'font-size:0.6rem;letter-spacing:0.01em';
+  return `
+    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
+      <button id="nav-user-inicio" style="${base};${onWelcome?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">🏠</span><span style="${labelStyle}">Inicio</span>
+      </button>
+      <button id="nav-user-auditoria" style="flex:1;padding:0 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation;position:relative;top:-10px">
+        <div style="width:52px;height:52px;border-radius:50%;background:${isAudit?'#15803d':'#16a34a'};display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(22,163,74,0.4)">
+          <span style="color:#fff;font-size:1.8rem;line-height:1;font-weight:300">+</span>
+        </div>
+        <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
+      </button>
+      <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -1749,6 +1766,12 @@ function attachListeners() {
   on('nav-admin-usuarios',     'click', goToUsuarios);
   on('nav-admin-locales',      'click', goToLocales);
   on('nav-admin-auditoria',    'click', () => setState({ screen: 'setup' }));
+  on('nav-user-inicio',        'click', () => setState({ screen: 'welcome' }));
+  on('nav-user-auditoria',     'click', () => setState({ screen: 'setup' }));
+  on('nav-user-historial',     'click', async () => {
+    setState({ screen: 'historial', historialDetalle: null });
+    if (!state.historial) await recargarHistorial();
+  });
 
   // New user / new local toggle
   on('btn-admin-new-user', 'click', async () => {
