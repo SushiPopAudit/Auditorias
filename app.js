@@ -769,6 +769,7 @@ function renderHistorialDetalle() {
 
     <div class="nav-footer" style="flex-direction:column;gap:8px">
       ${canEdit ? `<button class="btn btn-primary" id="btn-historial-editar" style="width:100%">Editar auditoría</button>` : ''}
+      ${state.user?.rol === 'Admin' ? `<button class="btn" id="btn-historial-borrar" style="width:100%;background:#fff1f2;color:#e4001b;border:1px solid #fecaca">Borrar auditoría</button>` : ''}
       <button class="btn btn-outline" id="btn-historial-detalle-back-footer" style="width:100%">← Volver al historial</button>
     </div>`;
 }
@@ -2234,6 +2235,19 @@ function attachListeners() {
 
   on('btn-historial-detalle-back',        'click', () => setState({ screen: 'historial' }));
   on('btn-historial-detalle-back-footer', 'click', () => setState({ screen: 'historial' }));
+
+  on('btn-historial-borrar', 'click', async () => {
+    const d = state.historialDetalle;
+    if (!d) return;
+    if (!confirm(`¿Borrar la auditoría de "${d.local}" del ${d.fecha}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await callAPI({ action: 'borrarAuditoria', auditId: d.auditId });
+      setState({ screen: 'historial', historialDetalle: null, historial: null });
+      await recargarHistorial();
+    } catch(e) {
+      alert('Error al borrar: ' + e.message);
+    }
+  });
 
   // Edit: load answers back into state and open cat-select
   on('btn-historial-editar', 'click', () => {
