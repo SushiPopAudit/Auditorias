@@ -635,7 +635,7 @@ function renderHistorial() {
     return '#fff1f2';
   }
 
-  const isAdmin     = state.user?.rol === 'Admin';
+  const rol         = state.user?.rol || '';
   const accionando  = state.historialAccionando || '';
   const btnBase     = 'border:none;border-radius:8px;padding:0;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;flex-shrink:0;touch-action:manipulation';
 
@@ -646,13 +646,15 @@ function renderHistorial() {
         <div style="font-size:0.85rem">${search ? 'Probá con otro término' : 'Todavía no hay auditorías registradas'}</div>
        </div>`
     : filtered.map(a => {
-        const cargando = accionando === a.auditId;
+        const cargando   = accionando === a.auditId;
+        const showEdit   = rol === 'Admin' || rol === 'Auditor';
+        const showDelete = rol === 'Admin';
         const accBtns = cargando
           ? `<div style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex-shrink:0"><div class="spinner" style="width:18px;height:18px;border-width:2px"></div></div>`
           : `<div style="display:flex;gap:4px;flex-shrink:0">
               <button class="hist-btn-ver"    data-audit-id="${escHtml(a.auditId)}" title="Ver" style="${btnBase};background:#eff6ff;color:#1d4ed8">👁</button>
-              <button class="hist-btn-editar" data-audit-id="${escHtml(a.auditId)}" title="Editar" style="${btnBase};background:#f0fdf4;color:#15803d">✏️</button>
-              ${isAdmin ? `<button class="hist-btn-borrar" data-audit-id="${escHtml(a.auditId)}" data-local="${escHtml(a.local)}" data-fecha="${escHtml(a.fecha)}" title="Borrar" style="${btnBase};background:#fff1f2;color:#e4001b">🗑</button>` : ''}
+              ${showEdit   ? `<button class="hist-btn-editar" data-audit-id="${escHtml(a.auditId)}" title="Editar" style="${btnBase};background:#f0fdf4;color:#15803d">✏️</button>` : ''}
+              ${showDelete ? `<button class="hist-btn-borrar" data-audit-id="${escHtml(a.auditId)}" data-local="${escHtml(a.local)}" data-fecha="${escHtml(a.fecha)}" title="Borrar" style="${btnBase};background:#fff1f2;color:#e4001b">🗑</button>` : ''}
              </div>`;
         return `
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
@@ -759,19 +761,10 @@ function renderHistorialDetalle() {
     ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:99px;font-weight:600">Interna</span>`
     : `<span style="font-size:0.72rem;background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:99px;font-weight:600">Oficial</span>`;
 
-  const canEdit   = state.user?.rol === 'Admin' || state.user?.email === d.auditorEmail;
-  const isAdmin   = state.user?.rol === 'Admin';
-  const borrando  = state.historialBorrando;
-  const btnCount  = (canEdit ? 1 : 0) + (isAdmin ? 1 : 0) + 1; // editar + borrar + volver
-  const pbAdmin   = btnCount === 3 ? '280px' : btnCount === 2 ? '210px' : '140px';
-  const pbNoAdmin = '120px';
-  const pb        = isAdmin ? pbAdmin : pbNoAdmin;
+  const isAdminDet = state.user?.rol === 'Admin';
+  const pb         = isAdminDet ? 'calc(140px + env(safe-area-inset-bottom, 0px))' : '90px';
 
   return `
-    ${borrando ? `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
-      <div class="spinner" style="width:40px;height:40px;border-width:4px;border-color:#fff3;border-top-color:#fff"></div>
-      <div style="color:#fff;font-size:1rem;font-weight:600">Borrando auditoría...</div>
-    </div>` : ''}
     <div class="main" style="padding-top:16px;padding-bottom:${pb}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
         <button id="btn-historial-detalle-back" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;color:#6b7280;font-size:0.82rem;flex-shrink:0;touch-action:manipulation">← Volver</button>
@@ -796,10 +789,8 @@ function renderHistorialDetalle() {
       ${catHtml}
     </div>
 
-    <div class="nav-footer" style="flex-direction:column;gap:8px">
-      ${canEdit ? `<button class="btn btn-primary" id="btn-historial-editar" style="width:100%">Editar auditoría</button>` : ''}
-      ${state.user?.rol === 'Admin' ? `<button class="btn" id="btn-historial-borrar" style="width:100%;background:#fff1f2;color:#e4001b;border:1px solid #fecaca">Borrar auditoría</button>` : ''}
-      <button class="btn btn-outline" id="btn-historial-detalle-back-footer" style="width:100%">← Volver al historial</button>
+    <div class="nav-footer">
+      <button class="btn btn-outline" id="btn-historial-detalle-back-footer" style="font-size:0.82rem;padding:6px 16px">← Volver al historial</button>
     </div>`;
 }
 
