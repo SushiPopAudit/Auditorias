@@ -700,17 +700,12 @@ function renderHistorialDetalle() {
     <div class="main" style="padding-top:24px;display:flex;align-items:center;gap:12px">
       <div class="spinner"></div>
       <span style="color:#6b7280;font-size:0.9rem">Cargando auditoría...</span>
-    </div>
-    <div class="nav-footer">
-      <button class="btn btn-outline" id="btn-historial-detalle-back">← Volver</button>
     </div>`;
 
   if (err || !d) return `
     <div class="main" style="padding-top:24px">
+      <button id="btn-historial-detalle-back" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;color:#6b7280;font-size:0.82rem;margin-bottom:16px;touch-action:manipulation">← Volver</button>
       <div class="error-box"><h2>Error</h2><p>${escHtml(err || 'No se pudo cargar la auditoría.')}</p></div>
-    </div>
-    <div class="nav-footer">
-      <button class="btn btn-outline" id="btn-historial-detalle-back">← Volver</button>
     </div>`;
 
   const p = d.puntaje || {};
@@ -762,7 +757,7 @@ function renderHistorialDetalle() {
     : `<span style="font-size:0.72rem;background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:99px;font-weight:600">Oficial</span>`;
 
   const isAdminDet = state.user?.rol === 'Admin';
-  const pb         = isAdminDet ? 'calc(140px + env(safe-area-inset-bottom, 0px))' : '90px';
+  const pb         = isAdminDet ? 'calc(78px + env(safe-area-inset-bottom, 0px))' : 'calc(16px + env(safe-area-inset-bottom, 0px))';
 
   return `
     <div class="main" style="padding-top:16px;padding-bottom:${pb}">
@@ -787,10 +782,6 @@ function renderHistorialDetalle() {
       </div>
 
       ${catHtml}
-    </div>
-
-    <div class="nav-footer">
-      <button class="btn btn-outline" id="btn-historial-detalle-back-footer" style="font-size:0.82rem;padding:6px 16px">← Volver al historial</button>
     </div>`;
 }
 
