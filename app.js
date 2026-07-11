@@ -60,6 +60,7 @@ const state = {
   historialDetalleError:  '',
   historialBorrando:      false,
   historialAccionando:    '',
+  editingAuditId:         '',
 };
 
 // ============================================================
@@ -2290,6 +2291,7 @@ function attachListeners() {
           acompanante: d.acompanante || '', posicionAcompanante: '',
           categories: cats, categoryIndex: 0, questionIndex: 0,
           answers: newAnswers, skipped: {},
+          editingAuditId: auditId,
         });
         render();
       } catch(e) {
@@ -2365,6 +2367,7 @@ function attachListeners() {
       questionIndex:       0,
       answers:             newAnswers,
       skipped:             {},
+      editingAuditId:      d.auditId,
     });
     render();
   });
@@ -2542,6 +2545,7 @@ function guardarBorrador() {
 function borrarBorrador() {
   try { localStorage.removeItem('audit_draft'); } catch(e) {}
   try { localStorage.removeItem('audit_unconfirmed'); } catch(e) {}
+  state.editingAuditId = '';
 }
 
 function exportarBorrador() {
@@ -2689,8 +2693,12 @@ async function submitAudit() {
     }
 
     if (confirmed) {
-      setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [] });
+      const oldId = state.editingAuditId;
+      setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], editingAuditId: '' });
       borrarBorrador();
+      if (oldId) {
+        try { await callAPI({ action: 'borrarAuditoria', auditId: oldId }); } catch(e) { /* no crítico */ }
+      }
     } else {
       // El POST llegó (o creemos que sí) pero no aparece en el sheet todavía
       setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], sendUnconfirmed: true });
