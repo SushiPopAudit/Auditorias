@@ -54,9 +54,11 @@ const state = {
   historialLoading:       false,
   historialError:         '',
   historialSearch:        '',
+  historialBorradoMsg:    '',
   historialDetalle:       null,
   historialDetalleLoading: false,
   historialDetalleError:  '',
+  historialBorrando:      false,
 };
 
 // ============================================================
@@ -653,8 +655,12 @@ function renderHistorial() {
           <div style="color:#9ca3af;font-size:1.3rem;flex-shrink:0">›</div>
         </button>`).join('');
 
+  const borradoMsg = state.historialBorradoMsg || '';
+  if (borradoMsg) setTimeout(() => { state.historialBorradoMsg = ''; render(); }, 3500);
+
   return `
     <div class="main" style="padding-top:16px;padding-bottom:120px">
+      ${borradoMsg ? `<div style="background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-weight:600;font-size:0.88rem">${escHtml(borradoMsg)}</div>` : ''}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h2 style="font-size:1.05rem;font-weight:700;color:#1a1a1a;margin:0">Auditorías (${filtered.length})</h2>
         <button class="btn" id="btn-historial-refresh" style="font-size:0.78rem;color:#6b7280;border:1px solid #e5e7eb;padding:4px 10px;min-height:0">↻ Actualizar</button>
@@ -740,10 +746,20 @@ function renderHistorialDetalle() {
     ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:99px;font-weight:600">Interna</span>`
     : `<span style="font-size:0.72rem;background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:99px;font-weight:600">Oficial</span>`;
 
-  const canEdit = state.user?.rol === 'Admin' || state.user?.email === d.auditorEmail;
+  const canEdit   = state.user?.rol === 'Admin' || state.user?.email === d.auditorEmail;
+  const isAdmin   = state.user?.rol === 'Admin';
+  const borrando  = state.historialBorrando;
+  const btnCount  = (canEdit ? 1 : 0) + (isAdmin ? 1 : 0) + 1; // editar + borrar + volver
+  const pbAdmin   = btnCount === 3 ? '280px' : btnCount === 2 ? '210px' : '140px';
+  const pbNoAdmin = '120px';
+  const pb        = isAdmin ? pbAdmin : pbNoAdmin;
 
   return `
-    <div class="main" style="padding-top:16px;padding-bottom:${canEdit?'160px':'120px'}">
+    ${borrando ? `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+      <div class="spinner" style="width:40px;height:40px;border-width:4px;border-color:#fff3;border-top-color:#fff"></div>
+      <div style="color:#fff;font-size:1rem;font-weight:600">Borrando auditoría...</div>
+    </div>` : ''}
+    <div class="main" style="padding-top:16px;padding-bottom:${pb}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
         <button id="btn-historial-detalle-back" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;color:#6b7280;font-size:0.82rem;flex-shrink:0;touch-action:manipulation">← Volver</button>
         <div style="flex:1;min-width:0">
@@ -2239,12 +2255,14 @@ function attachListeners() {
   on('btn-historial-borrar', 'click', async () => {
     const d = state.historialDetalle;
     if (!d) return;
-    if (!confirm(`¿Borrar la auditoría de "${d.local}" del ${d.fecha}? Esta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Borrar la auditoría de "${d.local}" del ${d.fecha}?\nEsta acción no se puede deshacer.`)) return;
+    setState({ historialBorrando: true });
     try {
       await callAPI({ action: 'borrarAuditoria', auditId: d.auditId });
-      setState({ screen: 'historial', historialDetalle: null, historial: null });
+      setState({ historialBorrando: false, screen: 'historial', historialDetalle: null, historial: null, historialBorradoMsg: `✓ Auditoría de ${d.local} borrada correctamente` });
       await recargarHistorial();
     } catch(e) {
+      setState({ historialBorrando: false });
       alert('Error al borrar: ' + e.message);
     }
   });
