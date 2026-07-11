@@ -59,6 +59,7 @@ const state = {
   historialDetalleLoading: false,
   historialDetalleError:  '',
   historialBorrando:      false,
+  historialAccionando:    '',
 };
 
 // ============================================================
@@ -634,26 +635,38 @@ function renderHistorial() {
     return '#fff1f2';
   }
 
+  const isAdmin     = state.user?.rol === 'Admin';
+  const accionando  = state.historialAccionando || '';
+  const btnBase     = 'border:none;border-radius:8px;padding:0;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;flex-shrink:0;touch-action:manipulation';
+
   const cardsHtml = filtered.length === 0
     ? `<div style="text-align:center;padding:48px 16px;color:#6b7280">
         <div style="font-size:2.5rem;margin-bottom:8px">📋</div>
         <div style="font-weight:600;margin-bottom:4px">${search ? 'Sin resultados' : 'Sin auditorías'}</div>
         <div style="font-size:0.85rem">${search ? 'Probá con otro término' : 'Todavía no hay auditorías registradas'}</div>
        </div>`
-    : filtered.map(a => `
-        <button class="historial-card" data-audit-id="${escHtml(a.auditId)}"
-          style="width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);touch-action:manipulation">
-          <div style="background:${scoreBg(a)};color:${scoreColor(a)};font-weight:800;font-size:0.95rem;min-width:50px;padding:8px 4px;border-radius:8px;text-align:center;flex-shrink:0;line-height:1.1">
+    : filtered.map(a => {
+        const cargando = accionando === a.auditId;
+        const accBtns = cargando
+          ? `<div style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex-shrink:0"><div class="spinner" style="width:18px;height:18px;border-width:2px"></div></div>`
+          : `<div style="display:flex;gap:4px;flex-shrink:0">
+              <button class="hist-btn-ver"    data-audit-id="${escHtml(a.auditId)}" title="Ver" style="${btnBase};background:#eff6ff;color:#1d4ed8">👁</button>
+              <button class="hist-btn-editar" data-audit-id="${escHtml(a.auditId)}" title="Editar" style="${btnBase};background:#f0fdf4;color:#15803d">✏️</button>
+              ${isAdmin ? `<button class="hist-btn-borrar" data-audit-id="${escHtml(a.auditId)}" data-local="${escHtml(a.local)}" data-fecha="${escHtml(a.fecha)}" title="Borrar" style="${btnBase};background:#fff1f2;color:#e4001b">🗑</button>` : ''}
+             </div>`;
+        return `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+          <div style="background:${scoreBg(a)};color:${scoreColor(a)};font-weight:800;font-size:0.9rem;min-width:48px;padding:7px 4px;border-radius:8px;text-align:center;flex-shrink:0;line-height:1.1">
             ${a.reprobado ? '⛔' : (a.pct !== null ? a.pct + '%' : '—')}
           </div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.local)}</div>
-            <div style="font-size:0.78rem;color:#6b7280;margin-top:2px">${escHtml(a.fecha)}${a.hora ? ' · ' + escHtml(a.hora) : ''}</div>
-            <div style="font-size:0.78rem;color:#6b7280">${escHtml(a.auditor)}</div>
-            ${a.tipo === 'Interna' ? `<span style="font-size:0.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:99px;font-weight:600;margin-top:3px;display:inline-block">Interna</span>` : ''}
+            <div style="font-size:0.92rem;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.local)}</div>
+            <div style="font-size:0.75rem;color:#6b7280;margin-top:1px">${escHtml(a.fecha)}${a.hora ? ' · ' + escHtml(a.hora) : ''} · ${escHtml(a.auditor)}</div>
+            ${a.tipo === 'Interna' ? `<span style="font-size:0.65rem;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:99px;font-weight:600;margin-top:2px;display:inline-block">Interna</span>` : ''}
           </div>
-          <div style="color:#9ca3af;font-size:1.3rem;flex-shrink:0">›</div>
-        </button>`).join('');
+          ${accBtns}
+        </div>`;
+      }).join('');
 
   const borradoMsg = state.historialBorradoMsg || '';
   if (borradoMsg) setTimeout(() => { state.historialBorradoMsg = ''; render(); }, 3500);
@@ -2230,21 +2243,79 @@ function attachListeners() {
     });
   }
 
-  // Audit card click → load detail
-  document.querySelectorAll('.historial-card').forEach(btn => {
+  // Helper: cargar detalle completo de una auditoría
+  async function cargarDetalleAudit(auditId) {
+    const res = await callAPI({ action: 'getAuditoria', email: state.user.email, token: state.user.token, auditId });
+    if (!res.success) throw new Error(res.error || 'Error al cargar');
+    return res;
+  }
+
+  // 👁 Ver detalle
+  document.querySelectorAll('.hist-btn-ver').forEach(btn => {
     btn.addEventListener('click', async () => {
       const auditId = btn.dataset.auditId;
       if (!auditId) return;
-      setState({ screen: 'historial-detalle', historialDetalleLoading: true, historialDetalle: null, historialDetalleError: '' });
+      setState({ screen: 'historial-detalle', historialDetalleLoading: true, historialDetalle: null, historialDetalleError: '', historialAccionando: auditId });
       try {
-        const res = await callAPI({ action: 'getAuditoria', email: state.user.email, token: state.user.token, auditId });
-        if (res.success) {
-          setState({ historialDetalle: res, historialDetalleLoading: false });
-        } else {
-          setState({ historialDetalleLoading: false, historialDetalleError: res.error || 'Error al cargar' });
-        }
+        const res = await cargarDetalleAudit(auditId);
+        setState({ historialDetalle: res, historialDetalleLoading: false, historialAccionando: '' });
       } catch(e) {
-        setState({ historialDetalleLoading: false, historialDetalleError: 'Error de conexión: ' + e.message });
+        setState({ historialDetalleLoading: false, historialDetalleError: e.message, historialAccionando: '' });
+      }
+    });
+  });
+
+  // ✏️ Editar (carga detalle y abre cat-select)
+  document.querySelectorAll('.hist-btn-editar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const auditId = btn.dataset.auditId;
+      if (!auditId) return;
+      setState({ historialAccionando: auditId });
+      try {
+        const d = await cargarDetalleAudit(auditId);
+        setState({ historialAccionando: '', historialDetalle: d });
+        const localObj = state.locales.find(l => l.nombre === d.local) || { nombre: d.local, isCausa: false, emails: '' };
+        const cats = buildCategories(localObj.isCausa);
+        const newAnswers = {};
+        cats.forEach(cat => {
+          cat.questions.forEach(q => {
+            const row = d.respuestas.find(r => r.control === q.control);
+            if (row) newAnswers[q.id] = { valor: row.respuesta || '', observacion: row.observacion || '' };
+          });
+        });
+        Object.assign(state, {
+          screen: 'cat-select', local: localObj,
+          fecha: d.fechaISO || d.fecha || state.fecha,
+          auditor: d.auditor || state.auditor,
+          auditorEmail: d.auditorEmail || state.auditorEmail,
+          acompanante: d.acompanante || '', posicionAcompanante: '',
+          categories: cats, categoryIndex: 0, questionIndex: 0,
+          answers: newAnswers, skipped: {},
+        });
+        render();
+      } catch(e) {
+        setState({ historialAccionando: '' });
+        alert('Error al cargar auditoría: ' + e.message);
+      }
+    });
+  });
+
+  // 🗑 Borrar desde la lista
+  document.querySelectorAll('.hist-btn-borrar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const auditId = btn.dataset.auditId;
+      const local   = btn.dataset.local;
+      const fecha   = btn.dataset.fecha;
+      if (!auditId) return;
+      if (!confirm(`¿Borrar la auditoría de "${local}" del ${fecha}?\nEsta acción no se puede deshacer.`)) return;
+      setState({ historialAccionando: auditId });
+      try {
+        await callAPI({ action: 'borrarAuditoria', auditId });
+        setState({ historialAccionando: '', historial: null, historialBorradoMsg: `✓ Auditoría de ${local} borrada correctamente` });
+        await recargarHistorial();
+      } catch(e) {
+        setState({ historialAccionando: '' });
+        alert('Error al borrar: ' + e.message);
       }
     });
   });

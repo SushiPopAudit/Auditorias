@@ -179,14 +179,22 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
 // ============================================================
 function formatFechaISO(f) {
   if (!f) return '';
-  var d = (f instanceof Date) ? f : new Date(f);
-  if (!isNaN(d.getTime())) {
-    var dd   = ('0' + d.getDate()).slice(-2);
-    var mm   = ('0' + (d.getMonth() + 1)).slice(-2);
-    return d.getFullYear() + '-' + mm + '-' + dd;
+  // Si es Date (de getValues()), usar métodos locales directamente
+  if (f instanceof Date) {
+    var dd = ('0' + f.getDate()).slice(-2);
+    var mm = ('0' + (f.getMonth() + 1)).slice(-2);
+    return f.getFullYear() + '-' + mm + '-' + dd;
   }
+  // Si es string, parsear manualmente para evitar desfase UTC
   var s = String(f);
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  // Último recurso: new Date (puede haber desfase en strings)
+  var d = new Date(f);
+  if (!isNaN(d.getTime())) {
+    var dd2 = ('0' + d.getDate()).slice(-2);
+    var mm2 = ('0' + (d.getMonth() + 1)).slice(-2);
+    return d.getFullYear() + '-' + mm2 + '-' + dd2;
+  }
   return s;
 }
 
@@ -195,18 +203,24 @@ function formatFechaISO(f) {
 // ============================================================
 function formatFecha(f) {
   if (!f) return '';
-  // Si es un objeto Date (viene de getValues() del sheet)
-  var d = (f instanceof Date) ? f : new Date(f);
-  if (!isNaN(d.getTime())) {
-    var dd   = ('0' + d.getDate()).slice(-2);
-    var mm   = ('0' + (d.getMonth() + 1)).slice(-2);
-    var yyyy = d.getFullYear();
-    return dd + '/' + mm + '/' + yyyy;
+  // Si es Date (de getValues()), usar métodos locales directamente
+  if (f instanceof Date) {
+    var dd = ('0' + f.getDate()).slice(-2);
+    var mm = ('0' + (f.getMonth() + 1)).slice(-2);
+    return dd + '/' + mm + '/' + f.getFullYear();
   }
-  // Fallback: string YYYY-MM-DD
+  // Si es string YYYY-MM-DD, parsear manualmente para evitar desfase UTC
   var s = String(f);
   var p = s.split('-');
-  return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : s;
+  if (p.length === 3 && p[0].length === 4) return p[2] + '/' + p[1] + '/' + p[0];
+  // Último recurso: new Date
+  var d = new Date(f);
+  if (!isNaN(d.getTime())) {
+    var dd2  = ('0' + d.getDate()).slice(-2);
+    var mm2  = ('0' + (d.getMonth() + 1)).slice(-2);
+    return dd2 + '/' + mm2 + '/' + d.getFullYear();
+  }
+  return s;
 }
 
 // ============================================================
