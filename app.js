@@ -481,33 +481,36 @@ function renderChangePassword() {
 // PANTALLA: ADMIN
 // ============================================================
 function renderAdminBottomNav() {
-  const tab        = state.adminTab || 'menu';
+  const tab         = state.adminTab || 'menu';
   const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success','welcome']);
   const histScreens  = new Set(['historial','historial-detalle']);
-  const isAudit    = auditScreens.has(state.screen);
+  const isAudit     = auditScreens.has(state.screen);
   const isHistorial = histScreens.has(state.screen);
-  const onAdmin    = state.screen === 'admin';
+  const onAdmin     = state.screen === 'admin';
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
   const base   = 'flex:1;padding:6px 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation';
-  const iconStyle = 'font-size:1.2rem;line-height:1';
+  const iconStyle  = 'font-size:1.2rem;line-height:1';
   const labelStyle = 'font-size:0.6rem;letter-spacing:0.01em';
   return `
-    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
+    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
       <button id="nav-admin-inicio" style="${base};${onAdmin&&tab==='menu'?active:idle}">
         <span style="${iconStyle}">🏠</span><span style="${labelStyle}">Inicio</span>
       </button>
       <button id="nav-admin-usuarios" style="${base};${onAdmin&&tab==='usuarios'?active:idle}">
         <span style="${iconStyle}">👥</span><span style="${labelStyle}">Usuarios</span>
       </button>
-      <button id="nav-admin-locales" style="${base};${onAdmin&&tab==='locales'?active:idle}">
-        <span style="${iconStyle}">🏪</span><span style="${labelStyle}">Locales</span>
+      <button id="nav-admin-auditoria" style="flex:1;padding:0 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation;position:relative;top:-10px">
+        <div style="width:52px;height:52px;border-radius:50%;background:${isAudit?'#15803d':'#16a34a'};display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(22,163,74,0.4);transition:background 0.15s">
+          <span style="color:#fff;font-size:1.8rem;line-height:1;font-weight:300">+</span>
+        </div>
+        <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
       </button>
       <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
         <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
       </button>
-      <button id="nav-admin-auditoria" style="${base};${isAudit?active:idle}">
-        <span style="${iconStyle}">✅</span><span style="${labelStyle}">Nueva</span>
+      <button id="nav-admin-locales" style="${base};${onAdmin&&tab==='locales'?active:idle}">
+        <span style="${iconStyle}">🏪</span><span style="${labelStyle}">Locales</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -568,15 +571,6 @@ function renderAdminMenu() {
       </div>
       ${draftBanner}
       <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px">
-        <button class="btn btn-primary btn-large" id="btn-go-setup" style="width:100%">Nueva Auditoría</button>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <button id="btn-admin-go-usuarios" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:12px;padding:20px 12px;font-size:0.95rem;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">
-            <span style="font-size:1.6rem">👥</span>Usuarios
-          </button>
-          <button id="btn-admin-go-locales" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:12px;padding:20px 12px;font-size:0.95rem;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">
-            <span style="font-size:1.6rem">🏪</span>Locales
-          </button>
-        </div>
         <button class="btn btn-outline" id="btn-logout" style="width:100%;color:#94a3b8;border-color:#334155;font-size:0.85rem">Cerrar sesión</button>
       </div>
     </div>`;
