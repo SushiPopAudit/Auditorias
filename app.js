@@ -1608,9 +1608,14 @@ function renderError() {
 // ============================================================
 // EVENT LISTENERS
 function recargarHistorialSilente() {
-  if (!state.user || state.historial) return;
+  if (!state.user || state.historial !== null) return;
   callAPI({ action: 'getAuditorias', email: state.user.email, token: state.user.token })
-    .then(res => { if (res.success) state.historial = res.auditorias || []; })
+    .then(res => {
+      // Only store if we got real data; leave null on error so the historial screen loads normally
+      if (res.success && res.auditorias && res.auditorias.length > 0) {
+        state.historial = res.auditorias;
+      }
+    })
     .catch(() => {});
 }
 
