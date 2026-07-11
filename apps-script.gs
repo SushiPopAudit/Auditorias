@@ -8,6 +8,22 @@ const DRIVE_FOLDER_ID = '1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P';
 const USUARIOS_SHEET          = 'Usuarios';
 const USUARIOS_SPREADSHEET_ID = '1TeeKe1eYsKIZ6-8uEPOY0UT-wrtrwl0FW4hAgBoIkzY';
 
+// ============================================================
+// CACHÉ — CacheService (TTL en segundos)
+// ============================================================
+function cacheGetParsed(key) {
+  try {
+    var s = CacheService.getScriptCache().get(key);
+    return s ? JSON.parse(s) : null;
+  } catch(e) { return null; }
+}
+function cachePutObj(key, obj, ttl) {
+  try { CacheService.getScriptCache().put(key, JSON.stringify(obj), ttl); } catch(e) {}
+}
+function cacheRemoveKey(key) {
+  try { CacheService.getScriptCache().remove(key); } catch(e) {}
+}
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -79,6 +95,9 @@ function doPost(e) {
     if (rows.length > 0) {
       sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 20).setValues(rows);
       colorearDesvios(sheet, rows);
+      // Invalidar caché de auditorías del auditor y del admin
+      if (data.auditorEmail) cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase());
+      cacheRemoveKey('aud_all');
     }
 
     // Detectar desvíos repetidos (aparecen en últimas 2 auditorías del mismo local)
@@ -878,6 +897,7 @@ function doGet(e) {
       var tempPwd = generarPasswordTemp();
       var pwdHash = hashPassword(tempPwd);
       sheetCU.appendRow([newEmail, nombre, rol, locales, pwdHash, 'true', 'Activo', new Date()]);
+      cacheRemoveKey('usuarios');
       var bodyEmail = 'Hola ' + nombre + ',\n\nTu cuenta fue creada en el Sistema de Auditorías Sushi POP.\n\nUsuario: ' + newEmail + '\nContraseña temporal: ' + tempPwd + '\n\nAl ingresar por primera vez se te pedirá que cambies tu contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
       GmailApp.sendEmail(newEmail, 'Acceso al Sistema de Auditorías Sushi POP', bodyEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
       return jsonResponse({ success: true, message: 'Usuario creado y email enviado a ' + newEmail });
@@ -917,6 +937,7 @@ function doGet(e) {
       var rowBaja   = encontrarUsuarioRow(sheetBaja, targetEmB);
       if (rowBaja < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       sheetBaja.getRange(rowBaja, 7).setValue('Inactivo');
+      cacheRemoveKey('usuarios');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -933,6 +954,7 @@ function doGet(e) {
       var rowReact   = encontrarUsuarioRow(sheetReact, targetEmA);
       if (rowReact < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       sheetReact.getRange(rowReact, 7).setValue('Activo');
+      cacheRemoveKey('usuarios');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -941,6 +963,8 @@ function doGet(e) {
     var adminEmG  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokG = e.parameter.adminToken || '';
     if (!adminEmG || !adminTokG) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    var cachedUsuarios = cacheGetParsed('usuarios');
+    if (cachedUsuarios) return jsonResponse(cachedUsuarios);
     try {
       var ssGU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssGU, adminEmG, adminTokG)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -953,7 +977,9 @@ function doGet(e) {
           primerLogin: r[5] === true || String(r[5]).toLowerCase() === 'true',
           estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '' };
       });
-      return jsonResponse({ success: true, usuarios: usuarios });
+      var resGU = { success: true, usuarios: usuarios };
+      cachePutObj('usuarios', resGU, 300);
+      return jsonResponse(resGU);
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
@@ -976,6 +1002,7 @@ function doGet(e) {
       if (newRol)    shE.getRange(rowE, 3).setValue(newRol);
       if (newLocales !== undefined && newLocales !== '') shE.getRange(rowE, 4).setValue(newLocales);
       if (newEstado) shE.getRange(rowE, 7).setValue(newEstado);
+      cacheRemoveKey('usuarios');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -984,6 +1011,8 @@ function doGet(e) {
     var adminEmL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokL = e.parameter.adminToken || '';
     if (!adminEmL || !adminTokL) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    var cachedLocales = cacheGetParsed('locales');
+    if (cachedLocales) return jsonResponse(cachedLocales);
     try {
       var ssL  = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssL, adminEmL, adminTokL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -993,7 +1022,9 @@ function doGet(e) {
       var locales = dataL.filter(function(r){ return r[0]; }).map(function(r, i){
         return { idx: i + 2, nombre: r[0], isCausa: String(r[1]).toUpperCase() === 'TRUE', emails: r[2] || '' };
       });
-      return jsonResponse({ success: true, locales: locales });
+      var resL = { success: true, locales: locales };
+      cachePutObj('locales', resL, 300);
+      return jsonResponse(resL);
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
@@ -1010,6 +1041,7 @@ function doGet(e) {
       var shCL = ssCL.getSheetByName('Locales');
       if (!shCL) return jsonResponse({ success: false, error: 'Hoja Locales no encontrada' });
       shCL.appendRow([lNombre, lCausa, lEmails]);
+      cacheRemoveKey('locales');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -1028,6 +1060,7 @@ function doGet(e) {
       var shUL = ssUL.getSheetByName('Locales');
       if (!shUL) return jsonResponse({ success: false, error: 'Hoja Locales no encontrada' });
       shUL.getRange(ulIdx, 1, 1, 3).setValues([[ulNombre, ulCausa, ulEmails]]);
+      cacheRemoveKey('locales');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -1043,6 +1076,7 @@ function doGet(e) {
       var shDL = ssDL.getSheetByName('Locales');
       if (!shDL) return jsonResponse({ success: false, error: 'Hoja Locales no encontrada' });
       shDL.deleteRow(dlIdx);
+      cacheRemoveKey('locales');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -1302,33 +1336,54 @@ function doGet(e) {
       var lastRowB = sheetB.getLastRow();
       if (lastRowB < 2) return jsonResponse({ success: false, error: 'Sin datos' });
 
-      var allDataB = sheetB.getRange(2, 1, lastRowB - 1, 1).getValues();
-      // Recolectar índices de filas a borrar (en orden inverso para no alterar posiciones)
+      // Read cols A-E to identify matching rows and get local/fecha for Drive cleanup
+      var allDataB = sheetB.getRange(2, 1, lastRowB - 1, 5).getValues();
       var toDelete = [];
+      var localB = '', fechaB = '';
       allDataB.forEach(function(r, i) {
-        if (String(r[0]) === auditIdB) toDelete.push(i + 2);
+        if (String(r[0]).trim() === auditIdB) {
+          toDelete.push(i + 2); // 1-indexed sheet row
+          if (!localB) { localB = String(r[4] || ''); fechaB = r[1]; }
+        }
       });
       if (!toDelete.length) return jsonResponse({ success: false, error: 'AuditID no encontrado: ' + auditIdB });
 
-      // Borrar de abajo hacia arriba para no desplazar índices
-      for (var d = toDelete.length - 1; d >= 0; d--) {
-        sheetB.deleteRow(toDelete[d]);
+      // Batch delete: group consecutive rows into ranges and delete bottom-up
+      // This reduces N deleteRow() calls to just a few deleteRows() calls
+      var ranges = [];
+      var start = toDelete[0], end = toDelete[0];
+      for (var k = 1; k < toDelete.length; k++) {
+        if (toDelete[k] === end + 1) {
+          end = toDelete[k];
+        } else {
+          ranges.push([start, end - start + 1]);
+          start = toDelete[k]; end = toDelete[k];
+        }
+      }
+      ranges.push([start, end - start + 1]);
+      // Delete from bottom to top so row indices stay valid
+      for (var rk = ranges.length - 1; rk >= 0; rk--) {
+        sheetB.deleteRows(ranges[rk][0], ranges[rk][1]);
       }
 
-      // Borrar carpeta de fotos en: Auditorias/Fotos Auditorias/[Local]/[fecha]/
+      // Invalidate auditorias cache
+      cacheRemoveKey('aud_all');
+      // We don't know which auditor email to invalidate, so clear all aud_ keys is not possible.
+      // The per-auditor cache will expire naturally (180s TTL).
+
+      // Borrar carpeta de fotos en Drive: Fotos Auditorias/[Local]/[fecha]/
       var driveMsg = 'no encontrada';
       try {
-        var localB  = rowsAudit.length ? rowsAudit[0][4] : '';
-        var fechaB  = rowsAudit.length ? rowsAudit[0][1] : '';
         if (localB && fechaB) {
-          var rootB      = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+          var fechaStrB = fechaB instanceof Date ? fechaB.getFullYear()+'-'+('0'+(fechaB.getMonth()+1)).slice(-2)+'-'+('0'+fechaB.getDate()).slice(-2) : String(fechaB);
+          var rootB        = DriveApp.getFolderById(DRIVE_FOLDER_ID);
           var fotosMainBIt = rootB.getFoldersByName('Fotos Auditorias');
           if (fotosMainBIt.hasNext()) {
             var fotosMainB = fotosMainBIt.next();
             var localBIt   = fotosMainB.getFoldersByName(localB);
             if (localBIt.hasNext()) {
               var localBFolder = localBIt.next();
-              var fechaBIt     = localBFolder.getFoldersByName(String(fechaB));
+              var fechaBIt     = localBFolder.getFoldersByName(fechaStrB);
               if (fechaBIt.hasNext()) {
                 fechaBIt.next().setTrashed(true);
                 driveMsg = 'eliminada';
@@ -1358,6 +1413,10 @@ function doGet(e) {
       if (dAuthGA[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       var gaRol     = String(dAuthGA[2] || '');
       var gaLocales = String(dAuthGA[3] || '');
+
+      var gaCacheKey = gaRol === 'Admin' ? 'aud_all' : ('aud_' + gaEmail);
+      var cachedGA = cacheGetParsed(gaCacheKey);
+      if (cachedGA) return jsonResponse(cachedGA);
 
       var ssGA = SpreadsheetApp.openById(SPREADSHEET_ID);
       var shGA = ssGA.getSheetByName(SHEET_NAME);
@@ -1392,7 +1451,9 @@ function doGet(e) {
         });
       });
       listaGA.reverse();
-      return jsonResponse({ success: true, auditorias: listaGA });
+      var resGA = { success: true, auditorias: listaGA };
+      cachePutObj(gaCacheKey, resGA, 180);
+      return jsonResponse(resGA);
     } catch(gaErr) { return jsonResponse({ success: false, error: gaErr.message }); }
   }
 

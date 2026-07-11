@@ -98,6 +98,7 @@ async function init() {
       state.auditor      = session.nombre;
       state.auditorEmail = session.email;
       setState({ screen: session.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
+      setTimeout(recargarHistorialSilente, 800);
     } else {
       setState({ screen: 'login' });
     }
@@ -1634,6 +1635,7 @@ function attachListeners() {
         state.auditor      = userData.nombre;
         state.auditorEmail = userData.email;
         setState({ screen: userData.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
+        setTimeout(recargarHistorialSilente, 500);
       }
     } catch(err) {
       if (errEl) errEl.textContent = 'Error de conexión. Intentá de nuevo.';
@@ -1719,6 +1721,13 @@ function attachListeners() {
     }
   }
 
+  function recargarHistorialSilente() {
+    if (state.historial) return; // already loaded
+    callAPI({ action: 'getAuditorias', email: state.user.email, token: state.user.token })
+      .then(res => { if (res.success) state.historial = res.auditorias || []; })
+      .catch(() => {});
+  }
+
   async function recargarUsuarios() {
     state.adminLoading = true; render();
     try {
@@ -1753,12 +1762,18 @@ function attachListeners() {
   async function goToUsuarios() {
     state.screen = 'admin'; state.adminTab = 'usuarios'; state.adminShowCreateUser = false; state.adminEditingUserEmail = null; state.adminSearch = '';
     render();
-    if (!state.adminUsers.length) await recargarUsuarios();
+    const promises = [];
+    if (!state.adminUsers.length)  promises.push(recargarUsuarios());
+    if (!state.adminLocales.length) promises.push(recargarLocales());
+    if (promises.length) await Promise.all(promises);
   }
   async function goToLocales() {
     state.screen = 'admin'; state.adminTab = 'locales'; state.adminShowCreateLocal = false; state.adminEditingLocalIdx = null; state.adminLocalesSearch = '';
     render();
-    if (!state.adminLocales.length) await recargarLocales();
+    const promises = [];
+    if (!state.adminLocales.length) promises.push(recargarLocales());
+    if (!state.adminUsers.length)   promises.push(recargarUsuarios());
+    if (promises.length) await Promise.all(promises);
   }
 
   on('btn-admin-go-usuarios',  'click', goToUsuarios);
