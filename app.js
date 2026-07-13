@@ -921,7 +921,7 @@ function renderHistorialDetalle() {
     const ncCnt  = rows.filter(r => { const v = (r.respuesta||'').toLowerCase(); return v.includes('no cumple')||v==='nocumple'; }).length;
     const parCnt = rows.filter(r => (r.respuesta||'').toLowerCase().includes('parcial')).length;
     // Categories with incumplimientos start expanded; others start collapsed
-    const startOpen = ncCnt > 0;
+    const startOpen = false;
     const catId = `cat-acc-${catIdx}`;
 
     const rowsHtml = rows.map(r => {
