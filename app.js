@@ -910,9 +910,20 @@ function renderHistorialDetalle() {
     byCat[r.categoria].push(r);
   });
 
-  const catHtml = catOrder.map(cat => {
+  // Convert Drive file URL → thumbnail URL (same logic as backend driveImgUrl)
+  function toDriveThumb(url) {
+    const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w400` : url;
+  }
+
+  const catHtml = catOrder.map((cat, catIdx) => {
     const rows   = byCat[cat];
     const ncCnt  = rows.filter(r => { const v = (r.respuesta||'').toLowerCase(); return v.includes('no cumple')||v==='nocumple'; }).length;
+    const parCnt = rows.filter(r => (r.respuesta||'').toLowerCase().includes('parcial')).length;
+    // Categories with incumplimientos start expanded; others start collapsed
+    const startOpen = ncCnt > 0;
+    const catId = `cat-acc-${catIdx}`;
+
     const rowsHtml = rows.map(r => {
       const v        = (r.respuesta||'').toLowerCase();
       const isNC     = v.includes('no cumple') || v === 'nocumple';
@@ -923,31 +934,52 @@ function renderHistorialDetalle() {
       const imp_i     = (r.importancia||'').toLowerCase().replace(/í/g,'i');
       const impC      = imp_i==='critico'?'#e4001b':imp_i==='alta'?'#ea580c':imp_i==='media'?'#d97706':'#16a34a';
       const impB      = imp_i==='critico'?'#fff1f2':imp_i==='alta'?'#fff7ed':imp_i==='media'?'#fffbeb':'#f0fdf4';
-      const fotos     = r.fotoUrls && r.fotoUrls.length
-        ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">
-            ${r.fotoUrls.map(url => `<a href="${escHtml(url)}" target="_blank" rel="noopener">
-              <img src="${escHtml(url)}" alt="foto" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb">
-            </a>`).join('')}
+
+      const fotos = r.fotoUrls && r.fotoUrls.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+            ${r.fotoUrls.map(url => {
+              const thumb = toDriveThumb(url);
+              return `<a href="${escHtml(toDriveThumb(url))}" target="_blank" rel="noopener" style="display:block;width:80px;height:80px;flex-shrink:0">
+                <img src="${escHtml(thumb)}" alt="foto"
+                  style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;display:block"
+                  onerror="this.style.display='none'">
+              </a>`;
+            }).join('')}
           </div>` : '';
+
+      const rowBg = isNC ? 'background:#fff1f2;border-left:3px solid #e4001b;padding-left:13px;' : '';
       return `
-        <div style="padding:11px 0;border-bottom:1px solid #f3f4f6${isNC?';background:#fffafa;margin:0 -16px;padding-left:16px;padding-right:16px':''}">
-          <div style="font-size:0.75rem;color:#9ca3af;margin-bottom:1px">${escHtml(r.subcategoria)}</div>
-          <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;margin-bottom:5px">${escHtml(r.control)}</div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap">
-            <span style="font-size:0.68rem;background:${impB};color:${impC};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.importancia)}</span>
-            <span style="font-size:0.68rem;background:${resBg};color:${resColor};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.respuesta||'—')}</span>
+        <div style="${rowBg}padding:11px 0;border-bottom:1px solid #f3f4f6">
+          <div style="font-size:0.72rem;color:#9ca3af;margin-bottom:1px">${escHtml(r.subcategoria)}</div>
+          <div style="font-size:0.86rem;font-weight:600;color:#1a1a1a;margin-bottom:5px">${escHtml(r.control)}</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+            <span style="font-size:0.67rem;background:${impB};color:${impC};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.importancia)}</span>
+            <span style="font-size:0.67rem;background:${resBg};color:${resColor};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.respuesta||'—')}</span>
           </div>
-          ${r.observacion ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:5px;font-style:italic">"${escHtml(r.observacion)}"</div>` : ''}
+          ${r.observacion ? `<div style="font-size:0.76rem;color:#6b7280;margin-top:5px;font-style:italic">"${escHtml(r.observacion)}"</div>` : ''}
           ${fotos}
         </div>`;
     }).join('');
+
+    const headerBg = ncCnt > 0 ? '#fff1f2' : '#f8fafc';
+    const headerBorder = ncCnt > 0 ? 'border-left:3px solid #e4001b;' : '';
+    const badge = ncCnt > 0
+      ? `<span style="font-size:0.67rem;font-weight:700;color:#e4001b;background:#fecaca;padding:1px 7px;border-radius:99px">${ncCnt} incumpl.</span>`
+      : parCnt > 0
+        ? `<span style="font-size:0.67rem;font-weight:700;color:#d97706;background:#fef3c7;padding:1px 7px;border-radius:99px">${parCnt} parcial</span>`
+        : `<span style="font-size:0.67rem;font-weight:700;color:#16a34a">✓ OK</span>`;
+
     return `
       <div style="background:#fff;border-radius:12px;border:1px solid #e5e7eb;margin-bottom:10px;overflow:hidden">
-        <div style="padding:11px 16px;background:#f8fafc;display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:0.88rem;font-weight:700;color:#1a1a1a">${escHtml(cat)}</div>
-          <div style="font-size:0.72rem;font-weight:700;color:${ncCnt>0?'#e4001b':'#16a34a'}">${ncCnt>0?ncCnt+' incumpl.':'✓ OK'}</div>
-        </div>
-        <div style="padding:0 16px">${rowsHtml}</div>
+        <button class="cat-acc-btn" data-target="${catId}"
+          style="width:100%;padding:11px 16px;background:${headerBg};${headerBorder}display:flex;justify-content:space-between;align-items:center;border:none;cursor:pointer;text-align:left;touch-action:manipulation">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+            <span style="font-size:0.86rem;font-weight:700;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(cat)}</span>
+            ${badge}
+          </div>
+          <span class="cat-acc-arrow" style="font-size:0.75rem;color:#9ca3af;margin-left:8px;transition:transform 0.2s;transform:rotate(${startOpen?'180':'0'}deg)">▼</span>
+        </button>
+        <div id="${catId}" style="padding:0 16px;${startOpen?'':'display:none'}">${rowsHtml}</div>
       </div>`;
   }).join('');
 
@@ -2580,6 +2612,18 @@ function attachListeners() {
 
   on('btn-historial-detalle-back',        'click', () => setState({ screen: 'historial' }));
   on('btn-historial-detalle-back-footer', 'click', () => setState({ screen: 'historial' }));
+
+  // Acordeón de categorías en historial detalle
+  document.querySelectorAll('.cat-acc-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      const arrow  = btn.querySelector('.cat-acc-arrow');
+      if (!target) return;
+      const isOpen = target.style.display !== 'none';
+      target.style.display = isOpen ? 'none' : 'block';
+      if (arrow) arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+  });
 
   on('btn-historial-borrar', 'click', async () => {
     const d = state.historialDetalle;
