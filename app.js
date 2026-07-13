@@ -696,7 +696,9 @@ function renderDashboard() {
   }
 
   // '' = Todos, cualquier otro valor = local específico
+  console.log('[DB] dashboardLocal=', JSON.stringify(state.dashboardLocal), 'selLocal=', JSON.stringify(selLocal), 'porLocalKeys=', Object.keys(porLocal));
   const isTodos = !selLocal || !porLocal[selLocal];
+  console.log('[DB] isTodos=', isTodos);
 
   // Si hay un solo local, nunca mostramos "Todos" — directo al único local
   const mostrarTodos = localesList.length > 1;
