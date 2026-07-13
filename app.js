@@ -664,9 +664,7 @@ function renderDashboard() {
   const porLocal     = data.porLocal || {};
   const globalData   = data.global   || {};
 
-  // Ensure selected local is valid
-  let selLocal = state.dashboardLocal;
-  if (!selLocal || !porLocal[selLocal]) selLocal = localesList[0] || '';
+  let selLocal = state.dashboardLocal || '';
 
   function validPct(p) { return p !== null && p !== undefined && !isNaN(p); }
   function pctColor(p) {
@@ -696,9 +694,7 @@ function renderDashboard() {
   }
 
   // '' = Todos, cualquier otro valor = local específico
-  console.log('[DB] dashboardLocal=', JSON.stringify(state.dashboardLocal), 'selLocal=', JSON.stringify(selLocal), 'porLocalKeys=', Object.keys(porLocal));
   const isTodos = !selLocal || !porLocal[selLocal];
-  console.log('[DB] isTodos=', isTodos);
 
   // Si hay un solo local, nunca mostramos "Todos" — directo al único local
   const mostrarTodos = localesList.length > 1;
