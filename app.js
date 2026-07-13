@@ -2195,7 +2195,7 @@ function attachListeners() {
       const qid  = input.dataset.qid;
       const file = input.files[0];
       if (!file) return;
-      const dataURL = await compressImage(file, 800, 0.65);
+      const dataURL = await compressImage(file, 600, 0.55);
       if (!state.answers[qid]) state.answers[qid] = {};
       if (!state.answers[qid].fotos) state.answers[qid].fotos = [];
       state.answers[qid].fotos.push({ dataURL, name: file.name });
@@ -2545,8 +2545,12 @@ function guardarBorrador() {
       skipped:             state.skipped,
     };
     const json = JSON.stringify(draft);
-    // Si supera ~4MB, guardar sin fotos
-    if (json.length > 4 * 1024 * 1024) {
+    if (json.length <= 4 * 1024 * 1024) {
+      localStorage.setItem('audit_draft', json);
+    } else {
+      // Draft too large: strip photos only from the localStorage copy.
+      // state.answers in memory is NEVER touched — photos stay live during the session.
+      const slim = Object.assign({}, draft);
       const answersSinFotos = {};
       Object.keys(draft.answers).forEach(qid => {
         const a = Object.assign({}, draft.answers[qid]);
@@ -2554,10 +2558,8 @@ function guardarBorrador() {
         delete a.fotos;
         answersSinFotos[qid] = a;
       });
-      draft.answers = answersSinFotos;
-      localStorage.setItem('audit_draft', JSON.stringify(draft));
-    } else {
-      localStorage.setItem('audit_draft', json);
+      slim.answers = answersSinFotos;
+      try { localStorage.setItem('audit_draft', JSON.stringify(slim)); } catch(e2) {}
     }
   } catch(e) {}
 }
