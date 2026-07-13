@@ -706,7 +706,7 @@ function renderDashboard() {
 
   const selectorHtml = localesList.length > 0 ? `
     <div style="padding:12px 14px 0">
-      <select id="db-local-select" style="${selectStyle}">
+      <select id="db-local-select" style="${selectStyle}" onchange="state.dashboardLocal=this.value;render();">
         ${mostrarTodos ? `<option value=""${isTodos?' selected':''}>Todos los locales</option>` : ''}
         ${localesList.map(l => `<option value="${escHtml(l)}"${l===selLocal&&!isTodos?' selected':''}>${escHtml(l)}</option>`).join('')}
       </select>
