@@ -95,9 +95,13 @@ function doPost(e) {
     if (rows.length > 0) {
       sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 20).setValues(rows);
       colorearDesvios(sheet, rows);
-      // Invalidar caché de auditorías del auditor y del admin
-      if (data.auditorEmail) cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase());
+      // Invalidar caché de auditorías y dashboard del auditor y del admin
+      if (data.auditorEmail) {
+        cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase());
+        cacheRemoveKey('db_'  + data.auditorEmail.toLowerCase());
+      }
       cacheRemoveKey('aud_all');
+      cacheRemoveKey('db_all'); // dashboard admin uses db_<adminEmail>, but we don't know it — TTL will expire
     }
 
     // Detectar desvíos repetidos (aparecen en últimas 2 auditorías del mismo local)
@@ -1366,7 +1370,7 @@ function doGet(e) {
         sheetB.deleteRows(ranges[rk][0], ranges[rk][1]);
       }
 
-      // Invalidate auditorias cache
+      // Invalidate auditorias + dashboard cache
       cacheRemoveKey('aud_all');
       // We don't know which auditor email to invalidate, so clear all aud_ keys is not possible.
       // The per-auditor cache will expire naturally (180s TTL).
@@ -1513,6 +1517,177 @@ function doGet(e) {
         }),
       });
     } catch(gdErr) { return jsonResponse({ success: false, error: gdErr.message }); }
+  }
+
+  // ============================================================
+  // getDashboard
+  // ============================================================
+  if (action === 'getDashboard') {
+    var dbEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var dbToken = e.parameter.token || '';
+    if (!dbEmail || !dbToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+
+    var cacheKeyDB = 'db_' + dbEmail;
+    var cachedDB = cacheGetParsed(cacheKeyDB);
+    if (cachedDB) return jsonResponse(cachedDB);
+
+    try {
+      // Auth
+      var ssAuthDB = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shAuthDB = ensureUsuariosSheet(ssAuthDB);
+      var rowAuthDB = encontrarUsuarioRow(shAuthDB, dbEmail);
+      if (rowAuthDB < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dAuthDB = shAuthDB.getRange(rowAuthDB, 1, 1, 8).getValues()[0];
+      if (dAuthDB[4] !== dbToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dAuthDB[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      var dbRol     = String(dAuthDB[2] || '');
+      var dbLocales = String(dAuthDB[3] || '');
+
+      // Read all data
+      var ssDB = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shDB = ssDB.getSheetByName(SHEET_NAME);
+      if (!shDB || shDB.getLastRow() < 2) return jsonResponse({ success: true, locales: [], globalDebiles: [] });
+
+      var dataDB = shDB.getRange(2, 1, shDB.getLastRow() - 1, 20).getValues();
+
+      // Filter rows by role
+      var allowedLocalesDB = dbLocales !== 'todos' ? dbLocales.split(',').map(function(l){ return l.trim().toLowerCase(); }) : null;
+      var filtered = dataDB.filter(function(r) {
+        if (!r[0]) return false;
+        if (dbRol === 'Auditor') return (String(r[14]||'')).toLowerCase().trim() === dbEmail;
+        if (dbRol === 'Franquiciado' && allowedLocalesDB) return allowedLocalesDB.indexOf((String(r[4]||'')).toLowerCase().trim()) !== -1;
+        return true; // Admin
+      });
+
+      // Group rows by local, then by auditId
+      var localesMap = {}; // localName -> { audits: { auditId -> rows[] } }
+      filtered.forEach(function(r) {
+        var local = String(r[4] || '').trim();
+        var auditId = String(r[0] || '').trim();
+        if (!local || !auditId) return;
+        if (!localesMap[local]) localesMap[local] = { audits: {} };
+        if (!localesMap[local].audits[auditId]) localesMap[local].audits[auditId] = [];
+        localesMap[local].audits[auditId].push(r);
+      });
+
+      // For global weak points: count failures per control across all audits (last audit per local only)
+      var globalControls = {}; // controlKey -> { categoria, subcategoria, control, count, localCount }
+
+      var localesResult = Object.keys(localesMap).sort().map(function(localName) {
+        var auditsObj = localesMap[localName].audits;
+
+        // Sort audits by date desc
+        var auditList = Object.keys(auditsObj).map(function(aid) {
+          var rows = auditsObj[aid];
+          var firstRow = rows[0];
+          return {
+            auditId:  aid,
+            fecha:    firstRow[1],
+            fechaISO: formatFechaISO(firstRow[1]),
+            hora:     String(firstRow[2] || ''),
+            pct:      firstRow[15] !== '' ? Number(firstRow[15]) : null,
+            nivel:    String(firstRow[16] || ''),
+            reprobado: String(firstRow[17]) === 'Sí',
+            rows:     rows,
+          };
+        }).sort(function(a, b) {
+          var da = a.fechaISO || '';
+          var db2 = b.fechaISO || '';
+          return da < db2 ? 1 : da > db2 ? -1 : 0;
+        });
+
+        if (!auditList.length) return null;
+
+        var ultima    = auditList[0];
+        var anterior  = auditList[1] || null;
+
+        // Tendencia
+        var tendencia = 'sin-datos';
+        if (anterior && ultima.pct !== null && anterior.pct !== null) {
+          var diff = ultima.pct - anterior.pct;
+          tendencia = diff > 1 ? 'sube' : diff < -1 ? 'baja' : 'estable';
+        }
+
+        // Días sin auditoría
+        var diasSinAuditoria = null;
+        if (ultima.fechaISO) {
+          var partsD = ultima.fechaISO.split('-');
+          if (partsD.length === 3) {
+            var fechaAudit = new Date(parseInt(partsD[0]), parseInt(partsD[1])-1, parseInt(partsD[2]));
+            var hoy = new Date();
+            hoy.setHours(0,0,0,0);
+            diasSinAuditoria = Math.round((hoy - fechaAudit) / 86400000);
+          }
+        }
+
+        // Breakdown por categoría (última auditoría)
+        var catMap = {}; // cat -> { cumple, total }
+        ultima.rows.forEach(function(r) {
+          var cat  = String(r[6] || '').trim();
+          var resp = String(r[11] || '').trim().toLowerCase();
+          if (!cat) return;
+          if (!catMap[cat]) catMap[cat] = { cumple: 0, total: 0 };
+          catMap[cat].total++;
+          if (resp === 'cumple' || resp === 'n/a') catMap[cat].cumple++;
+        });
+        var categorias = Object.keys(catMap).map(function(cat) {
+          var d = catMap[cat];
+          return { categoria: cat, pct: d.total > 0 ? Math.round(d.cumple / d.total * 100) : null };
+        }).sort(function(a, b) { return (a.pct||100) - (b.pct||100); }); // worst first
+
+        // Puntos débiles (última auditoría): No cumple items
+        var debilesUltima = ultima.rows
+          .filter(function(r){ return (String(r[11]||'')).trim().toLowerCase() === 'no cumple'; })
+          .map(function(r){ return { categoria: String(r[6]||''), subcategoria: String(r[7]||''), control: String(r[8]||''), importancia: String(r[9]||'') }; });
+
+        // Tasa de reincidencia: desvíos de la última que también fallaron en la anterior
+        var reincidencia = null;
+        if (anterior && debilesUltima.length > 0) {
+          var debilesAnt = {};
+          anterior.rows.forEach(function(r) {
+            if ((String(r[11]||'')).trim().toLowerCase() === 'no cumple') {
+              debilesAnt[String(r[8]||'').trim()] = true;
+            }
+          });
+          var reinc = debilesUltima.filter(function(d){ return debilesAnt[d.control.trim()]; }).length;
+          reincidencia = Math.round(reinc / debilesUltima.length * 100);
+        }
+
+        // Feed global weak points with last-audit failures
+        debilesUltima.forEach(function(d) {
+          var key = d.categoria + '|||' + d.control;
+          if (!globalControls[key]) globalControls[key] = { categoria: d.categoria, subcategoria: d.subcategoria, control: d.control, count: 0, locales: {} };
+          globalControls[key].count++;
+          globalControls[key].locales[localName] = true;
+        });
+
+        return {
+          local:           localName,
+          totalAuditorias: auditList.length,
+          ultimaFecha:     formatFecha(ultima.fecha),
+          ultimaFechaISO:  ultima.fechaISO,
+          ultimaPct:       ultima.pct,
+          ultimaNivel:     ultima.nivel,
+          ultimaReprobado: ultima.reprobado,
+          tendencia:       tendencia,
+          tendenciaDiff:   anterior && ultima.pct !== null && anterior.pct !== null ? Math.round(ultima.pct - anterior.pct) : null,
+          diasSinAuditoria: diasSinAuditoria,
+          categorias:      categorias,
+          debilesUltima:   debilesUltima.slice(0, 10), // top 10
+          reincidencia:    reincidencia,
+        };
+      }).filter(Boolean);
+
+      // Global weak points: sort by count desc, top 20
+      var globalDebiles = Object.keys(globalControls).map(function(k) {
+        var d = globalControls[k];
+        return { categoria: d.categoria, subcategoria: d.subcategoria, control: d.control, count: d.count, localCount: Object.keys(d.locales).length };
+      }).sort(function(a, b) { return b.count - a.count; }).slice(0, 20);
+
+      var resDB = { success: true, locales: localesResult, globalDebiles: globalDebiles };
+      cachePutObj(cacheKeyDB, resDB, 180);
+      return jsonResponse(resDB);
+    } catch(dbErr) { return jsonResponse({ success: false, error: dbErr.message }); }
   }
 
   return jsonResponse({ version: '2026-06-16-v1' });

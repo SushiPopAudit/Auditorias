@@ -61,6 +61,10 @@ const state = {
   historialBorrando:      false,
   historialAccionando:    '',
   editingAuditId:         '',
+
+  dashboard:              null,
+  dashboardLoading:       false,
+  dashboardError:         '',
 };
 
 // ============================================================
@@ -319,6 +323,7 @@ function render() {
     case 'admin':            app.innerHTML = renderAdmin();            break;
     case 'historial':         app.innerHTML = renderHistorial();         break;
     case 'historial-detalle': app.innerHTML = renderHistorialDetalle();  break;
+    case 'dashboard':         app.innerHTML = renderDashboard();         break;
     case 'error':            app.innerHTML = renderError();            break;
   }
   if (hasNav) {
@@ -475,9 +480,10 @@ function renderAdminBottomNav() {
   const tab         = state.adminTab || 'menu';
   const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success','welcome']);
   const histScreens  = new Set(['historial','historial-detalle']);
-  const isAudit     = auditScreens.has(state.screen);
-  const isHistorial = histScreens.has(state.screen);
-  const onAdmin     = state.screen === 'admin';
+  const isAudit      = auditScreens.has(state.screen);
+  const isHistorial  = histScreens.has(state.screen);
+  const isDashboard  = state.screen === 'dashboard';
+  const onAdmin      = state.screen === 'admin';
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
   const base   = 'flex:1;padding:6px 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation';
@@ -485,8 +491,8 @@ function renderAdminBottomNav() {
   const labelStyle = 'font-size:0.6rem;letter-spacing:0.01em';
   return `
     <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
-      <button id="nav-admin-inicio" style="${base};${onAdmin&&tab==='menu'?active:idle}">
-        <span style="${iconStyle}">🏠</span><span style="${labelStyle}">Inicio</span>
+      <button id="nav-admin-dashboard" style="${base};${isDashboard?active:idle}">
+        <span style="${iconStyle}">📊</span><span style="${labelStyle}">Dashboard</span>
       </button>
       <button id="nav-admin-usuarios" style="${base};${onAdmin&&tab==='usuarios'?active:idle}">
         <span style="${iconStyle}">👥</span><span style="${labelStyle}">Usuarios</span>
@@ -510,24 +516,41 @@ function renderAdminBottomNav() {
 function renderUserBottomNav() {
   const auditScreens = new Set(['setup','cat-select','audit','incumplimientos','summary','success']);
   const histScreens  = new Set(['historial','historial-detalle']);
-  const isAudit     = auditScreens.has(state.screen);
-  const isHistorial = histScreens.has(state.screen);
-  const onWelcome   = state.screen === 'welcome';
+  const isAudit      = auditScreens.has(state.screen);
+  const isHistorial  = histScreens.has(state.screen);
+  const isDashboard  = state.screen === 'dashboard';
+  const onWelcome    = state.screen === 'welcome';
+  const rol          = state.user?.rol || '';
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
   const base   = 'flex:1;padding:6px 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation';
   const labelStyle = 'font-size:0.6rem;letter-spacing:0.01em';
+  const centerBtn = `
+    <button id="nav-user-auditoria" style="flex:1;padding:0 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation;position:relative;top:-10px">
+      <div style="width:52px;height:52px;border-radius:50%;background:${isAudit?'#15803d':'#16a34a'};display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(22,163,74,0.4)">
+        <span style="color:#fff;font-size:1.8rem;line-height:1;font-weight:300">+</span>
+      </div>
+      <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
+    </button>`;
+  if (rol === 'Franquiciado') {
+    return `
+    <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
+      <button id="nav-user-dashboard" style="${base};${isDashboard?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📊</span><span style="${labelStyle}">Dashboard</span>
+      </button>
+      ${centerBtn}
+      <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
+      </button>
+    </nav>
+    <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
+  }
   return `
     <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
       <button id="nav-user-inicio" style="${base};${onWelcome?active:idle}">
         <span style="font-size:1.2rem;line-height:1">🏠</span><span style="${labelStyle}">Inicio</span>
       </button>
-      <button id="nav-user-auditoria" style="flex:1;padding:0 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation;position:relative;top:-10px">
-        <div style="width:52px;height:52px;border-radius:50%;background:${isAudit?'#15803d':'#16a34a'};display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(22,163,74,0.4)">
-          <span style="color:#fff;font-size:1.8rem;line-height:1;font-weight:300">+</span>
-        </div>
-        <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
-      </button>
+      ${centerBtn}
       <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
         <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
       </button>
@@ -601,6 +624,162 @@ function renderAdminSubscreen(title, content) {
       ${content}
       <div style="height:24px"></div>
     </div>`;
+}
+
+// ============================================================
+// PANTALLA: DASHBOARD
+// ============================================================
+function renderDashboard() {
+  const loading = state.dashboardLoading;
+  const err     = state.dashboardError || '';
+  const data    = state.dashboard;
+  const isAdmin = state.user?.rol === 'Admin';
+  const pb      = `padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))`;
+
+  if (loading) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">
+    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center">
+      <div style="text-align:center;color:#6b7280">
+        <div style="font-size:2rem;margin-bottom:8px">⏳</div>
+        <div>Cargando dashboard…</div>
+      </div>
+    </div></div>`;
+
+  if (err) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">
+    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px">
+      <div style="text-align:center;color:#6b7280">
+        <div style="font-size:2rem;margin-bottom:8px">⚠️</div>
+        <div style="margin-bottom:16px">${escHtml(err)}</div>
+        <button id="btn-dashboard-retry" style="background:#e4001b;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:0.95rem;cursor:pointer">Reintentar</button>
+      </div>
+    </div></div>`;
+
+  if (!data) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">
+    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center">
+      <div style="text-align:center;color:#6b7280"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin datos</div></div>
+    </div></div>`;
+
+  const locales = data.locales || [];
+  const globalDebiles = data.globalDebiles || [];
+
+  function nivelColor(nivel) {
+    if (!nivel) return '#6b7280';
+    const n = nivel.toLowerCase();
+    if (n.includes('excel') || n.includes('óptim')) return '#16a34a';
+    if (n.includes('bueno') || n.includes('satisf')) return '#2563eb';
+    if (n.includes('regular') || n.includes('acepta')) return '#d97706';
+    return '#e4001b';
+  }
+  function nivelBg(nivel) {
+    if (!nivel) return '#f3f4f6';
+    const n = nivel.toLowerCase();
+    if (n.includes('excel') || n.includes('óptim')) return '#dcfce7';
+    if (n.includes('bueno') || n.includes('satisf')) return '#dbeafe';
+    if (n.includes('regular') || n.includes('acepta')) return '#fef3c7';
+    return '#fee2e2';
+  }
+  function tendenciaIcon(t, diff) {
+    if (t === 'sube') return `<span style="color:#16a34a;font-weight:700;font-size:0.85rem">▲ ${diff !== null ? '+'+diff+'%' : ''}</span>`;
+    if (t === 'baja') return `<span style="color:#e4001b;font-weight:700;font-size:0.85rem">▼ ${diff !== null ? diff+'%' : ''}</span>`;
+    if (t === 'estable') return `<span style="color:#6b7280;font-size:0.85rem">→ estable</span>`;
+    return `<span style="color:#9ca3af;font-size:0.85rem">–</span>`;
+  }
+  function diasAlerta(dias) {
+    if (dias === null || dias === undefined) return '';
+    if (dias > 45) return `<span style="background:#fee2e2;color:#e4001b;font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:20px">⚠️ ${dias}d sin auditoría</span>`;
+    if (dias > 25) return `<span style="background:#fef3c7;color:#d97706;font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:20px">⏰ ${dias}d sin auditoría</span>`;
+    return `<span style="background:#f3f4f6;color:#6b7280;font-size:0.7rem;padding:2px 7px;border-radius:20px">${dias}d</span>`;
+  }
+
+  const localesHtml = locales.map(function(l) {
+    const pct = l.ultimaPct !== null ? Math.round(l.ultimaPct) : null;
+    const catBars = (l.categorias || []).slice(0, 5).map(function(c) {
+      const pctCat = c.pct !== null ? c.pct : 0;
+      const barColor = pctCat >= 80 ? '#16a34a' : pctCat >= 60 ? '#d97706' : '#e4001b';
+      return `<div style="margin-bottom:3px">
+        <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#374151;margin-bottom:1px">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${escHtml(c.categoria)}</span>
+          <span style="font-weight:700;color:${barColor}">${pctCat}%</span>
+        </div>
+        <div style="height:4px;background:#e5e7eb;border-radius:2px">
+          <div style="height:4px;width:${pctCat}%;background:${barColor};border-radius:2px"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const debilesHtml = (l.debilesUltima || []).slice(0, 5).map(function(d) {
+      return `<div style="font-size:0.7rem;color:#374151;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:6px;align-items:flex-start">
+        <span style="color:#e4001b;flex-shrink:0">✗</span>
+        <span>${escHtml(d.control)}</span>
+      </div>`;
+    }).join('');
+
+    const reinc = l.reincidencia !== null && l.reincidencia !== undefined
+      ? `<div style="font-size:0.7rem;margin-top:6px;padding:4px 8px;border-radius:6px;background:${l.reincidencia>50?'#fee2e2':l.reincidencia>25?'#fef3c7':'#f0fdf4'};color:${l.reincidencia>50?'#e4001b':l.reincidencia>25?'#d97706':'#16a34a'}">
+        🔁 Reincidencia: <strong>${l.reincidencia}%</strong>
+      </div>` : '';
+
+    return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;overflow:hidden">
+      <div style="padding:12px 14px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+          <div style="font-weight:700;font-size:0.95rem;color:#111827;flex:1;padding-right:8px">${escHtml(l.local)}</div>
+          <div style="text-align:right;flex-shrink:0">
+            ${pct !== null ? `<div style="font-size:1.6rem;font-weight:800;color:${nivelColor(l.ultimaNivel)};line-height:1">${pct}%</div>` : '<div style="color:#9ca3af;font-size:0.8rem">–</div>'}
+            ${l.ultimaNivel ? `<div style="font-size:0.65rem;font-weight:700;color:${nivelColor(l.ultimaNivel)};background:${nivelBg(l.ultimaNivel)};padding:1px 6px;border-radius:10px;white-space:nowrap">${escHtml(l.ultimaNivel)}</div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+          ${tendenciaIcon(l.tendencia, l.tendenciaDiff)}
+          ${diasAlerta(l.diasSinAuditoria)}
+          <span style="color:#9ca3af;font-size:0.7rem">${escHtml(l.ultimaFecha||'')}</span>
+        </div>
+        ${catBars ? `<div style="margin-bottom:6px">${catBars}</div>` : ''}
+        ${reinc}
+        ${debilesHtml ? `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #f3f4f6">
+          <div style="font-size:0.7rem;font-weight:700;color:#374151;margin-bottom:4px">Puntos débiles</div>
+          ${debilesHtml}
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const globalHtml = isAdmin && globalDebiles.length ? `
+    <div style="margin-top:8px">
+      <div style="font-weight:700;font-size:0.95rem;color:#111827;margin-bottom:10px">⚠️ Tendencias globales</div>
+      ${globalDebiles.map(function(d) {
+        const barW = Math.round(d.count / globalDebiles[0].count * 100);
+        return `<div style="background:#fff;border-radius:8px;padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+            <div style="font-size:0.78rem;color:#374151;flex:1;padding-right:8px">
+              <span style="color:#6b7280;font-size:0.65rem">${escHtml(d.categoria)}</span><br>
+              <span style="font-weight:600">${escHtml(d.control)}</span>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:1rem;font-weight:800;color:#e4001b">${d.count}</div>
+              <div style="font-size:0.62rem;color:#6b7280">${d.localCount} local${d.localCount!==1?'es':''}</div>
+            </div>
+          </div>
+          <div style="height:4px;background:#fecaca;border-radius:2px">
+            <div style="height:4px;width:${barW}%;background:#e4001b;border-radius:2px"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">
+    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+      <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻ Actualizar</button>
+    </div>
+    <div style="padding:14px 14px 0">
+      ${locales.length === 0
+        ? `<div style="text-align:center;color:#9ca3af;padding:40px 0"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin auditorías registradas</div></div>`
+        : localesHtml}
+      ${globalHtml}
+    </div>
+  </div>`;
 }
 
 // ============================================================
@@ -1719,6 +1898,17 @@ function attachListeners() {
   });
 
   // Helpers para recargar datos de admin
+  async function recargarDashboard() {
+    setState({ dashboardLoading: true, dashboardError: '' });
+    try {
+      const res = await callAPI({ action: 'getDashboard', email: state.user.email, token: state.user.token });
+      if (res.success) setState({ dashboard: res, dashboardLoading: false });
+      else setState({ dashboardLoading: false, dashboardError: res.error || 'Error al cargar dashboard' });
+    } catch(e) {
+      setState({ dashboardLoading: false, dashboardError: 'Error de conexión: ' + e.message });
+    }
+  }
+
   async function recargarHistorial() {
     setState({ historialLoading: true, historialError: '' });
     try {
@@ -1784,6 +1974,14 @@ function attachListeners() {
   on('btn-admin-go-usuarios',  'click', goToUsuarios);
   on('btn-admin-go-locales',   'click', goToLocales);
   on('nav-admin-inicio',       'click', () => setState({ screen: 'admin', adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
+  on('nav-admin-dashboard',    'click', async () => {
+    setState({ screen: 'dashboard' });
+    if (!state.dashboard) await recargarDashboard();
+  });
+  on('nav-user-dashboard',     'click', async () => {
+    setState({ screen: 'dashboard' });
+    if (!state.dashboard) await recargarDashboard();
+  });
   on('nav-admin-usuarios',     'click', goToUsuarios);
   on('nav-admin-locales',      'click', goToLocales);
   on('nav-admin-auditoria',    'click', () => setState({ screen: 'setup' }));
@@ -2244,6 +2442,11 @@ function attachListeners() {
     setState({ screen: 'historial', historialDetalle: null });
     if (!state.historial) await recargarHistorial();
   });
+  on('btn-dashboard-refresh', 'click', async () => {
+    setState({ dashboard: null });
+    await recargarDashboard();
+  });
+  on('btn-dashboard-retry', 'click', recargarDashboard);
   on('btn-historial-refresh', 'click', async () => {
     setState({ historial: null });
     await recargarHistorial();
