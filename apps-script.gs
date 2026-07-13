@@ -1676,9 +1676,44 @@ function doGet(e) {
         globalAllRows = globalAllRows.concat(ultimaRows);
         if (last3[0].pct !== null) globalPcts.push(last3[0].pct);
 
+        // Tendencia: última vs anterior
+        var tendencia = 'sin-datos', tendenciaDiff = null;
+        if (last3.length >= 2 && last3[0].pct !== null && last3[1].pct !== null) {
+          var td = Math.round(last3[0].pct - last3[1].pct);
+          tendenciaDiff = td;
+          tendencia = td > 1 ? 'sube' : td < -1 ? 'baja' : 'estable';
+        }
+
+        // Días desde última auditoría
+        var diasSinAuditoria = null;
+        if (last3[0].fechaISO) {
+          var partsD = last3[0].fechaISO.split('-');
+          if (partsD.length === 3) {
+            var fechaAudit = new Date(parseInt(partsD[0]), parseInt(partsD[1])-1, parseInt(partsD[2]));
+            var hoy = new Date(); hoy.setHours(0,0,0,0);
+            diasSinAuditoria = Math.round((hoy - fechaAudit) / 86400000);
+          }
+        }
+
+        // Tasa de reincidencia: % de NC en última que también falló en la anterior
+        var reincidencia = null;
+        if (last3.length >= 2) {
+          var ncUltima = ultimaRows.filter(function(r){ return (String(r[11]||'')).trim().toLowerCase() === 'no cumple'; });
+          if (ncUltima.length > 0) {
+            var ncAntSet = {};
+            last3[1].rows.forEach(function(r){ if ((String(r[11]||'')).trim().toLowerCase() === 'no cumple') ncAntSet[String(r[8]||'').trim()] = true; });
+            var reincCount = ncUltima.filter(function(r){ return ncAntSet[String(r[8]||'').trim()]; }).length;
+            reincidencia = Math.round(reincCount / ncUltima.length * 100);
+          }
+        }
+
         porLocal[localName] = {
           ultimasAuditorias: last3.map(function(a){ return { auditId: a.auditId, fecha: a.fecha, fechaISO: a.fechaISO, auditor: a.auditor, pct: a.pct, nivel: a.nivel, reprobado: a.reprobado }; }),
           promedio3:         promedio3,
+          tendencia:         tendencia,
+          tendenciaDiff:     tendenciaDiff,
+          diasSinAuditoria:  diasSinAuditoria,
+          reincidencia:      reincidencia,
           rankingControles:  rankingControles(last3Rows),
           rankingCategorias: rankingCategorias(last3Rows),
         };

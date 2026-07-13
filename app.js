@@ -714,6 +714,44 @@ function renderDashboard() {
   const ld = porLocal[selLocal];
   const gd = globalData;
 
+  // ── Indicadores rápidos ──
+  function tendenciaIcon(t, diff) {
+    if (t === 'sube') return `<span style="color:#16a34a;font-weight:700">▲ ${diff !== null ? '+'+diff+'%' : ''}</span>`;
+    if (t === 'baja') return `<span style="color:#e4001b;font-weight:700">▼ ${diff !== null ? diff+'%' : ''}</span>`;
+    if (t === 'estable') return `<span style="color:#6b7280">→ Estable</span>`;
+    return `<span style="color:#9ca3af">Sin datos</span>`;
+  }
+  function diasBadge(dias) {
+    if (dias === null || dias === undefined) return '–';
+    if (dias > 45) return `<span style="color:#e4001b;font-weight:700">⚠️ ${dias} días</span>`;
+    if (dias > 25) return `<span style="color:#d97706;font-weight:700">${dias} días</span>`;
+    return `<span style="color:#16a34a;font-weight:700">${dias} días</span>`;
+  }
+  function reincBadge(r) {
+    if (r === null || r === undefined) return '–';
+    const col = r > 50 ? '#e4001b' : r > 25 ? '#d97706' : '#16a34a';
+    return `<span style="color:${col};font-weight:700">${r}%</span>`;
+  }
+
+  const sectionIndicadores = `
+    <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Indicadores</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div style="background:#f9fafb;border-radius:8px;padding:10px 6px">
+          <div style="font-size:0.6rem;color:#9ca3af;text-transform:uppercase;font-weight:600;margin-bottom:4px">Tendencia</div>
+          <div style="font-size:0.85rem">${tendenciaIcon(ld.tendencia, ld.tendenciaDiff)}</div>
+        </div>
+        <div style="background:#f9fafb;border-radius:8px;padding:10px 6px">
+          <div style="font-size:0.6rem;color:#9ca3af;text-transform:uppercase;font-weight:600;margin-bottom:4px">Última audit.</div>
+          <div style="font-size:0.82rem">${diasBadge(ld.diasSinAuditoria)}</div>
+        </div>
+        <div style="background:#f9fafb;border-radius:8px;padding:10px 6px">
+          <div style="font-size:0.6rem;color:#9ca3af;text-transform:uppercase;font-weight:600;margin-bottom:4px">Reincidencia</div>
+          <div style="font-size:0.82rem">${reincBadge(ld.reincidencia)}</div>
+        </div>
+      </div>
+    </div>`;
+
   // ── A) Promedio últimas 3 ──
   const sectionA = `
     <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
@@ -754,15 +792,15 @@ function renderDashboard() {
   function renderRankingControles(items, globalItems, title) {
     if (!items || !items.length) return '';
     const maxCount = items[0].count;
-    // Build global lookup for comparison
+    // Build global lookup: control -> global count
     const gMap = {};
-    (globalItems || []).forEach(function(g, i){ gMap[g.control] = i + 1; });
+    (globalItems || []).forEach(function(g){ gMap[g.control] = g.count; });
     return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
       <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${title}</div>
       ${items.slice(0, 10).map(function(d, i) {
         const barW = Math.round(d.count / maxCount * 100);
-        const gPos = gMap[d.control];
-        const inGlobal = gPos ? `<span style="font-size:0.6rem;color:#e4001b;font-weight:700;background:#fee2e2;padding:1px 5px;border-radius:8px">Top ${gPos} global</span>` : '';
+        const gCount = gMap[d.control];
+        const inGlobal = gCount ? `<span style="font-size:0.6rem;color:#9ca3af;font-weight:600;background:#f3f4f6;padding:1px 5px;border-radius:8px">🌐 ${gCount}× global</span>` : '';
         return `<div style="margin-bottom:9px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px;gap:6px">
             <div style="font-size:0.72rem;color:#374151;flex:1">
@@ -818,6 +856,7 @@ function renderDashboard() {
   return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}
     ${selectorHtml}
     <div style="padding:12px 14px 0">
+      ${sectionIndicadores}
       ${sectionA}
       ${sectionB}
       ${sectionC}
