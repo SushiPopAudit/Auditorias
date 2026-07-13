@@ -65,6 +65,7 @@ const state = {
   dashboard:              null,
   dashboardLoading:       false,
   dashboardError:         '',
+  dashboardLocal:         '',
 };
 
 // ============================================================
@@ -633,20 +634,19 @@ function renderDashboard() {
   const loading = state.dashboardLoading;
   const err     = state.dashboardError || '';
   const data    = state.dashboard;
-  const isAdmin = state.user?.rol === 'Admin';
   const pb      = `padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))`;
 
-  if (loading) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">
-    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+  const header = `<div style="background:#e4001b;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+    <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻ Actualizar</button>
+  </div>`;
+
+  if (loading) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">${header}
     <div style="flex:1;display:flex;align-items:center;justify-content:center">
-      <div style="text-align:center;color:#6b7280">
-        <div style="font-size:2rem;margin-bottom:8px">⏳</div>
-        <div>Cargando dashboard…</div>
-      </div>
+      <div style="text-align:center;color:#6b7280"><div style="font-size:2rem;margin-bottom:8px">⏳</div><div>Cargando dashboard…</div></div>
     </div></div>`;
 
-  if (err) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">
-    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+  if (err) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">${header}
     <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px">
       <div style="text-align:center;color:#6b7280">
         <div style="font-size:2rem;margin-bottom:8px">⚠️</div>
@@ -655,110 +655,123 @@ function renderDashboard() {
       </div>
     </div></div>`;
 
-  if (!data) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">
-    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;font-size:1.1rem;font-weight:700">📊 Dashboard</div>
+  if (!data) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">${header}
     <div style="flex:1;display:flex;align-items:center;justify-content:center">
       <div style="text-align:center;color:#6b7280"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin datos</div></div>
     </div></div>`;
 
-  const locales = data.locales || [];
-  const globalDebiles = data.globalDebiles || [];
+  const localesList  = data.locales || [];
+  const porLocal     = data.porLocal || {};
+  const globalData   = data.global   || {};
 
-  function nivelColor(nivel) {
-    if (!nivel) return '#6b7280';
-    const n = nivel.toLowerCase();
-    if (n.includes('excel') || n.includes('óptim')) return '#16a34a';
-    if (n.includes('bueno') || n.includes('satisf')) return '#2563eb';
-    if (n.includes('regular') || n.includes('acepta')) return '#d97706';
+  // Ensure selected local is valid
+  let selLocal = state.dashboardLocal;
+  if (!selLocal || !porLocal[selLocal]) selLocal = localesList[0] || '';
+
+  function validPct(p) { return p !== null && p !== undefined && !isNaN(p); }
+  function pctColor(p) {
+    if (!validPct(p)) return '#6b7280';
+    if (p >= 85) return '#16a34a';
+    if (p >= 70) return '#2563eb';
+    if (p >= 55) return '#d97706';
     return '#e4001b';
   }
-  function nivelBg(nivel) {
-    if (!nivel) return '#f3f4f6';
-    const n = nivel.toLowerCase();
-    if (n.includes('excel') || n.includes('óptim')) return '#dcfce7';
-    if (n.includes('bueno') || n.includes('satisf')) return '#dbeafe';
-    if (n.includes('regular') || n.includes('acepta')) return '#fef3c7';
+  function pctBg(p) {
+    if (!validPct(p)) return '#f3f4f6';
+    if (p >= 85) return '#dcfce7';
+    if (p >= 70) return '#dbeafe';
+    if (p >= 55) return '#fef3c7';
     return '#fee2e2';
   }
-  function tendenciaIcon(t, diff) {
-    if (t === 'sube') return `<span style="color:#16a34a;font-weight:700;font-size:0.85rem">▲ ${diff !== null ? '+'+diff+'%' : ''}</span>`;
-    if (t === 'baja') return `<span style="color:#e4001b;font-weight:700;font-size:0.85rem">▼ ${diff !== null ? diff+'%' : ''}</span>`;
-    if (t === 'estable') return `<span style="color:#6b7280;font-size:0.85rem">→ estable</span>`;
-    return `<span style="color:#9ca3af;font-size:0.85rem">–</span>`;
+  function pctBadge(p, label) {
+    if (!validPct(p)) return `<span style="color:#9ca3af">–</span>`;
+    return `<span style="font-size:${label?'0.75':'1rem'};font-weight:800;color:${pctColor(p)}">${p}%${label?' '+label:''}</span>`;
   }
-  function diasAlerta(dias) {
-    if (dias === null || dias === undefined) return '';
-    if (dias > 45) return `<span style="background:#fee2e2;color:#e4001b;font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:20px">⚠️ ${dias}d sin auditoría</span>`;
-    if (dias > 25) return `<span style="background:#fef3c7;color:#d97706;font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:20px">⏰ ${dias}d sin auditoría</span>`;
-    return `<span style="background:#f3f4f6;color:#6b7280;font-size:0.7rem;padding:2px 7px;border-radius:20px">${dias}d</span>`;
+  function vsGlobal(localPct, globalPct) {
+    if (!validPct(localPct) || !validPct(globalPct)) return '';
+    const diff = localPct - globalPct;
+    const sign = diff >= 0 ? '+' : '';
+    const col  = diff >= 0 ? '#16a34a' : '#e4001b';
+    return `<span style="font-size:0.7rem;color:${col};font-weight:700">${sign}${diff}% vs. promedio general</span>`;
   }
 
-  const localesHtml = locales.map(function(l) {
-    const pct = l.ultimaPct !== null ? Math.round(l.ultimaPct) : null;
-    const catBars = (l.categorias || []).slice(0, 5).map(function(c) {
-      const pctCat = c.pct !== null ? c.pct : 0;
-      const barColor = pctCat >= 80 ? '#16a34a' : pctCat >= 60 ? '#d97706' : '#e4001b';
-      return `<div style="margin-bottom:3px">
-        <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#374151;margin-bottom:1px">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${escHtml(c.categoria)}</span>
-          <span style="font-weight:700;color:${barColor}">${pctCat}%</span>
-        </div>
-        <div style="height:4px;background:#e5e7eb;border-radius:2px">
-          <div style="height:4px;width:${pctCat}%;background:${barColor};border-radius:2px"></div>
-        </div>
-      </div>`;
-    }).join('');
+  // ── Selector de local ──
+  const selectorHtml = localesList.length > 1 ? `
+    <div style="padding:12px 14px 0">
+      <select id="db-local-select" style="width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.9rem;background:#fff;color:#111827;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%236b7280%22><path fill-rule=%22evenodd%22 d=%22M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z%22/></svg>');background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:32px">
+        ${localesList.map(l => `<option value="${escHtml(l)}"${l===selLocal?' selected':''}>${escHtml(l)}</option>`).join('')}
+      </select>
+    </div>` : localesList.length === 1 ? `
+    <div style="padding:12px 14px 4px;font-size:0.95rem;font-weight:700;color:#111827">${escHtml(localesList[0])}</div>` : '';
 
-    const debilesHtml = (l.debilesUltima || []).slice(0, 5).map(function(d) {
-      return `<div style="font-size:0.7rem;color:#374151;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:6px;align-items:flex-start">
-        <span style="color:#e4001b;flex-shrink:0">✗</span>
-        <span>${escHtml(d.control)}</span>
-      </div>`;
-    }).join('');
+  if (!selLocal || !porLocal[selLocal]) {
+    return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}${selectorHtml}
+      <div style="flex:1;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center;color:#9ca3af;padding:40px 0"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin auditorías registradas</div></div>
+      </div></div>`;
+  }
 
-    const reinc = l.reincidencia !== null && l.reincidencia !== undefined
-      ? `<div style="font-size:0.7rem;margin-top:6px;padding:4px 8px;border-radius:6px;background:${l.reincidencia>50?'#fee2e2':l.reincidencia>25?'#fef3c7':'#f0fdf4'};color:${l.reincidencia>50?'#e4001b':l.reincidencia>25?'#d97706':'#16a34a'}">
-        🔁 Reincidencia: <strong>${l.reincidencia}%</strong>
-      </div>` : '';
+  const ld = porLocal[selLocal];
+  const gd = globalData;
 
-    return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;overflow:hidden">
-      <div style="padding:12px 14px 10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-          <div style="font-weight:700;font-size:0.95rem;color:#111827;flex:1;padding-right:8px">${escHtml(l.local)}</div>
-          <div style="text-align:right;flex-shrink:0">
-            ${pct !== null ? `<div style="font-size:1.6rem;font-weight:800;color:${nivelColor(l.ultimaNivel)};line-height:1">${pct}%</div>` : '<div style="color:#9ca3af;font-size:0.8rem">–</div>'}
-            ${l.ultimaNivel ? `<div style="font-size:0.65rem;font-weight:700;color:${nivelColor(l.ultimaNivel)};background:${nivelBg(l.ultimaNivel)};padding:1px 6px;border-radius:10px;white-space:nowrap">${escHtml(l.ultimaNivel)}</div>` : ''}
-          </div>
+  // ── A) Promedio últimas 3 ──
+  const sectionA = `
+    <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Promedio últimas 3 auditorías</div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div>
+          <div style="font-size:2.4rem;font-weight:900;color:${pctColor(ld.promedio3)};line-height:1">${validPct(ld.promedio3) ? ld.promedio3+'%' : '–'}</div>
+          <div style="margin-top:4px">${vsGlobal(ld.promedio3, gd.promedio)}</div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-          ${tendenciaIcon(l.tendencia, l.tendenciaDiff)}
-          ${diasAlerta(l.diasSinAuditoria)}
-          <span style="color:#9ca3af;font-size:0.7rem">${escHtml(l.ultimaFecha||'')}</span>
-        </div>
-        ${catBars ? `<div style="margin-bottom:6px">${catBars}</div>` : ''}
-        ${reinc}
-        ${debilesHtml ? `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #f3f4f6">
-          <div style="font-size:0.7rem;font-weight:700;color:#374151;margin-bottom:4px">Puntos débiles</div>
-          ${debilesHtml}
+        ${gd.promedio !== null && gd.promedio !== undefined ? `<div style="border-left:1px solid #f3f4f6;padding-left:16px;color:#6b7280;font-size:0.75rem">
+          <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">Promedio general</div>
+          <div style="font-size:1.4rem;font-weight:800;color:${pctColor(gd.promedio)}">${gd.promedio}%</div>
         </div>` : ''}
       </div>
     </div>`;
-  }).join('');
 
-  const globalHtml = isAdmin && globalDebiles.length ? `
-    <div style="margin-top:8px">
-      <div style="font-weight:700;font-size:0.95rem;color:#111827;margin-bottom:10px">⚠️ Tendencias globales</div>
-      ${globalDebiles.map(function(d) {
-        const barW = Math.round(d.count / globalDebiles[0].count * 100);
-        return `<div style="background:#fff;border-radius:8px;padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-            <div style="font-size:0.78rem;color:#374151;flex:1;padding-right:8px">
-              <span style="color:#6b7280;font-size:0.65rem">${escHtml(d.categoria)}</span><br>
+  // ── B) Últimas 3 auditorías individuales ──
+  const audits = ld.ultimasAuditorias || [];
+  const sectionB = audits.length ? `
+    <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Últimas auditorías</div>
+      ${audits.map(function(a, i) {
+        const p = validPct(a.pct) ? Math.round(a.pct) : null;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;${i < audits.length-1 ? 'border-bottom:1px solid #f3f4f6' : ''}">
+          <div>
+            <div style="font-size:0.82rem;font-weight:600;color:#374151">${escHtml(a.fecha)}</div>
+            <div style="font-size:0.65rem;color:#9ca3af">${escHtml(a.auditor)}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:1.2rem;font-weight:800;color:${pctColor(p)}">${validPct(p) ? p+'%' : '–'}</div>
+            ${a.reprobado ? `<div style="font-size:0.62rem;font-weight:700;color:#e4001b;background:#fee2e2;padding:1px 5px;border-radius:8px">Reprobado</div>` : (a.nivel ? `<div style="font-size:0.62rem;color:${pctColor(p)};background:${pctBg(p)};padding:1px 5px;border-radius:8px;font-weight:600">${escHtml(a.nivel)}</div>` : '')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  // ── C) Ranking de controles con más incumplimientos ──
+  function renderRankingControles(items, globalItems, title) {
+    if (!items || !items.length) return '';
+    const maxCount = items[0].count;
+    // Build global lookup for comparison
+    const gMap = {};
+    (globalItems || []).forEach(function(g, i){ gMap[g.control] = i + 1; });
+    return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${title}</div>
+      ${items.slice(0, 10).map(function(d, i) {
+        const barW = Math.round(d.count / maxCount * 100);
+        const gPos = gMap[d.control];
+        const inGlobal = gPos ? `<span style="font-size:0.6rem;color:#e4001b;font-weight:700;background:#fee2e2;padding:1px 5px;border-radius:8px">Top ${gPos} global</span>` : '';
+        return `<div style="margin-bottom:9px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px;gap:6px">
+            <div style="font-size:0.72rem;color:#374151;flex:1">
+              <span style="color:#9ca3af;font-size:0.62rem">${escHtml(d.categoria)}</span><br>
               <span style="font-weight:600">${escHtml(d.control)}</span>
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="font-size:1rem;font-weight:800;color:#e4001b">${d.count}</div>
-              <div style="font-size:0.62rem;color:#6b7280">${d.localCount} local${d.localCount!==1?'es':''}</div>
+              ${inGlobal}
             </div>
           </div>
           <div style="height:4px;background:#fecaca;border-radius:2px">
@@ -766,18 +779,49 @@ function renderDashboard() {
           </div>
         </div>`;
       }).join('')}
-    </div>` : '';
+    </div>`;
+  }
 
-  return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">
-    <div style="background:#e4001b;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:1.1rem;font-weight:700">📊 Dashboard</div>
-      <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻ Actualizar</button>
-    </div>
-    <div style="padding:14px 14px 0">
-      ${locales.length === 0
-        ? `<div style="text-align:center;color:#9ca3af;padding:40px 0"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin auditorías registradas</div></div>`
-        : localesHtml}
-      ${globalHtml}
+  // ── D) Ranking de categorías con más incumplimientos ──
+  function renderRankingCategorias(items, globalItems, title) {
+    if (!items || !items.length) return '';
+    // Build global map for comparison
+    const gMap = {};
+    (globalItems || []).forEach(function(g){ gMap[g.categoria] = g.pct; });
+    return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${title}</div>
+      ${items.map(function(c) {
+        const p = c.pct !== null ? c.pct : 0;
+        const barColor = p >= 85 ? '#16a34a' : p >= 70 ? '#2563eb' : p >= 55 ? '#d97706' : '#e4001b';
+        const gPct = gMap[c.categoria];
+        const diff = (gPct !== undefined && c.pct !== null) ? c.pct - gPct : null;
+        const diffStr = diff !== null ? `<span style="font-size:0.62rem;color:${diff>=0?'#16a34a':'#e4001b'};font-weight:700">${diff>=0?'+':''}${diff}% vs. gral</span>` : '';
+        return `<div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <span style="font-size:0.72rem;color:#374151;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${escHtml(c.categoria)}</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              ${diffStr}
+              <span style="font-size:0.8rem;font-weight:800;color:${barColor}">${p}%</span>
+            </div>
+          </div>
+          <div style="height:5px;background:#e5e7eb;border-radius:3px">
+            <div style="height:5px;width:${p}%;background:${barColor};border-radius:3px"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  const sectionC = renderRankingControles(ld.rankingControles, gd.rankingControles, 'Puntos con más incumplimientos');
+  const sectionD = renderRankingCategorias(ld.rankingCategorias, gd.rankingCategorias, 'Categorías con más incumplimientos');
+
+  return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}
+    ${selectorHtml}
+    <div style="padding:12px 14px 0">
+      ${sectionA}
+      ${sectionB}
+      ${sectionC}
+      ${sectionD}
     </div>
   </div>`;
 }
@@ -2520,6 +2564,13 @@ function attachListeners() {
     await recargarDashboard();
   });
   on('btn-dashboard-retry', 'click', recargarDashboard);
+  const dbSelect = document.getElementById('db-local-select');
+  if (dbSelect) {
+    dbSelect.addEventListener('change', () => {
+      state.dashboardLocal = dbSelect.value;
+      render();
+    });
+  }
   on('btn-historial-refresh', 'click', async () => {
     setState({ historial: null });
     await recargarHistorial();
