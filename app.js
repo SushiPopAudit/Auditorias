@@ -917,14 +917,20 @@ function renderHistorialDetalle() {
       const v        = (r.respuesta||'').toLowerCase();
       const isNC     = v.includes('no cumple') || v === 'nocumple';
       const isParcial = v.includes('parcial');
-      const isCumple  = v === 'cumple';
+      const isCumple  = v === 'cumple' || v === 'n/a';
       const resColor  = isNC ? '#e4001b' : isParcial ? '#d97706' : isCumple ? '#16a34a' : '#6b7280';
       const resBg     = isNC ? '#fff1f2' : isParcial ? '#fffbeb' : isCumple ? '#f0fdf4' : '#f1f5f9';
       const imp_i     = (r.importancia||'').toLowerCase().replace(/í/g,'i');
       const impC      = imp_i==='critico'?'#e4001b':imp_i==='alta'?'#ea580c':imp_i==='media'?'#d97706':'#16a34a';
       const impB      = imp_i==='critico'?'#fff1f2':imp_i==='alta'?'#fff7ed':imp_i==='media'?'#fffbeb':'#f0fdf4';
+      const fotos     = r.fotoUrls && r.fotoUrls.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">
+            ${r.fotoUrls.map(url => `<a href="${escHtml(url)}" target="_blank" rel="noopener">
+              <img src="${escHtml(url)}" alt="foto" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb">
+            </a>`).join('')}
+          </div>` : '';
       return `
-        <div style="padding:11px 0;border-bottom:1px solid #f3f4f6">
+        <div style="padding:11px 0;border-bottom:1px solid #f3f4f6${isNC?';background:#fffafa;margin:0 -16px;padding-left:16px;padding-right:16px':''}">
           <div style="font-size:0.75rem;color:#9ca3af;margin-bottom:1px">${escHtml(r.subcategoria)}</div>
           <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;margin-bottom:5px">${escHtml(r.control)}</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -932,6 +938,7 @@ function renderHistorialDetalle() {
             <span style="font-size:0.68rem;background:${resBg};color:${resColor};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.respuesta||'—')}</span>
           </div>
           ${r.observacion ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:5px;font-style:italic">"${escHtml(r.observacion)}"</div>` : ''}
+          ${fotos}
         </div>`;
     }).join('');
     return `
@@ -973,6 +980,31 @@ function renderHistorialDetalle() {
         </div>
       </div>
 
+      ${(() => {
+        const resp = d.respuestas || [];
+        const tot = resp.filter(r => r.respuesta).length;
+        const cum = resp.filter(r => (r.respuesta||'').toLowerCase() === 'cumple').length;
+        const nc  = resp.filter(r => (r.respuesta||'').toLowerCase().includes('no cumple')).length;
+        const par = resp.filter(r => (r.respuesta||'').toLowerCase().includes('parcial')).length;
+        if (!tot) return '';
+        return `<div style="background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:14px 16px;margin-bottom:14px">
+          <div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">Distribución</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
+            <div style="background:#f0fdf4;border-radius:8px;padding:8px 4px">
+              <div style="font-size:1.3rem;font-weight:800;color:#16a34a">${cum}</div>
+              <div style="font-size:0.65rem;color:#16a34a;font-weight:600;text-transform:uppercase">Cumple</div>
+            </div>
+            <div style="background:#fff1f2;border-radius:8px;padding:8px 4px">
+              <div style="font-size:1.3rem;font-weight:800;color:#e4001b">${nc}</div>
+              <div style="font-size:0.65rem;color:#e4001b;font-weight:600;text-transform:uppercase">No Cumple</div>
+            </div>
+            <div style="background:#fffbeb;border-radius:8px;padding:8px 4px">
+              <div style="font-size:1.3rem;font-weight:800;color:#d97706">${par}</div>
+              <div style="font-size:0.65rem;color:#d97706;font-weight:600;text-transform:uppercase">Parcial</div>
+            </div>
+          </div>
+        </div>`;
+      })()}
       ${catHtml}
     </div>`;
 }
@@ -1447,13 +1479,15 @@ function renderQuestionCard(q) {
     }).join('');
     inputHtml = `<div class="answer-options">${radios}</div>`;
   } else if (type === 'number') {
+    const unitMatch = q.pregunta.match(/\(([^)]{1,8})\)/);
+    const unit = unitMatch ? unitMatch[1] : '';
     inputHtml = `
       <div class="number-input-wrap">
         <input class="number-input" type="text" inputmode="decimal"
-          pattern="[0-9.,]*" autocomplete="off"
-          id="num_${q.id}" placeholder="0.0" value="${ans.valor || ''}"
+          pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
+          id="num_${q.id}" placeholder="Ej: 36,5" value="${escHtml(ans.valor || '')}"
           data-qid="${q.id}">
-        <span class="number-unit">°C</span>
+        ${unit ? `<span class="number-unit">${escHtml(unit)}</span>` : ''}
       </div>`;
   } else {
     inputHtml = `
@@ -2365,8 +2399,8 @@ function attachListeners() {
     inp.addEventListener('input', () => {
       const qid = inp.dataset.qid;
       if (!state.answers[qid]) state.answers[qid] = {};
-      // Normalizar coma decimal → punto para compatibilidad con teclados móviles
-      const normalized = inp.value.replace(',', '.');
+      // Normalizar coma decimal → punto (Argentina usa coma, internamente usamos punto)
+      const normalized = inp.value.replace(/,/g, '.');
       state.answers[qid].valor = normalized;
     });
   });

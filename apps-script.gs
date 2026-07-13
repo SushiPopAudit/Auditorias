@@ -93,7 +93,11 @@ function doPost(e) {
     });
 
     if (rows.length > 0) {
-      sheet.getRange(sheet.getLastRow()+1, 1, rows.length, 20).setValues(rows);
+      var startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, rows.length, 20).setValues(rows);
+      // Force text format on Respuesta (col 12) and Observación (col 13) so numbers
+      // don't get auto-parsed as dates by Sheets
+      sheet.getRange(startRow, 12, rows.length, 2).setNumberFormat('@');
       colorearDesvios(sheet, rows);
       // Invalidar caché de auditorías y dashboard del auditor y del admin
       if (data.auditorEmail) {
@@ -361,7 +365,16 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       }
     }
   });
-  var chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
+  var chartUrlRaw = 'https://quickchart.io/chart?c=' + encodeURIComponent(chartData) + '&width=420&height=220&backgroundColor=white';
+  // Embed chart as base64 so it renders in PDF (external URLs often blocked in getAs('pdf'))
+  var chartUrl = chartUrlRaw;
+  try {
+    var chartResp = UrlFetchApp.fetch(chartUrlRaw, { muteHttpExceptions: true });
+    if (chartResp.getResponseCode() === 200) {
+      var chartB64 = Utilities.base64Encode(chartResp.getContent());
+      chartUrl = 'data:image/png;base64,' + chartB64;
+    }
+  } catch(chartErr) { /* keep external URL as fallback */ }
 
   // ---- 1. HEADER ----
   var fechaHora = formatFecha(data.fecha) + ' - ' + (data.hora || '');
@@ -1483,8 +1496,18 @@ function doGet(e) {
 
       var lastGD = shGD.getLastRow();
       var allGD  = shGD.getRange(2, 1, lastGD - 1, 20).getValues();
-      var rowsGD = allGD.filter(function(r){ return String(r[0]).trim() === gdId; })
-        .map(function(r){ return r.map(function(v){ return v == null ? '' : String(v); }); });
+      var dispGD = shGD.getRange(2, 1, lastGD - 1, 20).getDisplayValues();
+      var rowsGD = allGD.map(function(r, rowIdx) {
+        return r.map(function(v, colIdx) {
+          if (v == null) return '';
+          // For user-entered text columns (respuesta=11, observacion=12), use display value
+          // to avoid Date-formatted cells returning JS Date objects.
+          if ((colIdx === 11 || colIdx === 12) && v instanceof Date) {
+            return String(dispGD[rowIdx][colIdx] || '');
+          }
+          return String(v);
+        });
+      }).filter(function(r){ return r[0].trim() === gdId; });
       if (!rowsGD.length) return jsonResponse({ success: false, error: 'Auditoría no encontrada' });
 
       var fGD = rowsGD[0];
