@@ -1004,12 +1004,19 @@ function renderHistorialDetalle() {
       </div>
 
       <div style="background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:14px 16px;margin-bottom:14px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.82rem">
-          <div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">AUDITOR</div><div style="font-weight:600">${escHtml(d.auditor)}</div></div>
-          <div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">RESULTADO</div><div style="font-weight:700;color:${pctColor}">${p.reprobado ? 'Reprobado' : (p.pct + '% — ' + p.nivel)}</div></div>
-          ${d.acompanante ? `<div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">ACOMPAÑANTE</div><div style="font-weight:600">${escHtml(d.acompanante)}</div></div>` : ''}
-          <div><div style="color:#9ca3af;font-size:0.72rem;margin-bottom:2px">TIPO</div><div>${tipoBadge}</div></div>
-        </div>
+        ${[
+          ['AUDITOR',                 escHtml(d.auditor || '—')],
+          ['ACOMPAÑANTE',             d.acompanante ? escHtml(d.acompanante) : null],
+          ['POSICIÓN ACOMPAÑANTE',    d.posicionAcompanante ? escHtml(d.posicionAcompanante) : null],
+          ['TIPO',                    tipoBadge],
+          ['RESULTADO',               `<span style="font-weight:700;color:${pctColor}">${p.reprobado ? 'Reprobado' : (p.nivel || '—')}</span>`],
+          ['NOTA',                    p.pct !== null && p.pct !== undefined ? `<span style="font-weight:800;font-size:1.05rem;color:${pctColor}">${p.pct}%</span>` : '—'],
+        ].filter(([, val]) => val !== null).map(([label, val]) =>
+          `<div style="padding:6px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.82rem">
+            <div style="color:#9ca3af;font-size:0.7rem;font-weight:600;text-transform:uppercase;flex-shrink:0">${label}</div>
+            <div style="font-weight:600;text-align:right">${val}</div>
+          </div>`
+        ).join('')}
       </div>
 
       ${(() => {

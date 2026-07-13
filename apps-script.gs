@@ -87,7 +87,7 @@ function doPost(e) {
         data.puntaje?.pct    ?? '',             // col P — Puntaje %
         data.puntaje?.nivel  || '',             // col Q — Nivel
         data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
-        data.acompanante || '',                 // col S — Acompañante
+        data.acompanante ? (data.acompanante + (data.posicionAcompanante ? '|||' + data.posicionAcompanante : '')) : '', // col S — Acompañante|||Posición
         data.tipoAuditoria || 'Oficial',        // col T — Tipo
       ];
     });
@@ -1176,7 +1176,8 @@ function doGet(e) {
         auditor:      first[3],
         local:        first[4],
         marca:        first[5],
-        acompanante:  first[18] || '',
+        acompanante:  first[18] ? first[18].split('|||')[0] : '',
+        posicionAcompanante: first[18] && first[18].includes('|||') ? first[18].split('|||')[1] : '',
         auditorEmail: first[14] || '',
         emailsLocal:  emailDest,
         puntaje:      puntajeRecalc,
@@ -1527,7 +1528,8 @@ function doGet(e) {
         auditorEmail: fGD[14],
         local:   fGD[4],
         marca:   fGD[5],
-        acompanante: fGD[18],
+        acompanante: fGD[18] ? fGD[18].split('|||')[0] : '',
+        posicionAcompanante: fGD[18] && fGD[18].includes('|||') ? fGD[18].split('|||')[1] : '',
         tipo:    fGD[19] || 'Oficial',
         puntaje: recalcularPuntaje(rowsGD),
         respuestas: rowsGD.map(function(r){
