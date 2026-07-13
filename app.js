@@ -695,19 +695,20 @@ function renderDashboard() {
     return `<span style="font-size:0.7rem;color:${col};font-weight:700">${sign}${diff}% vs. promedio general</span>`;
   }
 
-  const SELECT_TODOS = '__TODOS__';
+  // '' = Todos, cualquier otro valor = local específico
+  const isTodos = !selLocal || !porLocal[selLocal];
 
-  // Ensure selected local is valid
-  if (!selLocal) selLocal = localesList.length > 1 ? SELECT_TODOS : (localesList[0] || '');
-  if (selLocal !== SELECT_TODOS && !porLocal[selLocal]) selLocal = localesList[0] || '';
+  // Si hay un solo local, nunca mostramos "Todos" — directo al único local
+  const mostrarTodos = localesList.length > 1;
+  if (!mostrarTodos && !selLocal) selLocal = localesList[0] || '';
 
   const selectStyle = `width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.9rem;background:#fff;color:#111827;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%236b7280%22><path fill-rule=%22evenodd%22 d=%22M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z%22/></svg>');background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:32px`;
 
   const selectorHtml = localesList.length > 0 ? `
     <div style="padding:12px 14px 0">
       <select id="db-local-select" style="${selectStyle}">
-        ${localesList.length > 1 ? `<option value="${SELECT_TODOS}"${selLocal===SELECT_TODOS?' selected':''}>Todos los locales</option>` : ''}
-        ${localesList.map(l => `<option value="${escHtml(l)}"${l===selLocal?' selected':''}>${escHtml(l)}</option>`).join('')}
+        ${mostrarTodos ? `<option value=""${isTodos?' selected':''}>Todos los locales</option>` : ''}
+        ${localesList.map(l => `<option value="${escHtml(l)}"${l===selLocal&&!isTodos?' selected':''}>${escHtml(l)}</option>`).join('')}
       </select>
     </div>` : '';
 
@@ -719,7 +720,6 @@ function renderDashboard() {
   }
 
   const gd = globalData;
-  const isTodos = selLocal === SELECT_TODOS;
   const ld = isTodos ? null : porLocal[selLocal];
 
   // ── helpers visuales ──
