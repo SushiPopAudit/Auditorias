@@ -1623,21 +1623,43 @@ function doGet(e) {
         });
       }
 
-      // Helper: ranking of failing controls from a set of audit rows
-      function rankingControles(auditRows) {
+      // Helper: ranking of failing controls — count = audits where control failed, auditsTotal = audits evaluated
+      function rankingControlesLocal(auditList3) {
         var ctrlMap = {};
-        auditRows.forEach(function(r) {
-          if ((String(r[11]||'')).trim().toLowerCase() !== 'no cumple') return;
-          var key = String(r[8]||'').trim();
-          if (!key) return;
-          if (!ctrlMap[key]) ctrlMap[key] = { control: key, categoria: String(r[6]||''), subcategoria: String(r[7]||''), importancia: String(r[9]||''), count: 0 };
-          ctrlMap[key].count++;
+        auditList3.forEach(function(audit) {
+          var seenInAudit = {};
+          audit.rows.forEach(function(r) {
+            if ((String(r[11]||'')).trim().toLowerCase() !== 'no cumple') return;
+            var key = String(r[8]||'').trim();
+            if (!key || seenInAudit[key]) return;
+            seenInAudit[key] = true;
+            if (!ctrlMap[key]) ctrlMap[key] = { control: key, categoria: String(r[6]||''), subcategoria: String(r[7]||''), importancia: String(r[9]||''), failedAudits: 0 };
+            ctrlMap[key].failedAudits++;
+          });
         });
         return Object.keys(ctrlMap).map(function(k){ return ctrlMap[k]; })
-          .sort(function(a,b){ return b.count - a.count; }).slice(0, 15);
+          .sort(function(a,b){ return b.failedAudits - a.failedAudits; }).slice(0, 15);
       }
 
-      // Helper: ranking of categories by compliance % from a set of audit rows
+      // Helper: global ranking — localCount = how many locals failed this control in their last audit
+      function rankingControlesGlobal(localLastRowsMap) {
+        var ctrlMap = {};
+        Object.keys(localLastRowsMap).forEach(function(localName) {
+          var seenInLocal = {};
+          localLastRowsMap[localName].forEach(function(r) {
+            if ((String(r[11]||'')).trim().toLowerCase() !== 'no cumple') return;
+            var key = String(r[8]||'').trim();
+            if (!key || seenInLocal[key]) return;
+            seenInLocal[key] = true;
+            if (!ctrlMap[key]) ctrlMap[key] = { control: key, categoria: String(r[6]||''), subcategoria: String(r[7]||''), importancia: String(r[9]||''), localCount: 0 };
+            ctrlMap[key].localCount++;
+          });
+        });
+        return Object.keys(ctrlMap).map(function(k){ return ctrlMap[k]; })
+          .sort(function(a,b){ return b.localCount - a.localCount; }).slice(0, 15);
+      }
+
+      // Helper: ranking of categories by compliance %
       function rankingCategorias(auditRows) {
         var catMap = {};
         auditRows.forEach(function(r) {
@@ -1655,9 +1677,37 @@ function doGet(e) {
         }).sort(function(a,b){ return (a.pct||100) - (b.pct||100); }); // worst first
       }
 
+      // Global: ranking of categories with localCount (how many locals have this category below 80%)
+      function rankingCategoriasGlobal(localLastRowsMap) {
+        var catMap = {};
+        Object.keys(localLastRowsMap).forEach(function(localName) {
+          var localCatMap = {};
+          localLastRowsMap[localName].forEach(function(r) {
+            var cat  = String(r[6]||'').trim();
+            var resp = (String(r[11]||'')).trim().toLowerCase();
+            if (!cat) return;
+            if (!localCatMap[cat]) localCatMap[cat] = { cumple: 0, total: 0 };
+            localCatMap[cat].total++;
+            if (resp === 'cumple' || resp === 'n/a') localCatMap[cat].cumple++;
+          });
+          Object.keys(localCatMap).forEach(function(cat) {
+            var d = localCatMap[cat];
+            var pct = d.total > 0 ? Math.round(d.cumple / d.total * 100) : null;
+            if (!catMap[cat]) catMap[cat] = { categoria: cat, totalPct: 0, localCount: 0, localsBelowTarget: 0 };
+            catMap[cat].localCount++;
+            if (pct !== null) { catMap[cat].totalPct += pct; }
+            if (pct !== null && pct < 80) catMap[cat].localsBelowTarget++;
+          });
+        });
+        return Object.keys(catMap).map(function(cat) {
+          var d = catMap[cat];
+          return { categoria: cat, pct: d.localCount > 0 ? Math.round(d.totalPct / d.localCount) : null, localCount: d.localCount, localsBelowTarget: d.localsBelowTarget };
+        }).sort(function(a,b){ return (a.pct||100) - (b.pct||100); }).slice(0, 15);
+      }
+
       // Build per-local data
       var porLocal = {};
-      var globalAllRows = []; // rows from last audit of each local (for global ranking)
+      var localLastRowsMap = {}; // localName -> last audit rows (for global ranking)
       var globalPcts = [];
 
       sortedLocaleNames.forEach(function(localName) {
@@ -1671,9 +1721,8 @@ function doGet(e) {
         var pcts3 = last3.map(function(a){ return a.pct; }).filter(function(p){ return p !== null; });
         var promedio3 = pcts3.length > 0 ? Math.round(pcts3.reduce(function(s,p){ return s+p; }, 0) / pcts3.length) : null;
 
-        // Global: use last audit rows
         var ultimaRows = last3[0].rows;
-        globalAllRows = globalAllRows.concat(ultimaRows);
+        localLastRowsMap[localName] = ultimaRows;
         if (last3[0].pct !== null) globalPcts.push(last3[0].pct);
 
         // Tendencia: última vs anterior
@@ -1709,18 +1758,20 @@ function doGet(e) {
 
         porLocal[localName] = {
           ultimasAuditorias: last3.map(function(a){ return { auditId: a.auditId, fecha: a.fecha, fechaISO: a.fechaISO, auditor: a.auditor, pct: a.pct, nivel: a.nivel, reprobado: a.reprobado }; }),
+          auditsCount:       last3.length,
           promedio3:         promedio3,
           tendencia:         tendencia,
           tendenciaDiff:     tendenciaDiff,
           diasSinAuditoria:  diasSinAuditoria,
           reincidencia:      reincidencia,
-          rankingControles:  rankingControles(last3Rows),
+          rankingControles:  rankingControlesLocal(last3),
           rankingCategorias: rankingCategorias(last3Rows),
         };
       });
 
-      // Global averages and rankings (from last audit of each local)
+      // Global averages and rankings (last audit of each local)
       var globalPromedio = globalPcts.length > 0 ? Math.round(globalPcts.reduce(function(s,p){ return s+p; }, 0) / globalPcts.length) : null;
+      var totalLocales = sortedLocaleNames.length;
 
       var resDB = {
         success:   true,
@@ -1728,8 +1779,9 @@ function doGet(e) {
         porLocal:  porLocal,
         global: {
           promedio:          globalPromedio,
-          rankingControles:  rankingControles(globalAllRows),
-          rankingCategorias: rankingCategorias(globalAllRows),
+          totalLocales:      totalLocales,
+          rankingControles:  rankingControlesGlobal(localLastRowsMap),
+          rankingCategorias: rankingCategoriasGlobal(localLastRowsMap),
         },
       };
       cachePutObj(cacheKeyDB, resDB, 180);

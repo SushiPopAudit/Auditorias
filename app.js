@@ -695,26 +695,34 @@ function renderDashboard() {
     return `<span style="font-size:0.7rem;color:${col};font-weight:700">${sign}${diff}% vs. promedio general</span>`;
   }
 
-  // ── Selector de local ──
-  const selectorHtml = localesList.length > 1 ? `
+  const SELECT_TODOS = '__TODOS__';
+
+  // Ensure selected local is valid
+  if (!selLocal) selLocal = localesList.length > 1 ? SELECT_TODOS : (localesList[0] || '');
+  if (selLocal !== SELECT_TODOS && !porLocal[selLocal]) selLocal = localesList[0] || '';
+
+  const selectStyle = `width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.9rem;background:#fff;color:#111827;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%236b7280%22><path fill-rule=%22evenodd%22 d=%22M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z%22/></svg>');background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:32px`;
+
+  const selectorHtml = localesList.length > 0 ? `
     <div style="padding:12px 14px 0">
-      <select id="db-local-select" style="width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:0.9rem;background:#fff;color:#111827;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%236b7280%22><path fill-rule=%22evenodd%22 d=%22M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z%22/></svg>');background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:32px">
+      <select id="db-local-select" style="${selectStyle}">
+        ${localesList.length > 1 ? `<option value="${SELECT_TODOS}"${selLocal===SELECT_TODOS?' selected':''}>Todos los locales</option>` : ''}
         ${localesList.map(l => `<option value="${escHtml(l)}"${l===selLocal?' selected':''}>${escHtml(l)}</option>`).join('')}
       </select>
-    </div>` : localesList.length === 1 ? `
-    <div style="padding:12px 14px 4px;font-size:0.95rem;font-weight:700;color:#111827">${escHtml(localesList[0])}</div>` : '';
+    </div>` : '';
 
-  if (!selLocal || !porLocal[selLocal]) {
-    return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}${selectorHtml}
+  if (!localesList.length) {
+    return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}
       <div style="flex:1;display:flex;align-items:center;justify-content:center">
         <div style="text-align:center;color:#9ca3af;padding:40px 0"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin auditorías registradas</div></div>
       </div></div>`;
   }
 
-  const ld = porLocal[selLocal];
   const gd = globalData;
+  const isTodos = selLocal === SELECT_TODOS;
+  const ld = isTodos ? null : porLocal[selLocal];
 
-  // ── Indicadores rápidos ──
+  // ── helpers visuales ──
   function tendenciaIcon(t, diff) {
     if (t === 'sube') return `<span style="color:#16a34a;font-weight:700">▲ ${diff !== null ? '+'+diff+'%' : ''}</span>`;
     if (t === 'baja') return `<span style="color:#e4001b;font-weight:700">▼ ${diff !== null ? diff+'%' : ''}</span>`;
@@ -733,6 +741,83 @@ function renderDashboard() {
     return `<span style="color:${col};font-weight:700">${r}%</span>`;
   }
 
+  // ── Vista TODOS ──
+  if (isTodos) {
+    const totalLocales = gd.totalLocales || localesList.length;
+
+    function renderControlesGlobal(items) {
+      if (!items || !items.length) return '<div style="color:#9ca3af;font-size:0.8rem;text-align:center;padding:16px 0">Sin datos</div>';
+      const maxLC = items[0].localCount;
+      return items.slice(0, 10).map(function(d) {
+        const barW = Math.round(d.localCount / maxLC * 100);
+        const pctLocales = Math.round(d.localCount / totalLocales * 100);
+        return `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px;gap:6px">
+            <div style="font-size:0.72rem;color:#374151;flex:1">
+              <span style="color:#9ca3af;font-size:0.62rem">${escHtml(d.categoria)}</span><br>
+              <span style="font-weight:600">${escHtml(d.control)}</span>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:1rem;font-weight:800;color:#e4001b">${d.localCount}/${totalLocales}</div>
+              <div style="font-size:0.62rem;color:#9ca3af">locales</div>
+            </div>
+          </div>
+          <div style="height:5px;background:#fecaca;border-radius:3px">
+            <div style="height:5px;width:${barW}%;background:#e4001b;border-radius:3px"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderCategoriasGlobal(items) {
+      if (!items || !items.length) return '<div style="color:#9ca3af;font-size:0.8rem;text-align:center;padding:16px 0">Sin datos</div>';
+      return items.map(function(c) {
+        const p = c.pct !== null ? c.pct : 0;
+        const barColor = p >= 85 ? '#16a34a' : p >= 70 ? '#2563eb' : p >= 55 ? '#d97706' : '#e4001b';
+        const belowStr = c.localsBelowTarget > 0
+          ? `<span style="font-size:0.62rem;color:#e4001b;font-weight:600">${c.localsBelowTarget} local${c.localsBelowTarget!==1?'es':''} con dificultad</span>`
+          : `<span style="font-size:0.62rem;color:#16a34a;font-weight:600">Todos OK</span>`;
+        return `<div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <span style="font-size:0.72rem;color:#374151;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${escHtml(c.categoria)}</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              ${belowStr}
+              <span style="font-size:0.8rem;font-weight:800;color:${barColor}">${p}%</span>
+            </div>
+          </div>
+          <div style="height:5px;background:#e5e7eb;border-radius:3px">
+            <div style="height:5px;width:${p}%;background:${barColor};border-radius:3px"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    const todosHtml = `
+      <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+        <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Promedio general</div>
+        <div style="font-size:2.4rem;font-weight:900;color:${pctColor(gd.promedio)};line-height:1">${validPct(gd.promedio) ? gd.promedio+'%' : '–'}</div>
+        <div style="font-size:0.72rem;color:#9ca3af;margin-top:4px">${totalLocales} local${totalLocales!==1?'es':''} evaluados</div>
+      </div>
+      <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+        <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Puntos que más fallan — por local</div>
+        <div style="font-size:0.68rem;color:#9ca3af;margin-bottom:10px">Cuántos locales incumplieron este punto en su última auditoría</div>
+        ${renderControlesGlobal(gd.rankingControles)}
+      </div>
+      <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
+        <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Categorías con más dificultad</div>
+        <div style="font-size:0.68rem;color:#9ca3af;margin-bottom:10px">Promedio de cumplimiento de todos los locales. Locales con dificultad = por debajo del 80%</div>
+        ${renderCategoriasGlobal(gd.rankingCategorias)}
+      </div>`;
+
+    return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}
+      ${selectorHtml}
+      <div style="padding:12px 14px 0">${todosHtml}</div>
+    </div>`;
+  }
+
+  // ── Vista local individual ──
+
+  // Indicadores
   const sectionIndicadores = `
     <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
       <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Indicadores</div>
@@ -752,23 +837,23 @@ function renderDashboard() {
       </div>
     </div>`;
 
-  // ── A) Promedio últimas 3 ──
+  // A) Promedio últimas 3
   const sectionA = `
     <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
-      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Promedio últimas 3 auditorías</div>
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Promedio últimas ${ld.auditsCount || 3} auditorías</div>
       <div style="display:flex;align-items:center;gap:16px">
         <div>
           <div style="font-size:2.4rem;font-weight:900;color:${pctColor(ld.promedio3)};line-height:1">${validPct(ld.promedio3) ? ld.promedio3+'%' : '–'}</div>
           <div style="margin-top:4px">${vsGlobal(ld.promedio3, gd.promedio)}</div>
         </div>
-        ${gd.promedio !== null && gd.promedio !== undefined ? `<div style="border-left:1px solid #f3f4f6;padding-left:16px;color:#6b7280;font-size:0.75rem">
-          <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">Promedio general</div>
+        ${validPct(gd.promedio) ? `<div style="border-left:1px solid #f3f4f6;padding-left:16px">
+          <div style="font-size:0.65rem;color:#9ca3af;text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px">Promedio general</div>
           <div style="font-size:1.4rem;font-weight:800;color:${pctColor(gd.promedio)}">${gd.promedio}%</div>
         </div>` : ''}
       </div>
     </div>`;
 
-  // ── B) Últimas 3 auditorías individuales ──
+  // B) Últimas 3 auditorías individuales
   const audits = ld.ultimasAuditorias || [];
   const sectionB = audits.length ? `
     <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
@@ -788,55 +873,59 @@ function renderDashboard() {
       }).join('')}
     </div>` : '';
 
-  // ── C) Ranking de controles con más incumplimientos ──
-  function renderRankingControles(items, globalItems, title) {
+  // C) Ranking controles — metric: "falló en X de N auditorías" + badge si también falla en otros locales
+  function renderRankingControles(items, globalItems, auditsCount) {
     if (!items || !items.length) return '';
-    const maxCount = items[0].count;
-    // Build global lookup: control -> global count
+    const maxFA = items[0].failedAudits || 1;
     const gMap = {};
-    (globalItems || []).forEach(function(g){ gMap[g.control] = g.count; });
+    (globalItems || []).forEach(function(g){ gMap[g.control] = g.localCount; });
     return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
-      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${title}</div>
-      ${items.slice(0, 10).map(function(d, i) {
-        const barW = Math.round(d.count / maxCount * 100);
-        const gCount = gMap[d.control];
-        const inGlobal = gCount ? `<span style="font-size:0.6rem;color:#9ca3af;font-weight:600;background:#f3f4f6;padding:1px 5px;border-radius:8px">🌐 ${gCount}× global</span>` : '';
-        return `<div style="margin-bottom:9px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px;gap:6px">
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Puntos con más incumplimientos</div>
+      <div style="font-size:0.68rem;color:#9ca3af;margin-bottom:10px">En cuántas de las últimas ${auditsCount} auditorías falló este punto</div>
+      ${items.slice(0, 10).map(function(d) {
+        const fa = d.failedAudits || 0;
+        const barW = Math.round(fa / maxFA * 100);
+        const gLC = gMap[d.control];
+        const globalBadge = gLC > 1 ? `<span style="font-size:0.6rem;color:#9ca3af;font-weight:600;background:#f3f4f6;padding:1px 5px;border-radius:8px">también en ${gLC} locales</span>` : '';
+        return `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px;gap:6px">
             <div style="font-size:0.72rem;color:#374151;flex:1">
               <span style="color:#9ca3af;font-size:0.62rem">${escHtml(d.categoria)}</span><br>
               <span style="font-weight:600">${escHtml(d.control)}</span>
             </div>
             <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:1rem;font-weight:800;color:#e4001b">${d.count}</div>
-              ${inGlobal}
+              <div style="font-size:0.9rem;font-weight:800;color:#e4001b">${fa} de ${auditsCount}</div>
+              <div style="font-size:0.6rem;color:#9ca3af">auditorías</div>
+              ${globalBadge}
             </div>
           </div>
-          <div style="height:4px;background:#fecaca;border-radius:2px">
-            <div style="height:4px;width:${barW}%;background:#e4001b;border-radius:2px"></div>
+          <div style="height:5px;background:#fecaca;border-radius:3px">
+            <div style="height:5px;width:${barW}%;background:#e4001b;border-radius:3px"></div>
           </div>
         </div>`;
       }).join('')}
     </div>`;
   }
 
-  // ── D) Ranking de categorías con más incumplimientos ──
-  function renderRankingCategorias(items, globalItems, title) {
+  // D) Ranking categorías — metric: % cumplimiento + diff vs global
+  function renderRankingCategorias(items, globalItems) {
     if (!items || !items.length) return '';
-    // Build global map for comparison
     const gMap = {};
     (globalItems || []).forEach(function(g){ gMap[g.categoria] = g.pct; });
     return `<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:12px;padding:14px">
-      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">${title}</div>
+      <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Categorías con más dificultad</div>
+      <div style="font-size:0.68rem;color:#9ca3af;margin-bottom:10px">% de cumplimiento promedio en las últimas auditorías. Las más bajas primero.</div>
       ${items.map(function(c) {
         const p = c.pct !== null ? c.pct : 0;
         const barColor = p >= 85 ? '#16a34a' : p >= 70 ? '#2563eb' : p >= 55 ? '#d97706' : '#e4001b';
         const gPct = gMap[c.categoria];
         const diff = (gPct !== undefined && c.pct !== null) ? c.pct - gPct : null;
-        const diffStr = diff !== null ? `<span style="font-size:0.62rem;color:${diff>=0?'#16a34a':'#e4001b'};font-weight:700">${diff>=0?'+':''}${diff}% vs. gral</span>` : '';
+        const diffStr = diff !== null
+          ? `<span style="font-size:0.62rem;color:${diff >= 0 ? '#16a34a' : '#e4001b'};font-weight:700">${diff >= 0 ? '+' : ''}${diff}% vs. gral</span>`
+          : '';
         return `<div style="margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-            <span style="font-size:0.72rem;color:#374151;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${escHtml(c.categoria)}</span>
+            <span style="font-size:0.72rem;color:#374151;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${escHtml(c.categoria)}</span>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
               ${diffStr}
               <span style="font-size:0.8rem;font-weight:800;color:${barColor}">${p}%</span>
@@ -850,8 +939,8 @@ function renderDashboard() {
     </div>`;
   }
 
-  const sectionC = renderRankingControles(ld.rankingControles, gd.rankingControles, 'Puntos con más incumplimientos');
-  const sectionD = renderRankingCategorias(ld.rankingCategorias, gd.rankingCategorias, 'Categorías con más incumplimientos');
+  const sectionC = renderRankingControles(ld.rankingControles, gd.rankingControles, ld.auditsCount || 3);
+  const sectionD = renderRankingCategorias(ld.rankingCategorias, gd.rankingCategorias);
 
   return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}
     ${selectorHtml}
