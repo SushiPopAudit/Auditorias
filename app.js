@@ -66,6 +66,11 @@ const state = {
   dashboardLoading:       false,
   dashboardError:         '',
   dashboardLocal:         '',
+  dashboardTipo:          '',
+  dashboardView:          'local',
+  dashboardRankingPeriod: 'mesActual',
+
+  historialTipo:          '',
 };
 
 // ============================================================
@@ -636,9 +641,26 @@ function renderDashboard() {
   const data    = state.dashboard;
   const pb      = `padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))`;
 
+  const isRanking = state.dashboardView === 'ranking';
+  const dbTipo    = state.dashboardTipo || '';
+
+  function tipoChips(activeTipo, onClickFn) {
+    return ['', 'Oficial', 'Interna'].map(function(t) {
+      const active = activeTipo === t;
+      const label  = t || 'Todos';
+      return `<button onclick="${onClickFn}('${t}')" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all .15s;${active ? 'background:#e4001b;color:#fff' : 'background:#f3f4f6;color:#6b7280'}">${label}</button>`;
+    }).join('');
+  }
+
   const header = `<div style="background:#e4001b;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-size:1.1rem;font-weight:700">📊 Dashboard</div>
-    <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻ Actualizar</button>
+    <div style="display:flex;gap:6px">
+      <button onclick="state.dashboardView=state.dashboardView==='ranking'?'local':'ranking';render();" style="background:${isRanking?'#fff':'rgba(255,255,255,0.2)'};border:none;color:${isRanking?'#e4001b':'#fff'};border-radius:6px;padding:4px 10px;font-size:0.75rem;font-weight:700;cursor:pointer">🏆 Ranking</button>
+      <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻</button>
+    </div>
+  </div>
+  <div style="background:#fff;padding:8px 14px;display:flex;gap:6px;border-bottom:1px solid #f3f4f6">
+    ${tipoChips(dbTipo, 'window.__dbTipo')}
   </div>`;
 
   if (loading) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">${header}
@@ -737,6 +759,55 @@ function renderDashboard() {
     if (r === null || r === undefined) return '–';
     const col = r > 50 ? '#e4001b' : r > 25 ? '#d97706' : '#16a34a';
     return `<span style="color:${col};font-weight:700">${r}%</span>`;
+  }
+
+  // ── Vista RANKING ──
+  if (isRanking) {
+    const rankingData = data.ranking || {};
+    const period      = state.dashboardRankingPeriod || 'mesActual';
+    const items       = rankingData[period] || [];
+    const periodLabels = { mesActual: 'Mes actual', mesAnterior: 'Mes anterior', ult3Meses: 'Últ. 3 meses' };
+    const myLocales   = new Set(localesList);
+
+    const periodBtns = ['mesActual', 'mesAnterior', 'ult3Meses'].map(function(p) {
+      const active = period === p;
+      return `<button onclick="state.dashboardRankingPeriod='${p}';render();" style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:0.72rem;font-weight:700;cursor:pointer;${active ? 'background:#e4001b;color:#fff' : 'background:#f3f4f6;color:#6b7280'}">${periodLabels[p]}</button>`;
+    }).join('');
+
+    const rankHtml = items.length === 0
+      ? `<div style="text-align:center;color:#9ca3af;padding:40px 0">Sin auditorías en este período</div>`
+      : items.map(function(item, idx) {
+          const pos   = idx + 1;
+          const mine  = myLocales.has(item.local);
+          const medal = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `<span style="font-size:0.8rem;font-weight:700;color:#9ca3af;min-width:20px;text-align:center">${pos}</span>`;
+          const p     = item.promedio;
+          const barColor = p >= 85 ? '#16a34a' : p >= 70 ? '#2563eb' : p >= 55 ? '#d97706' : '#e4001b';
+          const barW  = p;
+          return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f3f4f6;${mine ? 'background:#fffbeb;margin:0 -14px;padding:10px 14px;' : ''}">
+            <div style="width:28px;text-align:center;flex-shrink:0">${medal}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:0.82rem;font-weight:${mine?'800':'600'};color:${mine?'#b45309':'#374151'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(item.local)}${mine?' ★':''}</div>
+              <div style="margin-top:3px;height:4px;background:#e5e7eb;border-radius:2px">
+                <div style="height:4px;width:${barW}%;background:${barColor};border-radius:2px"></div>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:1.1rem;font-weight:800;color:${barColor}">${p}%</div>
+              <div style="font-size:0.6rem;color:#9ca3af">${item.auditCount} audit.</div>
+            </div>
+          </div>`;
+        }).join('');
+
+    return `<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;${pb}">${header}
+      <div style="padding:12px 14px 0">
+        <div style="display:flex;gap:6px;margin-bottom:12px">${periodBtns}</div>
+        <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);padding:14px">
+          <div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Ranking de locales</div>
+          <div style="font-size:0.65rem;color:#9ca3af;margin-bottom:10px">${items.length} locales · ${escHtml(periodLabels[period])}${dbTipo ? ' · '+escHtml(dbTipo) : ''}</div>
+          ${rankHtml}
+        </div>
+      </div>
+    </div>`;
   }
 
   // ── Vista TODOS ──
@@ -974,13 +1045,14 @@ function renderHistorial() {
       </div>
     </div>`;
 
-  const filtered = search
-    ? lista.filter(a =>
-        a.local.toLowerCase().includes(search) ||
-        a.auditor.toLowerCase().includes(search) ||
-        a.fecha.toLowerCase().includes(search)
-      )
-    : lista;
+  const histTipo = state.historialTipo || '';
+  const filtered = lista.filter(a => {
+    if (histTipo && (a.tipo || 'Oficial') !== histTipo) return false;
+    if (!search) return true;
+    return a.local.toLowerCase().includes(search) ||
+           a.auditor.toLowerCase().includes(search) ||
+           a.fecha.toLowerCase().includes(search);
+  });
 
   function scoreColor(a) {
     if (a.reprobado) return '#e4001b';
@@ -1041,6 +1113,12 @@ function renderHistorial() {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h2 style="font-size:1.05rem;font-weight:700;color:#1a1a1a;margin:0">Auditorías (${filtered.length})</h2>
         <button class="btn" id="btn-historial-refresh" style="font-size:0.78rem;color:#6b7280;border:1px solid #e5e7eb;padding:4px 10px;min-height:0">↻ Actualizar</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        ${['', 'Oficial', 'Interna'].map(t => {
+          const active = histTipo === t;
+          return `<button onclick="window.__histTipo('${t}')" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;${active ? 'background:#e4001b;color:#fff' : 'background:#f3f4f6;color:#6b7280'}">${t || 'Todos'}</button>`;
+        }).join('')}
       </div>
       <div style="position:relative;margin-bottom:14px">
         <input class="form-control" id="inp-historial-search" type="search"
@@ -2144,7 +2222,7 @@ function attachListeners() {
   async function recargarDashboard() {
     setState({ dashboardLoading: true, dashboardError: '' });
     try {
-      const res = await callAPI({ action: 'getDashboard', email: state.user.email, token: state.user.token });
+      const res = await callAPI({ action: 'getDashboard', email: state.user.email, token: state.user.token, tipo: state.dashboardTipo || '' });
       if (res.success) setState({ dashboard: res, dashboardLoading: false });
       else setState({ dashboardLoading: false, dashboardError: res.error || 'Error al cargar dashboard' });
     } catch(e) {
@@ -2690,6 +2768,17 @@ function attachListeners() {
     await recargarDashboard();
   });
   on('btn-dashboard-retry', 'click', recargarDashboard);
+  window.__dbTipo = async function(tipo) {
+    if (state.dashboardTipo === tipo) return;
+    state.dashboardTipo = tipo;
+    state.dashboard = null;
+    render();
+    await recargarDashboard();
+  };
+  window.__histTipo = function(tipo) {
+    state.historialTipo = tipo;
+    render();
+  };
   const dbSelect = document.getElementById('db-local-select');
   if (dbSelect) {
     dbSelect.addEventListener('change', () => {
