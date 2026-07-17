@@ -66,7 +66,7 @@ const state = {
   dashboardLoading:       false,
   dashboardError:         '',
   dashboardLocal:         '',
-  dashboardTipo:          '',
+  dashboardTipo:          'Oficial',
   dashboardView:          'local',
   dashboardRankingPeriod: 'mesActual',
 
@@ -644,21 +644,16 @@ function renderDashboard() {
   const isRanking = state.dashboardView === 'ranking';
   const dbTipo    = state.dashboardTipo || '';
 
-  function tipoChips(activeTipo, onClickFn) {
-    return ['', 'Oficial', 'Interna'].map(function(t) {
-      const active = activeTipo === t;
-      const label  = t || 'Todos';
-      return `<button onclick="${onClickFn}('${t}')" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all .15s;${active ? 'background:#e4001b;color:#fff' : 'background:#f3f4f6;color:#6b7280'}">${label}</button>`;
-    }).join('');
-  }
-
   const header = `<div style="background:#e4001b;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-size:1.1rem;font-weight:700">📊 Dashboard</div>
     <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻</button>
   </div>
   <div style="background:#fff;padding:8px 14px;display:flex;gap:6px;border-bottom:1px solid #f3f4f6;flex-wrap:wrap">
-    ${tipoChips(dbTipo, 'window.__dbTipo')}
-    <button onclick="state.dashboardView=state.dashboardView==='ranking'?'local':'ranking';render();" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all .15s;${isRanking ? 'background:#1d4ed8;color:#fff' : 'background:#dbeafe;color:#1d4ed8'}">🏆 Ranking</button>
+    ${['Oficial','Interna'].map(function(t) {
+      const active = !isRanking && dbTipo === t;
+      return `<button onclick="window.__dbTipo('${t}')" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all .15s;${active ? 'background:#e4001b;color:#fff' : 'background:#f3f4f6;color:#6b7280'}">${t}</button>`;
+    }).join('')}
+    <button onclick="state.dashboardView='ranking';render();" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all .15s;${isRanking ? 'background:#1d4ed8;color:#fff' : 'background:#dbeafe;color:#1d4ed8'}">🏆 Ranking</button>
   </div>`;
 
   if (loading) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">${header}
@@ -2767,8 +2762,9 @@ function attachListeners() {
   });
   on('btn-dashboard-retry', 'click', recargarDashboard);
   window.__dbTipo = async function(tipo) {
-    if (state.dashboardTipo === tipo) return;
+    if (state.dashboardTipo === tipo && state.dashboardView !== 'ranking') return;
     state.dashboardTipo = tipo;
+    state.dashboardView = 'local';
     state.dashboard = null;
     render();
     await recargarDashboard();
