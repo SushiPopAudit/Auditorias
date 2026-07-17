@@ -654,13 +654,11 @@ function renderDashboard() {
 
   const header = `<div style="background:#e4001b;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-size:1.1rem;font-weight:700">📊 Dashboard</div>
-    <div style="display:flex;gap:6px">
-      <button onclick="state.dashboardView=state.dashboardView==='ranking'?'local':'ranking';render();" style="background:${isRanking?'#fff':'rgba(255,255,255,0.2)'};border:none;color:${isRanking?'#e4001b':'#fff'};border-radius:6px;padding:4px 10px;font-size:0.75rem;font-weight:700;cursor:pointer">🏆 Ranking</button>
-      <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻</button>
-    </div>
+    <button id="btn-dashboard-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻</button>
   </div>
-  <div style="background:#fff;padding:8px 14px;display:flex;gap:6px;border-bottom:1px solid #f3f4f6">
+  <div style="background:#fff;padding:8px 14px;display:flex;gap:6px;border-bottom:1px solid #f3f4f6;flex-wrap:wrap">
     ${tipoChips(dbTipo, 'window.__dbTipo')}
+    <button onclick="state.dashboardView=state.dashboardView==='ranking'?'local':'ranking';render();" style="border:none;border-radius:20px;padding:5px 13px;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all .15s;${isRanking ? 'background:#1d4ed8;color:#fff' : 'background:#dbeafe;color:#1d4ed8'}">🏆 Ranking</button>
   </div>`;
 
   if (loading) return `<div style="display:flex;flex-direction:column;min-height:100vh;${pb}">${header}

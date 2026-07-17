@@ -1551,8 +1551,9 @@ function doGet(e) {
     var dbEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var dbToken = e.parameter.token || '';
     if (!dbEmail || !dbToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    var dbTipo = (e.parameter.tipo || '').trim();
 
-    var cacheKeyDB = 'db_' + dbEmail;
+    var cacheKeyDB = 'db_' + dbEmail + '_' + (dbTipo || 'all');
     var cachedDB = cacheGetParsed(cacheKeyDB);
     if (cachedDB) return jsonResponse(cachedDB);
 
@@ -1571,16 +1572,18 @@ function doGet(e) {
       // Read all data
       var ssDB = SpreadsheetApp.openById(SPREADSHEET_ID);
       var shDB = ssDB.getSheetByName(SHEET_NAME);
-      if (!shDB || shDB.getLastRow() < 2) return jsonResponse({ success: true, locales: [], porLocal: {}, global: { promedio: null, rankingControles: [], rankingCategorias: [] } });
+      if (!shDB || shDB.getLastRow() < 2) return jsonResponse({ success: true, locales: [], porLocal: {}, global: { promedio: null, rankingControles: [], rankingCategorias: [] }, ranking: { mesActual: [], mesAnterior: [], ult3Meses: [] } });
 
       var dataDB = shDB.getRange(2, 1, shDB.getLastRow() - 1, 20).getValues();
 
-      // Filter rows by role
+      // Filter rows by role + tipo for porLocal/global
       var allowedLocalesDB = (dbRol === 'Franquiciado' && dbLocales !== 'todos')
         ? dbLocales.split(',').map(function(l){ return l.trim().toLowerCase(); })
         : null;
       var filtered = dataDB.filter(function(r) {
         if (!r[0]) return false;
+        var rowTipo = (String(r[19]||'').trim()) || 'Oficial';
+        if (dbTipo && rowTipo !== dbTipo) return false;
         if (dbRol === 'Auditor') return (String(r[14]||'')).toLowerCase().trim() === dbEmail;
         if (dbRol === 'Franquiciado' && allowedLocalesDB) return allowedLocalesDB.indexOf((String(r[4]||'')).toLowerCase().trim()) !== -1;
         return true;
@@ -1659,22 +1662,34 @@ function doGet(e) {
           .sort(function(a,b){ return b.localCount - a.localCount; }).slice(0, 15);
       }
 
-      // Helper: ranking of categories by compliance %
+      // Helper: ranking of categories by compliance % (same weights as recalcularPuntaje)
+      var catMaxPts     = { 'critico':4, 'crítico':4, 'alta':3, 'media':2, 'baja':1 };
+      var catParcialPts = { 'critico':2, 'crítico':2, 'alta':1, 'media':1, 'baja':0 };
       function rankingCategorias(auditRows) {
         var catMap = {};
         auditRows.forEach(function(r) {
           var cat  = String(r[6]||'').trim();
+          var imp  = (String(r[9]||'')).toLowerCase().trim();
           var resp = (String(r[11]||'')).trim().toLowerCase();
-          if (!cat) return;
-          if (!catMap[cat]) catMap[cat] = { categoria: cat, cumple: 0, total: 0, ncCount: 0 };
-          catMap[cat].total++;
-          if (resp === 'cumple' || resp === 'n/a') catMap[cat].cumple++;
-          else if (resp === 'no cumple') catMap[cat].ncCount++;
+          if (!cat || !imp) return;
+          var max = catMaxPts[imp];
+          if (!max) return;
+          if (!resp || resp.includes('aplica')) return;
+          if (!resp.includes('cumple') && !resp.includes('parcial')) return;
+          if (!catMap[cat]) catMap[cat] = { categoria: cat, obtenido: 0, posible: 0, ncCount: 0 };
+          catMap[cat].posible += max;
+          if (resp === 'cumple') {
+            catMap[cat].obtenido += max;
+          } else if (resp.includes('parcial')) {
+            catMap[cat].obtenido += (catParcialPts[imp] || 0);
+          } else if (resp.includes('no cumple')) {
+            catMap[cat].ncCount++;
+          }
         });
         return Object.keys(catMap).map(function(cat) {
           var d = catMap[cat];
-          return { categoria: cat, pct: d.total > 0 ? Math.round(d.cumple / d.total * 100) : null, ncCount: d.ncCount };
-        }).sort(function(a,b){ return (a.pct||100) - (b.pct||100); }); // worst first
+          return { categoria: cat, pct: d.posible > 0 ? Math.round(d.obtenido / d.posible * 100) : null, ncCount: d.ncCount };
+        }).sort(function(a,b){ return (a.pct||100) - (b.pct||100); });
       }
 
       // Global: ranking of categories with localCount (how many locals have this category below 80%)
@@ -1684,15 +1699,24 @@ function doGet(e) {
           var localCatMap = {};
           localLastRowsMap[localName].forEach(function(r) {
             var cat  = String(r[6]||'').trim();
+            var imp  = (String(r[9]||'')).toLowerCase().trim();
             var resp = (String(r[11]||'')).trim().toLowerCase();
-            if (!cat) return;
-            if (!localCatMap[cat]) localCatMap[cat] = { cumple: 0, total: 0 };
-            localCatMap[cat].total++;
-            if (resp === 'cumple' || resp === 'n/a') localCatMap[cat].cumple++;
+            if (!cat || !imp) return;
+            var max = catMaxPts[imp];
+            if (!max) return;
+            if (!resp || resp.includes('aplica')) return;
+            if (!resp.includes('cumple') && !resp.includes('parcial')) return;
+            if (!localCatMap[cat]) localCatMap[cat] = { obtenido: 0, posible: 0 };
+            localCatMap[cat].posible += max;
+            if (resp === 'cumple') {
+              localCatMap[cat].obtenido += max;
+            } else if (resp.includes('parcial')) {
+              localCatMap[cat].obtenido += (catParcialPts[imp] || 0);
+            }
           });
           Object.keys(localCatMap).forEach(function(cat) {
             var d = localCatMap[cat];
-            var pct = d.total > 0 ? Math.round(d.cumple / d.total * 100) : null;
+            var pct = d.posible > 0 ? Math.round(d.obtenido / d.posible * 100) : null;
             if (!catMap[cat]) catMap[cat] = { categoria: cat, totalPct: 0, localCount: 0, localsBelowTarget: 0 };
             catMap[cat].localCount++;
             if (pct !== null) { catMap[cat].totalPct += pct; }
@@ -1773,6 +1797,59 @@ function doGet(e) {
       var globalPromedio = globalPcts.length > 0 ? Math.round(globalPcts.reduce(function(s,p){ return s+p; }, 0) / globalPcts.length) : null;
       var totalLocales = sortedLocaleNames.length;
 
+      // ── Ranking: ALL locals (tipo-filtered, not role-filtered) ──
+      var rankingAuditsByLocal = {};
+      dataDB.forEach(function(r) {
+        if (!r[0]) return;
+        var rowTipo2 = (String(r[19]||'').trim()) || 'Oficial';
+        if (dbTipo && rowTipo2 !== dbTipo) return;
+        var local2 = String(r[4]||'').trim();
+        var aid2   = String(r[0]||'').trim();
+        if (!local2 || !aid2) return;
+        if (!rankingAuditsByLocal[local2]) rankingAuditsByLocal[local2] = {};
+        if (!rankingAuditsByLocal[local2][aid2]) {
+          var rawP2 = r[15];
+          var pct2  = (rawP2 !== '' && rawP2 !== null && rawP2 !== undefined) ? parseFloat(String(rawP2).replace(',', '.')) : null;
+          if (pct2 !== null && isNaN(pct2)) pct2 = null;
+          rankingAuditsByLocal[local2][aid2] = { pct: pct2, fechaISO: formatFechaISO(r[1]) };
+        }
+      });
+      var todayR = new Date();
+      var thisYearR = todayR.getFullYear(), thisMonthR = todayR.getMonth() + 1;
+      var prevMonthR = thisMonthR === 1 ? 12 : thisMonthR - 1;
+      var prevYearR  = thisMonthR === 1 ? thisYearR - 1 : thisYearR;
+      var months3Keys = [];
+      for (var ri = 0; ri < 3; ri++) {
+        var rmo = thisMonthR - ri; var rye = thisYearR;
+        if (rmo <= 0) { rmo += 12; rye--; }
+        months3Keys.push(rye * 100 + rmo);
+      }
+      function computeRankingPeriod(periodCheck) {
+        var scores = {};
+        Object.keys(rankingAuditsByLocal).forEach(function(ln) {
+          Object.keys(rankingAuditsByLocal[ln]).forEach(function(aid) {
+            var a = rankingAuditsByLocal[ln][aid];
+            if (!a.fechaISO) return;
+            var pts = a.fechaISO.split('-');
+            if (pts.length !== 3) return;
+            var ay = parseInt(pts[0]), am = parseInt(pts[1]);
+            if (!periodCheck(ay, am)) return;
+            if (a.pct === null) return;
+            if (!scores[ln]) scores[ln] = { local: ln, sum: 0, count: 0 };
+            scores[ln].sum += a.pct; scores[ln].count++;
+          });
+        });
+        return Object.keys(scores).map(function(ln) {
+          var s = scores[ln];
+          return { local: ln, promedio: Math.round(s.sum / s.count), auditCount: s.count };
+        }).sort(function(a,b){ return b.promedio - a.promedio; });
+      }
+      var ranking = {
+        mesActual:   computeRankingPeriod(function(y,m){ return y===thisYearR && m===thisMonthR; }),
+        mesAnterior: computeRankingPeriod(function(y,m){ return y===prevYearR && m===prevMonthR; }),
+        ult3Meses:   computeRankingPeriod(function(y,m){ return months3Keys.indexOf(y*100+m) !== -1; }),
+      };
+
       var resDB = {
         success:   true,
         locales:   sortedLocaleNames,
@@ -1783,6 +1860,7 @@ function doGet(e) {
           rankingControles:  rankingControlesGlobal(localLastRowsMap),
           rankingCategorias: rankingCategoriasGlobal(localLastRowsMap),
         },
+        ranking: ranking,
       };
       cachePutObj(cacheKeyDB, resDB, 180);
       return jsonResponse(resDB);
