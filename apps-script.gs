@@ -1953,3 +1953,86 @@ function migrarRespuestasNumericas() {
   Logger.log('Migración completa. Filas de respuesta actualizadas: ' + updates + '. Auditorías recalculadas: ' + auditUpdates);
   CacheService.getScriptCache().removeAll(['aud_all']);
 }
+
+// ============================================================
+// Ejecutar UNA VEZ: copia los valores numéricos originales desde
+// _backup_pre_migracion → col U de Resultados
+// ============================================================
+function restaurarRawValor() {
+  var CONTROLES_NUMERICOS = [
+    'temperatura del salmon', 'heladera de salmon', 'freezer',
+    'heladeras cocina', 'ambiente cocina sushi', 'temperatura camara', 'heladera combos',
+  ];
+
+  var ss      = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var shMain  = ss.getSheetByName(SHEET_NAME);
+  var shBack  = ss.getSheetByName('_backup_pre_migracion');
+  if (!shBack) { Logger.log('No se encontró la hoja _backup_pre_migracion'); return; }
+
+  // Leer backup: col A=auditId, col I=control, col L=respuesta original (el número)
+  var backData = shBack.getRange(2, 1, shBack.getLastRow() - 1, 12).getValues();
+
+  // Construir mapa: "auditId|control" → valor numérico original
+  var mapa = {};
+  backData.forEach(function(r) {
+    var control = String(r[8] || '').trim().toLowerCase();
+    if (CONTROLES_NUMERICOS.indexOf(control) === -1) return;
+    var val = String(r[11] || '').trim();
+    var num = parseFloat(val.replace(',', '.'));
+    if (isNaN(num)) return; // ya fue migrado en esa versión (no debería pasar)
+    var key = String(r[0] || '').trim() + '|' + control;
+    mapa[key] = num;
+  });
+
+  // Leer hoja actual y escribir col U donde esté vacía
+  var mainData = shMain.getRange(2, 1, shMain.getLastRow() - 1, 21).getValues();
+  var restored = 0;
+  mainData.forEach(function(r, i) {
+    var colU = String(r[20] || '').trim();
+    if (colU) return; // ya tiene valor, no pisar
+    var control = String(r[8] || '').trim().toLowerCase();
+    var key = String(r[0] || '').trim() + '|' + control;
+    if (!(key in mapa)) return;
+    shMain.getRange(i + 2, 21).setValue(mapa[key]); // col U
+    restored++;
+  });
+
+  Logger.log('rawValor restaurado en ' + restored + ' filas.');
+  CacheService.getScriptCache().removeAll(['aud_all']);
+}
+
+// ============================================================
+// Ejecutar UNA VEZ: para filas donde col U sigue vacía y la
+// respuesta es Cumple/No Cumple, anota el rango de referencia
+// ============================================================
+function agregarRangoReferencia() {
+  var RANGOS = {
+    'temperatura del salmon': 'rango Cumple: -2°C a 2°C | Parcial: 2°C a 6°C',
+    'heladera de salmon':     'rango Cumple: -2°C a 2°C',
+    'freezer':                'rango Cumple: -18°C a -15°C',
+    'heladeras cocina':       'rango Cumple: 2°C a 7°C',
+    'ambiente cocina sushi':  'rango Cumple: ≤22°C',
+    'temperatura camara':     'rango Cumple: 2°C a 7°C',
+    'heladera combos':        'rango Cumple: 10°C a 14°C',
+  };
+
+  var ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var shMain = ss.getSheetByName(SHEET_NAME);
+  var data   = shMain.getRange(2, 1, shMain.getLastRow() - 1, 21).getValues();
+  var tagged = 0;
+
+  data.forEach(function(r, i) {
+    var colU = String(r[20] || '').trim();
+    if (colU) return; // ya tiene valor real, no pisar
+    var control = String(r[8] || '').trim().toLowerCase();
+    var rango = RANGOS[control];
+    if (!rango) return;
+    var respuesta = String(r[11] || '').toLowerCase();
+    if (!respuesta.includes('cumple')) return; // solo filas evaluadas
+    shMain.getRange(i + 2, 21).setValue(rango); // col U
+    tagged++;
+  });
+
+  Logger.log('Rango de referencia agregado en ' + tagged + ' filas.');
+  CacheService.getScriptCache().removeAll(['aud_all']);
+}
