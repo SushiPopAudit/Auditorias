@@ -777,8 +777,8 @@ function recalcularPuntaje(rows) {
   var obtenido = 0, posible = 0, reprobado = false;
 
   rows.forEach(function(r) {
-    var imp = (r[9]||'').toLowerCase().trim();
-    var res = (r[11]||'').toLowerCase().trim();
+    var imp = String(r[9]||'').toLowerCase().trim();
+    var res = String(r[11]||'').toLowerCase().trim();
     var max = maxPts[imp];
     if (!max) return;
     if (!res || res.includes('aplica')) return;
