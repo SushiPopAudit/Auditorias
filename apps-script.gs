@@ -89,12 +89,13 @@ function doPost(e) {
         data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
         data.acompanante ? (data.acompanante + (data.posicionAcompanante ? '|||' + data.posicionAcompanante : '')) : '', // col S — Acompañante|||Posición
         data.tipoAuditoria || 'Oficial',        // col T — Tipo
+        r.rawValor != null ? String(r.rawValor) : '', // col U — Valor numérico crudo
       ];
     });
 
     if (rows.length > 0) {
       var startRow = sheet.getLastRow() + 1;
-      sheet.getRange(startRow, 1, rows.length, 20).setValues(rows);
+      sheet.getRange(startRow, 1, rows.length, 21).setValues(rows);
       // Force text format on Respuesta (col 12) and Observación (col 13) so numbers
       // don't get auto-parsed as dates by Sheets
       sheet.getRange(startRow, 12, rows.length, 2).setNumberFormat('@');
@@ -1538,6 +1539,7 @@ function doGet(e) {
             importancia: r[9], explicacion:  r[10], respuesta: r[11],
             observacion: r[12],
             fotoUrls:    r[13] ? r[13].split(',').map(function(u){ return u.trim(); }).filter(Boolean) : [],
+            rawValor:    r[20] || '',
           };
         }),
       });
@@ -1908,23 +1910,46 @@ function migrarRespuestasNumericas() {
   var sh   = ss.getSheetByName(SHEET_NAME);
   var data = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
 
+  // Paso 1: actualizar respuestas en memoria y en el sheet
   var updates = 0;
   data.forEach(function(row, i) {
-    var control = String(row[8] || '').trim().toLowerCase(); // col I = control
-    var respuesta = String(row[11] || '').trim();            // col L = respuesta
+    var control  = String(row[8]  || '').trim().toLowerCase();
+    var respuesta = String(row[11] || '').trim();
     var evaluador = REGLAS[control];
     if (!evaluador) return;
 
-    // Solo migrar si la respuesta es un número (no "Cumple", "No Cumple", etc.)
     var num = parseFloat(respuesta.replace(',', '.'));
     if (isNaN(num)) return;
 
     var resultado = evaluador(num);
-    sh.getRange(i + 2, 12).setValue(resultado); // col L
+    row[11] = resultado;                        // actualizar en memoria
+    sh.getRange(i + 2, 12).setValue(resultado); // col L en el sheet
     updates++;
   });
 
-  Logger.log('Migración completa. Filas actualizadas: ' + updates);
-  // Limpiar caché para que el dashboard se actualice
+  // Paso 2: recalcular puntaje por auditId y actualizar cols P/Q/R
+  var byAudit = {};
+  data.forEach(function(row, i) {
+    var id = String(row[0] || '').trim();
+    if (!id) return;
+    if (!byAudit[id]) byAudit[id] = [];
+    byAudit[id].push({ row: row, rowIndex: i });
+  });
+
+  var auditUpdates = 0;
+  Object.keys(byAudit).forEach(function(id) {
+    var entries = byAudit[id];
+    var rows    = entries.map(function(e) { return e.row; });
+    var res     = recalcularPuntaje(rows);
+    entries.forEach(function(e) {
+      var shRow = e.rowIndex + 2;
+      sh.getRange(shRow, 16).setValue(res.pct);                // col P — Puntaje%
+      sh.getRange(shRow, 17).setValue(res.nivel);              // col Q — Nivel
+      sh.getRange(shRow, 18).setValue(res.reprobado ? 'Sí' : 'No'); // col R — Reprobado
+    });
+    auditUpdates++;
+  });
+
+  Logger.log('Migración completa. Filas de respuesta actualizadas: ' + updates + '. Auditorías recalculadas: ' + auditUpdates);
   CacheService.getScriptCache().removeAll(['aud_all']);
 }

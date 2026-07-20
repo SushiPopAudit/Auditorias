@@ -1256,7 +1256,7 @@ function renderHistorialDetalle() {
           <div style="font-size:0.86rem;font-weight:600;color:#1a1a1a;margin-bottom:5px">${escHtml(r.control)}</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
             <span style="font-size:0.67rem;background:${impB};color:${impC};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.importancia)}</span>
-            <span style="font-size:0.67rem;background:${resBg};color:${resColor};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.respuesta||'—')}</span>
+            <span style="font-size:0.67rem;background:${resBg};color:${resColor};padding:1px 7px;border-radius:99px;font-weight:700">${escHtml(r.respuesta||'—')}${r.rawValor ? ` (${escHtml(String(r.rawValor))})` : ''}</span>
           </div>
           ${r.observacion ? `<div style="font-size:0.76rem;color:#6b7280;margin-top:5px;font-style:italic">"${escHtml(r.observacion)}"</div>` : ''}
           ${fotos}
