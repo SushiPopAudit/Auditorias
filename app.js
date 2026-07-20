@@ -218,6 +218,7 @@ function buildCategories(isCausa) {
       explicacion:  r[5] || '',
       pregunta:     r[6] || '',
       imagen:       (r[7] || '').trim().toLowerCase(),
+      validacion:   (r[10] || '').trim(),
     });
   });
 
@@ -234,6 +235,58 @@ function parseAnswerType(pregunta) {
     return { type: 'radio', options: pregunta.split('/').map(o => o.trim()).filter(Boolean) };
   }
   return { type: 'text', options: [] };
+}
+
+function parseValidacion(v) {
+  if (!v) return null;
+  const parts = v.split('|');
+  const tipo = parts[0].toLowerCase();
+  if (tipo === 'headcount') return { tipo: 'headcount' };
+  if (tipo === 'fecha') return { tipo: 'fecha', allowNA: parts.includes('NA') };
+  if (tipo === 'numero') {
+    const allowNA = parts.includes('NA');
+    let cumple = null, parcial = null;
+    parts.forEach(p => {
+      if (p.startsWith('C:')) {
+        const [,a,b] = p.split(':');
+        cumple = { min: a === '*' ? null : parseFloat(a), max: b === undefined ? null : parseFloat(b) };
+      } else if (p.startsWith('P:')) {
+        const [,a,b] = p.split(':');
+        parcial = { min: parseFloat(a), max: parseFloat(b) };
+      }
+    });
+    return { tipo: 'numero', cumple, parcial, allowNA };
+  }
+  return null;
+}
+
+function evaluarNumero(val, regla) {
+  if (!regla || regla.tipo !== 'numero') return null;
+  const n = parseFloat(String(val).replace(',', '.'));
+  if (isNaN(n)) return null;
+  const { cumple, parcial } = regla;
+  if (cumple) {
+    const okMin = cumple.min === null || n >= cumple.min;
+    const okMax = cumple.max === null || n <= cumple.max;
+    if (okMin && okMax) return 'Cumple';
+  }
+  if (parcial) {
+    const okMin = n >= parcial.min;
+    const okMax = n <= parcial.max;
+    if (okMin && okMax) return 'Cumple parcialmente';
+  }
+  return 'No Cumple';
+}
+
+function evaluarFecha(val) {
+  if (!val) return null;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const fecha = new Date(val + 'T00:00:00');
+  if (isNaN(fecha.getTime())) return null;
+  if (fecha < hoy) return { resultado: 'No Cumple', advertencia: null };
+  const tresMeses = new Date(hoy); tresMeses.setMonth(tresMeses.getMonth() + 3);
+  if (fecha <= tresMeses) return { resultado: 'Cumple', advertencia: 'Próximo a vencer' };
+  return { resultado: 'Cumple', advertencia: null };
 }
 
 // ============================================================
@@ -1252,6 +1305,7 @@ function renderHistorialDetalle() {
           ['AUDITOR',                 escHtml(d.auditor || '—')],
           ['ACOMPAÑANTE',             d.acompanante ? escHtml(d.acompanante) : null],
           ['POSICIÓN ACOMPAÑANTE',    d.posicionAcompanante ? escHtml(d.posicionAcompanante) : null],
+          ['HEAD COUNT', (() => { const hcResp = (d.respuestas||[]).find(r => r.headcount); return hcResp ? Object.entries(hcResp.headcount).map(([k,v]) => `${k.replace(/_/g,' ')}: ${v}`).join(' | ') : null; })()],
           ['TIPO',                    tipoBadge],
           ['RESULTADO',               `<span style="font-weight:700;color:${pctColor}">${p.reprobado ? 'Reprobado' : (p.nivel || '—')}</span>`],
           ['NOTA',                    p.pct !== null && p.pct !== undefined ? `<span style="font-weight:800;font-size:1.05rem;color:${pctColor}">${p.pct}%</span>` : '—'],
@@ -1746,10 +1800,66 @@ function renderQuestionCard(q) {
   const imp = importanciaClass(q.importancia);
   const ans = state.answers[q.id] || {};
   const { type, options } = parseAnswerType(q.pregunta);
+  const regla = parseValidacion(q.validacion || '');
   const needsPhoto = q.imagen === 'si' || q.imagen === 'obligatorio';
 
   let inputHtml = '';
-  if (type === 'radio') {
+  if (regla && regla.tipo === 'headcount') {
+    const hc = ans.headcount || {};
+    inputHtml = `
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      ${['SUSHI','COCINA CALIENTE','ENCARGADO/LOGÍSTICA'].map(sector => {
+        const key = sector.replace(/\//g,'_').replace(/\s+/g,'_');
+        return `<div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:0.78rem;color:#374151;min-width:140px">${sector}</span>
+          <input type="number" inputmode="numeric" min="0" class="headcount-input"
+            data-qid="${q.id}" data-sector="${key}"
+            style="width:70px;padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;text-align:center"
+            value="${escHtml(String(hc[key] || ''))}">
+        </div>`;
+      }).join('')}
+    </div>`;
+  } else if (regla && regla.tipo === 'fecha') {
+    const eval_ = ans.fechaRaw ? evaluarFecha(ans.fechaRaw) : null;
+    const colorMap = { 'Cumple': '#16a34a', 'No Cumple': '#e4001b' };
+    const badgeHtml = eval_ ? `
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+      <span style="background:${eval_.resultado==='Cumple'?'#f0fdf4':'#fff1f2'};color:${colorMap[eval_.resultado]};font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px">${eval_.resultado}</span>
+      ${eval_.advertencia ? `<span style="font-size:0.7rem;color:#d97706;font-weight:600">⚠ ${eval_.advertencia}</span>` : ''}
+    </div>` : '';
+    const naChecked = ans.valor === 'No aplica';
+    inputHtml = `
+    <div style="margin-top:8px">
+      <input type="date" class="fecha-venc-input form-control"
+        data-qid="${q.id}" value="${naChecked ? '' : escHtml(ans.fechaRaw || '')}"
+        style="${naChecked ? 'opacity:0.4;pointer-events:none' : ''}">
+      ${badgeHtml}
+      ${regla.allowNA ? `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.8rem;color:#6b7280">
+        <input type="checkbox" class="fecha-na-check" data-qid="${q.id}" ${naChecked?'checked':''}> No aplica
+      </label>` : ''}
+    </div>`;
+  } else if (regla && regla.tipo === 'numero') {
+    const numVal = ans.rawValor || '';
+    const resultado = numVal && numVal !== 'No aplica' ? evaluarNumero(numVal, regla) : null;
+    const colorMap = { 'Cumple': '#16a34a', 'Cumple parcialmente': '#d97706', 'No Cumple': '#e4001b' };
+    const bgMap = { 'Cumple': '#f0fdf4', 'Cumple parcialmente': '#fffbeb', 'No Cumple': '#fff1f2' };
+    const badgeHtml = resultado ? `
+    <div style="margin-top:6px">
+      <span style="background:${bgMap[resultado]};color:${colorMap[resultado]};font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px">${resultado}</span>
+    </div>` : '';
+    const naChecked = ans.valor === 'No aplica';
+    inputHtml = `
+    <div class="number-input-wrap">
+      <input class="number-input-validated" type="text" inputmode="decimal"
+        pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
+        id="num_${q.id}" placeholder="Ej: -2,5" value="${naChecked ? '' : escHtml(numVal)}"
+        data-qid="${q.id}" ${naChecked ? 'style="opacity:0.4;pointer-events:none"' : ''}>
+    </div>
+    ${badgeHtml}
+    ${regla.allowNA ? `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.8rem;color:#6b7280">
+      <input type="checkbox" class="numero-na-check" data-qid="${q.id}" ${naChecked?'checked':''}> No aplica
+    </label>` : ''}`;
+  } else if (type === 'radio') {
     const radioName = `radio_${q.id}`;
     const radios = options.map(opt => {
       const isSelected = ans.valor === opt;
@@ -2689,6 +2799,82 @@ function attachListeners() {
     });
   });
 
+  // Número con validación automática
+  document.querySelectorAll('.number-input-validated').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const qid = inp.dataset.qid;
+      const q = state.categories.flatMap(c=>c.questions).find(q=>q.id===qid);
+      if (!state.answers[qid]) state.answers[qid] = {};
+      const raw = inp.value.replace(/,/g,'.');
+      state.answers[qid].rawValor = raw;
+      const regla = parseValidacion(q?.validacion || '');
+      const resultado = raw ? evaluarNumero(raw, regla) : null;
+      state.answers[qid].valor = resultado || raw;
+      guardarBorrador();
+      render();
+    });
+  });
+
+  // Fecha vencimiento
+  document.querySelectorAll('.fecha-venc-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const qid = inp.dataset.qid;
+      if (!state.answers[qid]) state.answers[qid] = {};
+      state.answers[qid].fechaRaw = inp.value;
+      const ev = evaluarFecha(inp.value);
+      state.answers[qid].valor = ev ? ev.resultado : inp.value;
+      guardarBorrador();
+      render();
+    });
+  });
+
+  // Fecha No aplica
+  document.querySelectorAll('.fecha-na-check').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const qid = chk.dataset.qid;
+      if (!state.answers[qid]) state.answers[qid] = {};
+      if (chk.checked) {
+        state.answers[qid].valor = 'No aplica';
+        state.answers[qid].fechaRaw = '';
+      } else {
+        state.answers[qid].valor = '';
+        state.answers[qid].fechaRaw = '';
+      }
+      guardarBorrador();
+      render();
+    });
+  });
+
+  // Número No aplica
+  document.querySelectorAll('.numero-na-check').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const qid = chk.dataset.qid;
+      if (!state.answers[qid]) state.answers[qid] = {};
+      if (chk.checked) {
+        state.answers[qid].valor = 'No aplica';
+        state.answers[qid].rawValor = '';
+      } else {
+        state.answers[qid].valor = '';
+        state.answers[qid].rawValor = '';
+      }
+      guardarBorrador();
+      render();
+    });
+  });
+
+  // Headcount
+  document.querySelectorAll('.headcount-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const qid = inp.dataset.qid;
+      const sector = inp.dataset.sector;
+      if (!state.answers[qid]) state.answers[qid] = {};
+      if (!state.answers[qid].headcount) state.answers[qid].headcount = {};
+      state.answers[qid].headcount[sector] = inp.value;
+      state.answers[qid].valor = 'N/A';
+      guardarBorrador();
+    });
+  });
+
   // Observaciones y campos texto
   document.querySelectorAll('.observacion-textarea').forEach(ta => {
     ta.addEventListener('input', () => {
@@ -3202,6 +3388,9 @@ async function submitAudit() {
       explicacion:  q.explicacion,
       respuesta:    ans.valor       || '',
       observacion:  ans.observacion || '',
+      headcount:    ans.headcount   || null,
+      rawValor:     ans.rawValor    || null,
+      fechaRaw:     ans.fechaRaw    || null,
       fotosBase64:  fotos
         .filter(f => f.dataURL)
         .map(f => ({ base64: f.dataURL.split(',')[1], nombre: f.name || 'foto.jpg' })),
