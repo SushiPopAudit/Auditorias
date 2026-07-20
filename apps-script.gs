@@ -1157,7 +1157,7 @@ function doGet(e) {
       const lastRow = sheet.getLastRow();
       if (lastRow < 2) return jsonResponse({ success: false, error: 'Sin datos' });
 
-      const allData = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+      const allData = sheet.getRange(2, 1, lastRow - 1, 21).getValues();
       const rows    = allData
         .filter(function(r) { return String(r[0]) === auditId; })
         .map(function(r) { return r.map(function(v) { return v == null ? '' : String(v); }); });
@@ -1213,7 +1213,7 @@ function doGet(e) {
       var lastRowVer = sheetVer.getLastRow();
       if (lastRowVer < 2) return HtmlService.createHtmlOutput('<h2>Sin datos</h2>');
 
-      var allDataVer = sheetVer.getRange(2, 1, lastRowVer - 1, 19).getValues();
+      var allDataVer = sheetVer.getRange(2, 1, lastRowVer - 1, 21).getValues();
       var rowsVer = allDataVer.filter(function(r) { return String(r[0]) === auditIdVer; })
         .map(function(r) { return r.map(function(v) { return v == null ? '' : String(v); }); });
       if (!rowsVer.length) return HtmlService.createHtmlOutput('<h2>AuditID no encontrado: ' + auditIdVer + '</h2>');
