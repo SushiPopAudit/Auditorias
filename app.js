@@ -1854,13 +1854,17 @@ function renderQuestionCard(q) {
     </div>` : '';
     const naChecked = ans.valor === 'No aplica';
     inputHtml = `
-    <div class="number-input-wrap">
-      <input class="number-input-validated" type="text" inputmode="decimal"
+    <div style="margin-top:8px;display:flex;gap:6px;align-items:center;${naChecked?'opacity:0.4;pointer-events:none':''}">
+      <button type="button" class="numero-neg-btn" data-qid="${q.id}"
+        style="flex-shrink:0;width:38px;height:44px;border:1px solid #d1d5db;border-radius:8px;background:#f3f4f6;font-size:1.2rem;font-weight:700;cursor:pointer;color:#374151">−</button>
+      <input class="number-input-validated form-control" type="text" inputmode="decimal"
         pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
         id="num_${q.id}" placeholder="Ej: -2,5" value="${naChecked ? '' : escHtml(numVal)}"
-        data-qid="${q.id}" ${naChecked ? 'style="opacity:0.4;pointer-events:none"' : ''}>
+        data-qid="${q.id}" style="flex:1;min-width:0">
     </div>
-    ${badgeHtml}
+    <div id="badge_num_${q.id}" style="margin-top:6px;${resultado ? '' : 'display:none'}">
+      <span style="background:${resultado ? bgMap[resultado] : ''};color:${resultado ? colorMap[resultado] : ''};font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px">${resultado || ''}</span>
+    </div>
     ${regla.allowNA ? `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.8rem;color:#6b7280">
       <input type="checkbox" class="numero-na-check" data-qid="${q.id}" ${naChecked?'checked':''}> No aplica
     </label>` : ''}`;
@@ -2804,19 +2808,42 @@ function attachListeners() {
     });
   });
 
-  // Número con validación automática
+  // Número con validación automática — sin render() para no perder el foco
+  const colorMap = { 'Cumple': '#16a34a', 'Cumple parcialmente': '#d97706', 'No Cumple': '#e4001b' };
+  const bgMap    = { 'Cumple': '#f0fdf4', 'Cumple parcialmente': '#fffbeb', 'No Cumple': '#fff1f2' };
   document.querySelectorAll('.number-input-validated').forEach(inp => {
     inp.addEventListener('input', () => {
       const qid = inp.dataset.qid;
-      const q = state.categories.flatMap(c=>c.questions).find(q=>q.id===qid);
+      const q = state.categories.flatMap(c => c.questions).find(q => q.id === qid);
       if (!state.answers[qid]) state.answers[qid] = {};
-      const raw = inp.value.replace(/,/g,'.');
+      const raw = inp.value.replace(/,/g, '.');
       state.answers[qid].rawValor = raw;
       const regla = parseValidacion(q?.validacion || '');
       const resultado = raw ? evaluarNumero(raw, regla) : null;
       state.answers[qid].valor = resultado || raw;
       guardarBorrador();
-      render();
+      // Actualizar badge sin re-renderizar
+      const badge = document.getElementById(`badge_num_${qid}`);
+      if (badge) {
+        if (resultado) {
+          badge.style.display = '';
+          const sp = badge.querySelector('span');
+          if (sp) { sp.style.background = bgMap[resultado]; sp.style.color = colorMap[resultado]; sp.textContent = resultado; }
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    });
+  });
+
+  // Botón − para números negativos
+  document.querySelectorAll('.numero-neg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const qid = btn.dataset.qid;
+      const inp = document.getElementById(`num_${qid}`);
+      if (!inp) return;
+      inp.value = inp.value.startsWith('-') ? inp.value.slice(1) : '-' + inp.value;
+      inp.dispatchEvent(new Event('input'));
     });
   });
 

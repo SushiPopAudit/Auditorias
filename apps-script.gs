@@ -1887,3 +1887,44 @@ function test() {
   })}};
   console.log(doPost(mock).getContent());
 }
+
+// ============================================================
+// MIGRACIÓN: evaluar respuestas numéricas viejas con rangos
+// Ejecutar UNA VEZ desde el editor de Apps Script
+// ============================================================
+function migrarRespuestasNumericas() {
+  // Reglas: { control (lowercase) -> función evaluadora }
+  var REGLAS = {
+    'temperatura del salmon':    function(n) { return n>=-2&&n<=2?'Cumple':n>2&&n<=6?'Cumple parcialmente':'No Cumple'; },
+    'heladera de salmon':        function(n) { return n>=-2&&n<=2?'Cumple':'No Cumple'; },
+    'freezer':                   function(n) { return n>=-18&&n<=-15?'Cumple':'No Cumple'; },
+    'heladeras cocina':          function(n) { return n>=2&&n<=7?'Cumple':'No Cumple'; },
+    'ambiente cocina sushi':     function(n) { return n<=22?'Cumple':'No Cumple'; },
+    'temperatura camara':        function(n) { return n>=2&&n<=7?'Cumple':'No Cumple'; },
+    'heladera combos':           function(n) { return n>=10&&n<=14?'Cumple':'No Cumple'; },
+  };
+
+  var ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sh   = ss.getSheetByName(SHEET_NAME);
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+
+  var updates = 0;
+  data.forEach(function(row, i) {
+    var control = String(row[8] || '').trim().toLowerCase(); // col I = control
+    var respuesta = String(row[11] || '').trim();            // col L = respuesta
+    var evaluador = REGLAS[control];
+    if (!evaluador) return;
+
+    // Solo migrar si la respuesta es un número (no "Cumple", "No Cumple", etc.)
+    var num = parseFloat(respuesta.replace(',', '.'));
+    if (isNaN(num)) return;
+
+    var resultado = evaluador(num);
+    sh.getRange(i + 2, 12).setValue(resultado); // col L
+    updates++;
+  });
+
+  Logger.log('Migración completa. Filas actualizadas: ' + updates);
+  // Limpiar caché para que el dashboard se actualice
+  CacheService.getScriptCache().removeAll(['aud_all']);
+}
