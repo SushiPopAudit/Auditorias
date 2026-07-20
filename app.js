@@ -1900,7 +1900,9 @@ function renderQuestionCard(q) {
   }
 
   const selectedVal = (ans.valor || '').toLowerCase();
-  const obsRequired = selectedVal === 'no cumple' || selectedVal.includes('parcial');
+  const reglaQ = parseValidacion(q.validacion || '');
+  const tieneValidacionNumerica = reglaQ && (reglaQ.tipo === 'numero' || reglaQ.tipo === 'fecha');
+  const obsRequired = !tieneValidacionNumerica && (selectedVal === 'no cumple' || selectedVal.includes('parcial'));
   const obsHtml = type === 'radio' ? `
     <div class="observacion-wrap">
       <span class="observacion-label">Observaciones${obsRequired ? ' <span style="color:#e4001b;font-weight:700">* Requerida</span>' : ''}</span>
@@ -3176,7 +3178,9 @@ function nextQuestion() {
   const val0 = (ans0.valor || '').toLowerCase();
 
   // Solo validar reglas condicionales si hay una respuesta
-  if (val0 === 'no cumple' || val0.includes('parcial')) {
+  const regla0 = parseValidacion(q0.validacion || '');
+  const tieneVal0 = regla0 && (regla0.tipo === 'numero' || regla0.tipo === 'fecha');
+  if (!tieneVal0 && (val0 === 'no cumple' || val0.includes('parcial'))) {
     if (!(ans0.observacion || '').trim()) {
       alert('La observación es obligatoria cuando la respuesta es "No cumple" o parcial.');
       return;
