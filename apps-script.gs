@@ -1497,8 +1497,8 @@ function doGet(e) {
       if (!shGD || shGD.getLastRow() < 2) return jsonResponse({ success: false, error: 'Sin datos' });
 
       var lastGD = shGD.getLastRow();
-      var allGD  = shGD.getRange(2, 1, lastGD - 1, 20).getValues();
-      var dispGD = shGD.getRange(2, 1, lastGD - 1, 20).getDisplayValues();
+      var allGD  = shGD.getRange(2, 1, lastGD - 1, 21).getValues();
+      var dispGD = shGD.getRange(2, 1, lastGD - 1, 21).getDisplayValues();
       var rowsGD = allGD.map(function(r, rowIdx) {
         return r.map(function(v, colIdx) {
           if (v == null) return '';
