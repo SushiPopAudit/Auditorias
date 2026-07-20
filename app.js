@@ -1039,7 +1039,10 @@ function renderHistorial() {
     </div>`;
 
   const histTipo = state.historialTipo || '';
+  const _now = new Date();
+  const _cutoff = new Date(_now.getFullYear(), _now.getMonth() - 1, 1); // 1° del mes anterior
   const filtered = lista.filter(a => {
+    if (a.fechaISO && a.fechaISO < _cutoff.toISOString().slice(0,7)) return false;
     if (histTipo && (a.tipo || 'Oficial') !== histTipo) return false;
     if (!search) return true;
     return a.local.toLowerCase().includes(search) ||
@@ -1593,6 +1596,7 @@ function renderSetup() {
           <select class="form-control" id="sel-posicion-acomp">
             <option value="">— Sin especificar —</option>
             <option value="Franquiciado" ${state.posicionAcompanante === 'Franquiciado' ? 'selected' : ''}>Franquiciado</option>
+            <option value="Gerente" ${state.posicionAcompanante === 'Gerente' ? 'selected' : ''}>Gerente</option>
             <option value="Jefe de cocina" ${state.posicionAcompanante === 'Jefe de cocina' ? 'selected' : ''}>Jefe de cocina</option>
             <option value="Supervisor" ${state.posicionAcompanante === 'Supervisor' ? 'selected' : ''}>Supervisor</option>
             <option value="Encargado" ${state.posicionAcompanante === 'Encargado' ? 'selected' : ''}>Encargado</option>
