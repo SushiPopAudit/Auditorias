@@ -300,7 +300,12 @@ function calcularPuntaje(questions, answers) {
 
   questions.forEach(q => {
     const { type } = parseAnswerType(q.pregunta);
-    if (type !== 'radio') return; // numéricos/texto libre: sin puntaje automático por ahora
+    const regla = parseValidacion(q.validacion || '');
+    // Solo puntúan: radio, número con validación y fecha con validación
+    const tieneValidacion = regla && (regla.tipo === 'numero' || regla.tipo === 'fecha');
+    if (type !== 'radio' && !tieneValidacion) return;
+    // headcount nunca puntúa
+    if (regla && regla.tipo === 'headcount') return;
 
     const imp = (q.importancia || '').toLowerCase().trim();
     const val = (answers[q.id]?.valor || '').toLowerCase().trim();
@@ -2815,10 +2820,11 @@ function attachListeners() {
     });
   });
 
-  // Fecha vencimiento
+  // Fecha vencimiento — usar blur para no interrumpir el tipeo del año
   document.querySelectorAll('.fecha-venc-input').forEach(inp => {
-    inp.addEventListener('change', () => {
+    inp.addEventListener('blur', () => {
       const qid = inp.dataset.qid;
+      if (!inp.value) return;
       if (!state.answers[qid]) state.answers[qid] = {};
       state.answers[qid].fechaRaw = inp.value;
       const ev = evaluarFecha(inp.value);
