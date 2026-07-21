@@ -82,23 +82,25 @@ function doPost(e) {
         data.local,
         r.marca || data.marca,
         r.categoria, r.subcategoria, r.control, r.importancia,
-        r.explicacion, r.respuesta, r.observacion, fotoURL,
+        r.explicacion, r.respuesta,
+        r.headcount ? Object.entries(r.headcount).map(function(e){ return e[0].replace(/_/g,' ') + ': ' + e[1]; }).join(' | ') : (r.observacion || ''),
+        fotoURL,
         data.auditorEmail || '',
         data.puntaje?.pct    ?? '',             // col P — Puntaje %
         data.puntaje?.nivel  || '',             // col Q — Nivel
         data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
         data.acompanante ? (data.acompanante + (data.posicionAcompanante ? '|||' + data.posicionAcompanante : '')) : '', // col S — Acompañante|||Posición
         data.tipoAuditoria || 'Oficial',        // col T — Tipo
-        r.rawValor != null ? String(r.rawValor) : '', // col U — Valor numérico crudo
+        (r.rawValor != null && r.rawValor !== '') ? String(r.rawValor) : (r.fechaRaw || ''), // col U — valor crudo (número o fecha)
       ];
     });
 
     if (rows.length > 0) {
       var startRow = sheet.getLastRow() + 1;
       sheet.getRange(startRow, 1, rows.length, 21).setValues(rows);
-      // Force text format on Respuesta (col 12) and Observación (col 13) so numbers
-      // don't get auto-parsed as dates by Sheets
+      // Force text format on Respuesta (col 12), Observación (col 13), y RawValor (col 21)
       sheet.getRange(startRow, 12, rows.length, 2).setNumberFormat('@');
+      sheet.getRange(startRow, 21, rows.length, 1).setNumberFormat('@');
       colorearDesvios(sheet, rows);
       // Invalidar caché de auditorías y dashboard del auditor y del admin
       if (data.auditorEmail) {
@@ -1504,7 +1506,7 @@ function doGet(e) {
           if (v == null) return '';
           // For user-entered text columns (respuesta=11, observacion=12), use display value
           // to avoid Date-formatted cells returning JS Date objects.
-          if ((colIdx === 11 || colIdx === 12) && v instanceof Date) {
+          if ((colIdx === 11 || colIdx === 12 || colIdx === 20) && v instanceof Date) {
             return String(dispGD[rowIdx][colIdx] || '');
           }
           return String(v);

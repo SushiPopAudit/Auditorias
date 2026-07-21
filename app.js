@@ -1855,11 +1855,9 @@ function renderQuestionCard(q) {
     const naChecked = ans.valor === 'No aplica';
     inputHtml = `
     <div style="margin-top:8px;display:flex;gap:6px;align-items:center;${naChecked?'opacity:0.4;pointer-events:none':''}">
-      <button type="button" class="numero-neg-btn" data-qid="${q.id}"
-        style="flex-shrink:0;width:38px;height:44px;border:1px solid #d1d5db;border-radius:8px;background:#f3f4f6;font-size:1.2rem;font-weight:700;cursor:pointer;color:#374151">−</button>
-      <input class="number-input-validated form-control" type="text" inputmode="decimal"
-        pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
-        id="num_${q.id}" placeholder="Ej: -2,5" value="${naChecked ? '' : escHtml(numVal)}"
+      <input class="number-input-validated form-control" type="number" inputmode="decimal"
+        step="0.1" autocomplete="off" spellcheck="false"
+        id="num_${q.id}" placeholder="Ej: -2.5" value="${naChecked ? '' : escHtml(numVal)}"
         data-qid="${q.id}" style="flex:1;min-width:0">
     </div>
     <div id="badge_num_${q.id}" style="margin-top:6px;${resultado ? '' : 'display:none'}">
@@ -2818,7 +2816,7 @@ function attachListeners() {
       const qid = inp.dataset.qid;
       const q = state.categories.flatMap(c => c.questions).find(q => q.id === qid);
       if (!state.answers[qid]) state.answers[qid] = {};
-      const raw = inp.value.replace(/,/g, '.');
+      const raw = inp.value; // type="number" always gives period-separated decimals
       state.answers[qid].rawValor = raw;
       const regla = parseValidacion(q?.validacion || '');
       const resultado = raw ? evaluarNumero(raw, regla) : null;
@@ -2838,16 +2836,6 @@ function attachListeners() {
     });
   });
 
-  // Botón − para números negativos
-  document.querySelectorAll('.numero-neg-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const qid = btn.dataset.qid;
-      const inp = document.getElementById(`num_${qid}`);
-      if (!inp) return;
-      inp.value = inp.value.startsWith('-') ? inp.value.slice(1) : '-' + inp.value;
-      inp.dispatchEvent(new Event('input'));
-    });
-  });
 
   // Fecha vencimiento — usar blur para no interrumpir el tipeo del año
   document.querySelectorAll('.fecha-venc-input').forEach(inp => {
