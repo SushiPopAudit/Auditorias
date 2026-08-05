@@ -532,7 +532,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   var seccionReprobado = '';
   if (data.puntaje && data.puntaje.reprobado) {
     var criticosReprobados = rows.filter(function(r) {
-      var imp = (r[9]||'').toLowerCase().replace(/Ã­/g,'i');
+      var imp = normImp(r[9]);
       var res = (r[11]||'').toLowerCase();
       return (imp === 'critico') && (res.includes('no cumple') || res === 'nocumple');
     });
@@ -564,13 +564,13 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   }
 
   // ---- 5+6. GRÃFICO Y % POR CATEGORÃA ----
-  var maxPts     = { 'critico':4,'crÃ­tico':4,'alta':3,'media':2,'baja':1 };
-  var parcialPts = { 'critico':2,'crÃ­tico':2,'alta':1,'media':1,'baja':0 };
+  var maxPts     = { 'critico':4,'alta':3,'media':2,'baja':1 };
+  var parcialPts = { 'critico':2,'alta':1,'media':1,'baja':0 };
   var catMap = {};
   rows.forEach(function(r) {
     var cat = r[6] || 'Sin categor&iacute;a';
     var res = (r[11]||'').toLowerCase().trim();
-    var imp = (r[9]||'').toLowerCase().trim();
+    var imp = normImp(r[9]);
     if (!catMap[cat]) catMap[cat] = { obtenido:0, posible:0 };
     if (!res || res.includes('aplica')) return;
     var max = maxPts[imp];
@@ -617,7 +617,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   // Si hay reprobado, excluir los crÃ­ticos que no cumplen (ya mostrados arriba)
   var noOkRows = rows.filter(function(r){
     var v = (r[11]||'').toLowerCase();
-    var esCriticoNC = (r[9]||'').toLowerCase().replace(/Ã­/g,'i') === 'critico' && (v.includes('no cumple') || v === 'nocumple');
+    var esCriticoNC = normImp(r[9]) === 'critico' && (v.includes('no cumple') || v === 'nocumple');
     if (data.puntaje && data.puntaje.reprobado && esCriticoNC) return false;
     return v.includes('no cumple') || v === 'nocumple' || v.includes('parcial');
   });
@@ -826,17 +826,17 @@ function enviarEmailAuditoria(data, rows, desviosRepetidos, historial, pdfResult
 }
 
 function getImpBg(imp) {
-  const i = (imp||'').toLowerCase();
-  if (i==='critico'||i==='crÃ­tico') return '#fff1f2';
-  if (i==='alta')  return '#fff7ed';
-  if (i==='media') return '#fffbeb';
+  const i = normImp(imp);
+  if (i==='critico') return '#fff1f2';
+  if (i==='alta')    return '#fff7ed';
+  if (i==='media')   return '#fffbeb';
   return '#f0fdf4';
 }
 function getImpColor(imp) {
-  const i = (imp||'').toLowerCase();
-  if (i==='critico'||i==='crÃ­tico') return '#e4001b';
-  if (i==='alta')  return '#ea580c';
-  if (i==='media') return '#d97706';
+  const i = normImp(imp);
+  if (i==='critico') return '#e4001b';
+  if (i==='alta')    return '#ea580c';
+  if (i==='media')   return '#d97706';
   return '#16a34a';
 }
 
@@ -848,7 +848,7 @@ function colorearDesvios(sheet, rows) {
   rows.forEach((row, i) => {
     const imp = (row[9]||'').toLowerCase();   // importancia = Ã­ndice 9
     const res = (row[11]||'').toLowerCase();  // respuesta   = Ã­ndice 11
-    const isCrit = imp==='critico'||imp==='crÃ­tico';
+    const isCrit = normImp(imp)==='critico';
     const isNC   = res.includes('no cumple')||res==='nocumple';
     if (isCrit && isNC) sheet.getRange(firstRow+i,1,1,15).setBackground('#fff1f2');
     else if (isNC)      sheet.getRange(firstRow+i,1,1,15).setBackground('#fff7ed');
@@ -859,18 +859,21 @@ function colorearDesvios(sheet, rows) {
 // ============================================================
 // RECALCULAR PUNTAJE DESDE FILAS
 // ============================================================
+function normImp(s) {
+  return String(s||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+}
+
 function recalcularPuntaje(rows) {
-  var maxPts     = { 'critico':4, 'crÃ­tico':4, 'alta':3, 'media':2, 'baja':1 };
-  var parcialPts = { 'critico':2, 'crÃ­tico':2, 'alta':1, 'media':1, 'baja':0 };
+  var maxPts     = { 'critico':4, 'alta':3, 'media':2, 'baja':1 };
+  var parcialPts = { 'critico':2, 'alta':1, 'media':1, 'baja':0 };
   var obtenido = 0, posible = 0, reprobado = false;
 
   rows.forEach(function(r) {
-    var imp = String(r[9]||'').toLowerCase().trim();
+    var imp = normImp(r[9]);
     var res = String(r[11]||'').toLowerCase().trim();
     var max = maxPts[imp];
     if (!max) return;
     if (!res || res.includes('aplica')) return;
-    // Solo puntÃºan preguntas de tipo radio (tienen cumple/no cumple/parcial)
     if (!res.includes('cumple') && !res.includes('parcial')) return;
     posible += max;
     if (res === 'cumple') {
@@ -878,7 +881,7 @@ function recalcularPuntaje(rows) {
     } else if (res.includes('parcial')) {
       obtenido += parcialPts[imp] || 0;
     } else if (res.includes('no cumple') || res === 'nocumple') {
-      if (imp === 'critico' || imp === 'crÃ­tico') reprobado = true;
+      if (imp === 'critico') reprobado = true;
     }
   });
 
@@ -1763,13 +1766,13 @@ function doGet(e) {
       }
 
       // Helper: ranking of categories by compliance % (same weights as recalcularPuntaje)
-      var catMaxPts     = { 'critico':4, 'crÃ­tico':4, 'alta':3, 'media':2, 'baja':1 };
-      var catParcialPts = { 'critico':2, 'crÃ­tico':2, 'alta':1, 'media':1, 'baja':0 };
+      var catMaxPts     = { 'critico':4, 'alta':3, 'media':2, 'baja':1 };
+      var catParcialPts = { 'critico':2, 'alta':1, 'media':1, 'baja':0 };
       function rankingCategorias(auditRows) {
         var catMap = {};
         auditRows.forEach(function(r) {
           var cat  = String(r[6]||'').trim();
-          var imp  = (String(r[9]||'')).toLowerCase().trim();
+          var imp  = normImp(r[9]);
           var resp = (String(r[11]||'')).trim().toLowerCase();
           if (!cat || !imp) return;
           var max = catMaxPts[imp];
@@ -2136,7 +2139,7 @@ function doGet(e) {
           var res = String(r[11]||'').toLowerCase();
           var imp = String(r[9]||'').toLowerCase();
           var isNoCumple   = res.includes('no cumple') || res === 'nocumple';
-          var isCritParcial= res.includes('parcial') && (imp === 'critico' || imp === 'crÃ­tico');
+          var isCritParcial= res.includes('parcial') && normImp(imp) === 'critico';
           return isNoCumple || isCritParcial;
         }).map(function(r){
           return {
