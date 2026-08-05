@@ -75,6 +75,19 @@ const state = {
 
   historialTipo:          '',
 
+  // ABM Preguntas (admin)
+  adminPreguntas:         null,   // array cargado desde API
+  adminPreguntasLoading:  false,
+  adminPreguntasError:    '',
+  adminPreguntasSearch:   '',
+  adminPreguntasMarca:    '',     // filtro: '' | 'Multimarca' | 'Causa'
+  adminPreguntasCat:      '',     // filtro por categoría
+  adminEditingPregunta:   null,   // {rowIndex, ...campos} o null
+  adminPreguntasSaving:   false,
+  adminPreguntasMsg:      '',
+  // Modal ayuda pregunta (durante auditoría)
+  helpModalQid:           null,
+
   // Calendario
   calendarioVisitas:      null,   // array de visitas o null si no cargado
   calendarioLoading:      false,
@@ -233,6 +246,8 @@ function buildCategories(isCausa) {
       explicacion:  r[5] || '',
       pregunta:     r[6] || '',
       imagen:       (r[7] || '').trim().toLowerCase(),
+      tipoRespuesta: (r[8] || '').trim().toLowerCase(),
+      explicacionDetallada: r[9] || '',
       validacion:   (r[10] || '').trim(),
     });
   });
@@ -240,7 +255,21 @@ function buildCategories(isCausa) {
   return Array.from(map.entries()).map(([name, questions]) => ({ name, questions }));
 }
 
-function parseAnswerType(pregunta) {
+function parseAnswerType(pregunta, tipoRespuesta) {
+  if (tipoRespuesta) {
+    const tr = tipoRespuesta.toLowerCase();
+    if (tr === 'numero') return { type: 'number', options: [] };
+    if (tr === 'fecha')  return { type: 'fecha',  options: [] };
+    if (tr.startsWith('radio')) {
+      const colonIdx = tr.indexOf(':');
+      if (colonIdx > -1) {
+        const opts = tipoRespuesta.slice(colonIdx + 1).split('/').map(o => o.trim()).filter(Boolean);
+        return { type: 'radio', options: opts };
+      }
+      return { type: 'radio', options: ['Cumple', 'Cumple parcialmente', 'No Cumple', 'No aplica'] };
+    }
+  }
+  // Backward-compat: detectar desde texto de pregunta
   if (!pregunta) return { type: 'text', options: [] };
   const lower = pregunta.toLowerCase();
   if (lower.includes('numerico') || lower.includes('numérico') || lower.includes('valor medido')) {
@@ -342,7 +371,7 @@ function calcularPuntaje(questions, answers) {
   let obtenido = 0, posible = 0, reprobado = false;
 
   questions.forEach(q => {
-    const { type } = parseAnswerType(q.pregunta);
+    const { type } = parseAnswerType(q.pregunta, q.tipoRespuesta);
     const regla = parseValidacion(q.validacion || '');
     // Solo puntúan: radio, número con validación y fecha con validación
     const tieneValidacion = regla && (regla.tipo === 'numero' || regla.tipo === 'fecha');
@@ -440,6 +469,28 @@ function render() {
     app.insertAdjacentHTML('beforeend',
       state.user.rol === 'Admin' ? renderAdminBottomNav() : renderUserBottomNav()
     );
+  }
+  // Modal ayuda de pregunta
+  if (state.helpModalQid) {
+    const allQs = state.categories ? state.categories.flatMap(function(c) { return c.questions; }) : [];
+    const hq = allQs.find(function(q) { return q.id === state.helpModalQid; });
+    if (hq && hq.explicacionDetallada) {
+      const modal = document.createElement('div');
+      modal.id = 'help-modal-backdrop';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:flex-end';
+      modal.innerHTML = '<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:75vh;overflow-y:auto;padding:20px 16px 36px">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+        + '<div style="font-weight:700;font-size:1rem;color:#1a1a1a">ℹ️ ' + escHtml(hq.control) + '</div>'
+        + '<button id="btn-help-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;padding:0 4px">&times;</button>'
+        + '</div>'
+        + '<div style="font-size:0.9rem;color:#374151;line-height:1.6;white-space:pre-wrap">' + escHtml(hq.explicacionDetallada) + '</div>'
+        + '</div>';
+      document.body.appendChild(modal);
+      document.getElementById('btn-help-close').addEventListener('click', function() { state.helpModalQid = null; render(); });
+      modal.addEventListener('click', function(e) { if (e.target === modal) { state.helpModalQid = null; render(); } });
+    } else {
+      state.helpModalQid = null;
+    }
   }
   attachListeners();
 }
@@ -1003,9 +1054,10 @@ function renderAdmin() {
   const u = state.user;
   if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
   const tab = state.adminTab || 'menu';
-  if (tab === 'menu')     return renderAdminMenu();
-  if (tab === 'usuarios') return renderAdminSubscreen('Usuarios', renderAdminUsuarios());
-  if (tab === 'locales')  return renderAdminSubscreen('Locales',  renderAdminLocales());
+  if (tab === 'menu')      return renderAdminMenu();
+  if (tab === 'usuarios')  return renderAdminSubscreen('Usuarios', renderAdminUsuarios());
+  if (tab === 'locales')   return renderAdminSubscreen('Locales',  renderAdminLocales());
+  if (tab === 'preguntas') return renderAdminPreguntas();
   return renderAdminMenu();
 }
 
@@ -1067,10 +1119,180 @@ function renderAdminMenu() {
             <span style="font-size:1.6rem">📅</span>
             <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Calendario</span>
           </button>
+          <button id="btn-admin-go-preguntas" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+            <span style="font-size:1.6rem">📋</span>
+            <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Auditoría</span>
+          </button>
         </div>
         <button class="btn btn-outline" id="btn-logout" style="width:100%;color:#94a3b8;border-color:#334155;font-size:0.85rem">Cerrar sesión</button>
       </div>
     </div>`;
+}
+
+// ============================================================
+// PANTALLA: ABM PREGUNTAS
+// ============================================================
+function renderAdminPreguntas() {
+  const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
+  const editing  = state.adminEditingPregunta;
+  const loading  = state.adminPreguntasLoading;
+  const err      = state.adminPreguntasError || '';
+  const saving   = state.adminPreguntasSaving;
+  const msg      = state.adminPreguntasMsg || '';
+  const preguntas = state.adminPreguntas || [];
+  const search   = (state.adminPreguntasSearch || '').toLowerCase();
+  const filMarca = state.adminPreguntasMarca || '';
+  const filCat   = state.adminPreguntasCat   || '';
+
+  const header = '<div style="background:#7c3aed;color:#fff;padding:16px;display:flex;align-items:center;gap:10px">'
+    + '<button id="btn-preguntas-back" style="background:none;border:none;color:#fff;font-size:1.3rem;cursor:pointer;padding:0 6px 0 0">‹</button>'
+    + '<div style="font-size:1.05rem;font-weight:700;flex:1">Preguntas de Auditoría</div>'
+    + '<button id="btn-pregunta-nueva" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:8px;padding:6px 12px;font-size:0.82rem;font-weight:600;cursor:pointer">+ Nueva</button>'
+    + '</div>';
+
+  if (loading) return '<div style="display:flex;flex-direction:column;min-height:100vh;' + pb + '">' + header
+    + '<div style="flex:1;display:flex;align-items:center;justify-content:center"><div style="text-align:center;color:#6b7280"><div style="font-size:2rem;margin-bottom:8px">⏳</div><div>Cargando preguntas…</div></div></div></div>';
+
+  // ── FORMULARIO EDICIÓN/CREACIÓN ──
+  if (editing !== null) {
+    const isNew  = !editing.rowIndex;
+    const p      = editing;
+    const tipo   = p.tipoRespuesta || 'radio';
+
+    // Opciones custom si tipo empieza con 'radio:'
+    const colonIdx = tipo.indexOf(':');
+    const tipoBase = colonIdx > -1 ? 'radio_custom' : tipo;
+    const opcionesCustom = colonIdx > -1 ? tipo.slice(colonIdx + 1) : '';
+
+    // Rangos para tipo numero
+    let cumpleMin = '', cumpleMax = '', parcialMin = '', parcialMax = '', allowNA = false;
+    if (p.validacion) {
+      const regla = parseValidacion(p.validacion);
+      if (regla && regla.tipo === 'numero') {
+        cumpleMin  = regla.cumple  ? (regla.cumple.min  !== null ? regla.cumple.min  : '') : '';
+        cumpleMax  = regla.cumple  ? (regla.cumple.max  !== null ? regla.cumple.max  : '') : '';
+        parcialMin = regla.parcial ? regla.parcial.min : '';
+        parcialMax = regla.parcial ? regla.parcial.max : '';
+        allowNA    = regla.allowNA || false;
+      }
+    }
+
+    function inp(id, label, value, placeholder) {
+      return '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">' + label + '</label>'
+        + '<input id="' + id + '" value="' + escHtml(value || '') + '" placeholder="' + escHtml(placeholder || '') + '" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box"></div>';
+    }
+    function sel(id, label, value, opts) {
+      return '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">' + label + '</label>'
+        + '<select id="' + id + '" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff">'
+        + opts.map(function(o) { return '<option value="' + escHtml(o.v) + '"' + (value === o.v ? ' selected' : '') + '>' + escHtml(o.l) + '</option>'; }).join('')
+        + '</select></div>';
+    }
+
+    // Categorías únicas de las preguntas existentes
+    const cats = Array.from(new Set(preguntas.map(function(p) { return p.categoria; }))).sort();
+
+    const rangosHtml = (tipoBase === 'numero')
+      ? '<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:12px">'
+        + '<div style="font-size:0.78rem;font-weight:700;color:#374151;margin-bottom:10px">Rangos de cumplimiento</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+        + '<div><label style="font-size:0.72rem;font-weight:600;color:#16a34a">Cumple — Mín</label><input id="pf-cumple-min" type="number" step="0.1" value="' + escHtml(String(cumpleMin)) + '" placeholder="ej: -2" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
+        + '<div><label style="font-size:0.72rem;font-weight:600;color:#16a34a">Cumple — Máx</label><input id="pf-cumple-max" type="number" step="0.1" value="' + escHtml(String(cumpleMax)) + '" placeholder="ej: 2" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
+        + '<div><label style="font-size:0.72rem;font-weight:600;color:#d97706">Parcial — Mín</label><input id="pf-parcial-min" type="number" step="0.1" value="' + escHtml(String(parcialMin)) + '" placeholder="opcional" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
+        + '<div><label style="font-size:0.72rem;font-weight:600;color:#d97706">Parcial — Máx</label><input id="pf-parcial-max" type="number" step="0.1" value="' + escHtml(String(parcialMax)) + '" placeholder="opcional" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
+        + '</div>'
+        + '<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:#6b7280"><input type="checkbox" id="pf-allow-na"' + (allowNA ? ' checked' : '') + '> Permite "No aplica"</label>'
+        + '</div>'
+      : '';
+
+    const opcionesHtml = (tipoBase === 'radio_custom')
+      ? '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Opciones (separadas por /)</label>'
+        + '<input id="pf-opciones" value="' + escHtml(opcionesCustom) + '" placeholder="Ej: Cumple/No Cumple" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box"></div>'
+      : '';
+
+    return '<div style="display:flex;flex-direction:column;min-height:100vh;' + pb + '">' + header
+      + '<div style="flex:1;overflow-y:auto;padding:16px">'
+      + '<h3 style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin:0 0 16px">' + (isNew ? 'Nueva pregunta' : 'Editar pregunta') + '</h3>'
+      + (err ? '<div style="background:#fff1f2;border:1px solid #fca5a5;border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.85rem;color:#e4001b">' + escHtml(err) + '</div>' : '')
+      + (msg ? '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.85rem;color:#16a34a">' + escHtml(msg) + '</div>' : '')
+      + sel('pf-marca', 'Marca *', p.marca, [{v:'Multimarca',l:'Multimarca'},{v:'Causa',l:'Causa'}])
+      + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Categoría *</label>'
+      + '<input id="pf-categoria" list="pf-cats-list" value="' + escHtml(p.categoria || '') + '" placeholder="Ej: BPM" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box">'
+      + '<datalist id="pf-cats-list">' + cats.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('') + '</datalist></div>'
+      + inp('pf-subcategoria', 'Subcategoría', p.subcategoria, 'Ej: Limpieza')
+      + inp('pf-control', 'Control *', p.control, 'Nombre del punto de control')
+      + sel('pf-importancia', 'Importancia *', p.importancia || 'Media', [{v:'Crítico',l:'Crítico'},{v:'Alta',l:'Alta'},{v:'Media',l:'Media'},{v:'Baja',l:'Baja'}])
+      + inp('pf-explicacion', 'Explicación corta', p.explicacion, 'Breve descripción visible durante la auditoría')
+      + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Pregunta *</label>'
+      + '<textarea id="pf-pregunta" rows="2" placeholder="Texto de la pregunta al auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box;resize:vertical">' + escHtml(p.pregunta || '') + '</textarea></div>'
+      + sel('pf-tipo', 'Tipo de respuesta *', tipoBase, [
+          {v:'radio',       l:'Cumple / Parcial / No Cumple / No aplica (estándar)'},
+          {v:'radio_custom',l:'Radio con opciones personalizadas'},
+          {v:'numero',      l:'Número / Temperatura'},
+          {v:'fecha',       l:'Fecha de vencimiento'},
+          {v:'texto',       l:'Texto libre'},
+        ])
+      + opcionesHtml
+      + rangosHtml
+      + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Explicación detallada (botón ?)</label>'
+      + '<textarea id="pf-expl-det" rows="3" placeholder="Descripción detallada de lo que se audita (visible al tocar ?)" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box;resize:vertical">' + escHtml(p.explicacionDetallada || '') + '</textarea></div>'
+      + sel('pf-imagen', 'Foto', p.imagen || '', [{v:'',l:'No requerida'},{v:'si',l:'Recomendada'},{v:'obligatorio',l:'Obligatoria'}])
+      + '<div style="display:flex;gap:10px;margin-top:4px">'
+      + '<button id="btn-pf-cancelar" style="flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:0.9rem;font-weight:600;cursor:pointer;background:#fff;color:#6b7280">Cancelar</button>'
+      + '<button id="btn-pf-guardar" style="flex:2;border:none;border-radius:8px;padding:12px;font-size:0.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">' + (saving ? 'Guardando…' : (isNew ? 'Agregar pregunta' : 'Guardar cambios')) + '</button>'
+      + '</div>'
+      + (!isNew ? '<button id="btn-pf-borrar" style="width:100%;margin-top:10px;border:1px solid #fca5a5;border-radius:8px;padding:10px;font-size:0.85rem;font-weight:600;cursor:pointer;background:#fff1f2;color:#e4001b">Borrar esta pregunta</button>' : '')
+      + '</div></div>';
+  }
+
+  // ── LISTA ──
+  const cats = Array.from(new Set(preguntas.map(function(p) { return p.categoria; }))).sort();
+  const filtered = preguntas.filter(function(p) {
+    if (filMarca && p.marca !== filMarca) return false;
+    if (filCat   && p.categoria !== filCat) return false;
+    if (search && !(p.control.toLowerCase().includes(search) || p.categoria.toLowerCase().includes(search) || p.subcategoria.toLowerCase().includes(search))) return false;
+    return true;
+  });
+
+  const filtersHtml = '<div style="padding:10px 16px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #f3f4f6">'
+    + '<select id="pf-fil-marca" style="border:1px solid #e5e7eb;border-radius:20px;padding:5px 10px;font-size:0.75rem;color:#374151;background:#fff">'
+    + '<option value="">Todas las marcas</option>'
+    + ['Multimarca','Causa'].map(function(m) { return '<option value="' + m + '"' + (filMarca===m?' selected':'') + '>' + m + '</option>'; }).join('')
+    + '</select>'
+    + '<select id="pf-fil-cat" style="border:1px solid #e5e7eb;border-radius:20px;padding:5px 10px;font-size:0.75rem;color:#374151;background:#fff">'
+    + '<option value="">Todas las categorías</option>'
+    + cats.map(function(c) { return '<option value="' + escHtml(c) + '"' + (filCat===c?' selected':'') + '>' + escHtml(c) + '</option>'; }).join('')
+    + '</select>'
+    + '</div>'
+    + '<div style="padding:10px 16px;border-bottom:1px solid #f3f4f6">'
+    + '<input id="pf-search" value="' + escHtml(state.adminPreguntasSearch || '') + '" placeholder="Buscar por control, categoría…" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;box-sizing:border-box">'
+    + '</div>';
+
+  const listHtml = filtered.length === 0
+    ? '<div style="text-align:center;color:#9ca3af;padding:40px 16px">' + (preguntas.length === 0 ? 'No hay preguntas cargadas.' : 'Sin resultados para el filtro.') + '</div>'
+    : filtered.map(function(p) {
+        const tipoBadgeColor = p.tipoRespuesta === 'numero' ? '#0284c7' : p.tipoRespuesta === 'fecha' ? '#7c3aed' : '#374151';
+        const tipoBadgeBg   = p.tipoRespuesta === 'numero' ? '#e0f2fe' : p.tipoRespuesta === 'fecha' ? '#ede9fe' : '#f1f5f9';
+        return '<div data-pregunta-row="' + p.rowIndex + '" style="padding:12px 16px;border-bottom:1px solid #f3f4f6;cursor:pointer;display:flex;align-items:flex-start;gap:10px">'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;margin-bottom:3px">' + escHtml(p.control) + '</div>'
+          + '<div style="font-size:0.75rem;color:#6b7280">' + escHtml(p.categoria) + (p.subcategoria ? ' › ' + escHtml(p.subcategoria) : '') + '</div>'
+          + '</div>'
+          + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">'
+          + '<span style="font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:10px;background:' + tipoBadgeBg + ';color:' + tipoBadgeColor + '">' + escHtml(p.tipoRespuesta || 'radio') + '</span>'
+          + '<span style="font-size:0.65rem;color:#9ca3af">' + escHtml(p.marca) + '</span>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+
+  const countLabel = '<div style="padding:8px 16px;font-size:0.75rem;color:#9ca3af">' + filtered.length + ' de ' + preguntas.length + ' preguntas</div>';
+
+  return '<div style="display:flex;flex-direction:column;min-height:100vh;' + pb + '">' + header
+    + (err ? '<div style="background:#fff1f2;border-bottom:1px solid #fca5a5;padding:10px 16px;font-size:0.85rem;color:#e4001b">' + escHtml(err) + '</div>' : '')
+    + (msg ? '<div style="background:#f0fdf4;border-bottom:1px solid #86efac;padding:10px 16px;font-size:0.85rem;color:#16a34a">' + escHtml(msg) + '</div>' : '')
+    + filtersHtml
+    + countLabel
+    + '<div style="flex:1;overflow-y:auto">' + listHtml + '</div>'
+    + '</div>';
 }
 
 function renderAdminSubscreen(title, content) {
@@ -1825,7 +2047,7 @@ function renderHistorialEditar() {
       const ch        = changes[r.control] || {};
       const q         = allQs.find(q => q.control === r.control);
       const regla     = q ? parseValidacion(q.validacion || '') : null;
-      const { type, options } = q ? parseAnswerType(q.pregunta) : { type: 'text', options: [] };
+      const { type, options } = q ? parseAnswerType(q.pregunta, q.tipoRespuesta) : { type: 'text', options: [] };
 
       const curValor  = ch.valor       !== undefined ? ch.valor       : (r.respuesta  || '');
       const curObs    = ch.observacion !== undefined ? ch.observacion  : (r.observacion|| '');
@@ -2377,7 +2599,7 @@ function renderAudit() {
 function renderQuestionCard(q) {
   const imp = importanciaClass(q.importancia);
   const ans = state.answers[q.id] || {};
-  const { type, options } = parseAnswerType(q.pregunta);
+  const { type, options } = parseAnswerType(q.pregunta, q.tipoRespuesta);
   const regla = parseValidacion(q.validacion || '');
   const needsPhoto = q.imagen === 'si' || q.imagen === 'obligatorio';
 
@@ -2514,7 +2736,10 @@ function renderQuestionCard(q) {
         <span class="badge badge-${imp}">${q.importancia || 'Media'}</span>
         <span class="question-subcategoria">${escHtml(q.subcategoria)}</span>
       </div>
-      <div class="question-control">${escHtml(q.control)}</div>
+      <div class="question-control" style="display:flex;align-items:flex-start;gap:8px">
+        <span style="flex:1">${escHtml(q.control)}</span>
+        ${q.explicacionDetallada ? `<button class="btn-q-help" data-qid="${q.id}" title="Ver detalle" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid #94a3b8;background:none;cursor:pointer;font-size:0.7rem;font-weight:700;color:#64748b;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px">?</button>` : ''}
+      </div>
       ${q.explicacion ? `<div class="question-explicacion">${escHtml(q.explicacion)}</div>` : ''}
       ${inputHtml}
       ${obsHtml}
@@ -2994,10 +3219,10 @@ function attachListeners() {
     if (promises.length) await Promise.all(promises);
   }
 
-  on('btn-admin-go-usuarios',  'click', goToUsuarios);
-  on('btn-admin-go-locales',      'click', goToLocales);
-  on('btn-admin-go-usuarios',     'click', goToUsuarios);
-  on('btn-admin-go-calendario',   'click', goToCalendario);
+  on('btn-admin-go-usuarios',    'click', goToUsuarios);
+  on('btn-admin-go-locales',     'click', goToLocales);
+  on('btn-admin-go-calendario',  'click', goToCalendario);
+  on('btn-admin-go-preguntas',   'click', goToPreguntas);
   on('nav-admin-inicio',       'click', () => setState({ screen: 'admin', adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
   on('nav-admin-dashboard',    'click', async () => {
     setState({ screen: 'dashboard' });
@@ -3039,6 +3264,173 @@ function attachListeners() {
       render();
     }
   }
+  // ── goToPreguntas ──
+  async function goToPreguntas() {
+    setState({ screen: 'admin', adminTab: 'preguntas', adminEditingPregunta: null, adminPreguntasMsg: '' });
+    if (!state.adminPreguntas) {
+      state.adminPreguntasLoading = true; render();
+      try {
+        const res = await callAPI({ action: 'getPreguntas', email: state.user.email, token: state.user.token });
+        state.adminPreguntas        = res.success ? (res.preguntas || []) : [];
+        state.adminPreguntasError   = res.success ? '' : (res.error || 'Error al cargar preguntas');
+      } catch(e) {
+        state.adminPreguntas      = [];
+        state.adminPreguntasError = 'Error de conexión: ' + e.message;
+      }
+      state.adminPreguntasLoading = false;
+      render();
+    }
+  }
+
+  on('btn-preguntas-back', 'click', function() {
+    if (state.adminEditingPregunta !== null) {
+      state.adminEditingPregunta = null; render();
+    } else {
+      setState({ screen: 'admin', adminTab: 'menu' });
+    }
+  });
+
+  on('btn-pregunta-nueva', 'click', function() {
+    state.adminEditingPregunta = { marca:'Multimarca', categoria:'', subcategoria:'', control:'', importancia:'Media', explicacion:'', pregunta:'', imagen:'', tipoRespuesta:'radio', explicacionDetallada:'', validacion:'' };
+    state.adminPreguntasMsg = ''; state.adminPreguntasError = '';
+    render();
+  });
+
+  // Click en fila de pregunta → editar
+  document.querySelectorAll('[data-pregunta-row]').forEach(function(el) {
+    el.addEventListener('click', function() {
+      const row = parseInt(el.dataset.preguntaRow, 10);
+      const p = (state.adminPreguntas || []).find(function(x) { return x.rowIndex === row; });
+      if (p) { state.adminEditingPregunta = Object.assign({}, p); state.adminPreguntasMsg = ''; state.adminPreguntasError = ''; render(); }
+    });
+  });
+
+  // Guardar pregunta (nueva o edición)
+  on('btn-pf-guardar', 'click', async function() {
+    const p = state.adminEditingPregunta;
+    if (!p) return;
+    const marca   = (document.getElementById('pf-marca')?.value || '').trim();
+    const cat     = (document.getElementById('pf-categoria')?.value || '').trim();
+    const control = (document.getElementById('pf-control')?.value || '').trim();
+    const impor   = (document.getElementById('pf-importancia')?.value || '').trim();
+    const pregunta = (document.getElementById('pf-pregunta')?.value || '').trim();
+    const tipoBase = (document.getElementById('pf-tipo')?.value || 'radio').trim();
+    const errEl = document.getElementById('cal-add-error');
+    if (!marca || !cat || !control || !pregunta) {
+      state.adminPreguntasError = 'Completá los campos obligatorios (*)'; render(); return;
+    }
+    // Construir tipoRespuesta final
+    let tipoFinal = tipoBase;
+    if (tipoBase === 'radio_custom') {
+      const opts = (document.getElementById('pf-opciones')?.value || '').trim();
+      tipoFinal = opts ? 'radio:' + opts : 'radio';
+    }
+    // Construir validacion para numero
+    let validacion = p.validacion || '';
+    if (tipoBase === 'numero') {
+      const cMin = document.getElementById('pf-cumple-min')?.value.trim();
+      const cMax = document.getElementById('pf-cumple-max')?.value.trim();
+      const pMin = document.getElementById('pf-parcial-min')?.value.trim();
+      const pMax = document.getElementById('pf-parcial-max')?.value.trim();
+      const naOk = document.getElementById('pf-allow-na')?.checked;
+      let v = 'numero';
+      if (cMin !== '' || cMax !== '') v += '|C:' + (cMin||'*') + ':' + (cMax||'*');
+      if (pMin !== '' && pMax !== '') v += '|P:' + pMin + ':' + pMax;
+      if (naOk) v += '|NA';
+      validacion = v;
+    }
+    if (tipoBase === 'fecha') validacion = 'fecha' + (document.getElementById('pf-allow-na')?.checked ? '|NA' : '');
+    const params = {
+      action:   p.rowIndex ? 'editPregunta' : 'addPregunta',
+      email:    state.user.email,
+      token:    state.user.token,
+      rowIndex: p.rowIndex || '',
+      marca:    marca,
+      categoria:    cat,
+      subcategoria: (document.getElementById('pf-subcategoria')?.value || '').trim(),
+      control:      control,
+      importancia:  impor,
+      explicacion:  (document.getElementById('pf-explicacion')?.value || '').trim(),
+      pregunta:     pregunta,
+      imagen:       (document.getElementById('pf-imagen')?.value || '').trim(),
+      tipoRespuesta: tipoFinal,
+      explicacionDetallada: (document.getElementById('pf-expl-det')?.value || '').trim(),
+      validacion:   validacion,
+    };
+    state.adminPreguntasSaving = true; state.adminPreguntasError = ''; render();
+    try {
+      const res = await callAPI(params);
+      if (res.success) {
+        state.adminPreguntas = null; // forzar recarga
+        state.adminEditingPregunta = null;
+        state.adminPreguntasMsg = p.rowIndex ? 'Pregunta actualizada.' : 'Pregunta agregada.';
+        await goToPreguntas();
+      } else {
+        state.adminPreguntasError = res.error || 'Error al guardar';
+      }
+    } catch(e) { state.adminPreguntasError = 'Error de conexión: ' + e.message; }
+    state.adminPreguntasSaving = false; render();
+  });
+
+  // Borrar pregunta
+  on('btn-pf-borrar', 'click', async function() {
+    const p = state.adminEditingPregunta;
+    if (!p || !p.rowIndex) return;
+    if (!confirm('¿Borrar la pregunta "' + p.control + '"? Esta acción no se puede deshacer.')) return;
+    state.adminPreguntasSaving = true; render();
+    try {
+      const res = await callAPI({ action: 'deletePregunta', email: state.user.email, token: state.user.token, rowIndex: p.rowIndex });
+      if (res.success) {
+        state.adminPreguntas = null;
+        state.adminEditingPregunta = null;
+        state.adminPreguntasMsg = 'Pregunta eliminada.';
+        await goToPreguntas();
+      } else {
+        state.adminPreguntasError = res.error || 'Error al borrar';
+        state.adminPreguntasSaving = false; render();
+      }
+    } catch(e) { state.adminPreguntasError = 'Error de conexión: ' + e.message; state.adminPreguntasSaving = false; render(); }
+  });
+
+  on('btn-pf-cancelar', 'click', function() { state.adminEditingPregunta = null; render(); });
+
+  // Filtros lista
+  const pfFilMarca = document.getElementById('pf-fil-marca');
+  if (pfFilMarca) pfFilMarca.addEventListener('change', function() { state.adminPreguntasMarca = this.value; render(); });
+  const pfFilCat = document.getElementById('pf-fil-cat');
+  if (pfFilCat) pfFilCat.addEventListener('change', function() { state.adminPreguntasCat = this.value; render(); });
+  const pfSearch = document.getElementById('pf-search');
+  if (pfSearch) pfSearch.addEventListener('input', function() { state.adminPreguntasSearch = this.value; render(); });
+
+  // Tipo respuesta → re-render para mostrar/ocultar campos
+  const pfTipo = document.getElementById('pf-tipo');
+  if (pfTipo) pfTipo.addEventListener('change', function() {
+    if (state.adminEditingPregunta) {
+      state.adminEditingPregunta = Object.assign({}, state.adminEditingPregunta, {
+        tipoRespuesta: this.value === 'radio_custom' ? 'radio:' : this.value,
+        pregunta: document.getElementById('pf-pregunta')?.value || state.adminEditingPregunta.pregunta,
+        categoria: document.getElementById('pf-categoria')?.value || state.adminEditingPregunta.categoria,
+        subcategoria: document.getElementById('pf-subcategoria')?.value || state.adminEditingPregunta.subcategoria,
+        control: document.getElementById('pf-control')?.value || state.adminEditingPregunta.control,
+        importancia: document.getElementById('pf-importancia')?.value || state.adminEditingPregunta.importancia,
+        explicacion: document.getElementById('pf-explicacion')?.value || state.adminEditingPregunta.explicacion,
+        explicacionDetallada: document.getElementById('pf-expl-det')?.value || state.adminEditingPregunta.explicacionDetallada,
+        imagen: document.getElementById('pf-imagen')?.value || state.adminEditingPregunta.imagen,
+        marca: document.getElementById('pf-marca')?.value || state.adminEditingPregunta.marca,
+      });
+      render();
+    }
+  });
+
+  // Botón ? en preguntas de auditoría
+  document.querySelectorAll('.btn-q-help').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      state.helpModalQid = btn.dataset.qid;
+      render();
+    });
+  });
+
   on('nav-admin-ranking', 'click', async () => {
     setState({ screen: 'ranking' });
     if (!state.dashboard) await recargarDashboard();

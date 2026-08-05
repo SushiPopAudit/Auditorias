@@ -2112,6 +2112,149 @@ function doGet(e) {
     } catch(lfErr) { return jsonResponse({ success: false, error: lfErr.message }); }
   }
 
+  // ============================================================
+  // getPreguntas — lee hoja MM completa (solo Admin)
+  // ============================================================
+  if (action === 'getPreguntas') {
+    var gpEmail = ((e.parameter.email)||'').toLowerCase().trim();
+    var gpToken = e.parameter.token || '';
+    if (!gpEmail || !gpToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssGP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shGP = ensureUsuariosSheet(ssGP);
+      var rowGP = encontrarUsuarioRow(shGP, gpEmail);
+      if (rowGP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dGP = shGP.getRange(rowGP, 1, 1, 8).getValues()[0];
+      if (dGP[4] !== gpToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dGP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
+
+      var ssMM = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shMM = ssMM.getSheetByName('MM');
+      if (!shMM) return jsonResponse({ success: false, error: 'Hoja MM no encontrada' });
+      var lastMM = shMM.getLastRow();
+      if (lastMM < 2) return jsonResponse({ success: true, preguntas: [] });
+      var dataMM = shMM.getRange(2, 1, lastMM - 1, 11).getValues();
+      var preguntas = dataMM.map(function(r, i) {
+        return {
+          rowIndex:    i + 2,
+          marca:       String(r[0]||'').trim(),
+          categoria:   String(r[1]||'').trim(),
+          subcategoria:String(r[2]||'').trim(),
+          control:     String(r[3]||'').trim(),
+          importancia: String(r[4]||'').trim(),
+          explicacion: String(r[5]||'').trim(),
+          pregunta:    String(r[6]||'').trim(),
+          imagen:      String(r[7]||'').trim(),
+          tipoRespuesta: String(r[8]||'').trim(),
+          explicacionDetallada: String(r[9]||'').trim(),
+          validacion:  String(r[10]||'').trim(),
+        };
+      }).filter(function(p) { return p.marca; });
+      return jsonResponse({ success: true, preguntas: preguntas });
+    } catch(gpErr) { return jsonResponse({ success: false, error: gpErr.message }); }
+  }
+
+  // ============================================================
+  // addPregunta — agrega fila a MM (solo Admin)
+  // ============================================================
+  if (action === 'addPregunta') {
+    var apEmail = ((e.parameter.email)||'').toLowerCase().trim();
+    var apToken = e.parameter.token || '';
+    if (!apEmail || !apToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssAP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shAP = ensureUsuariosSheet(ssAP);
+      var rowAP = encontrarUsuarioRow(shAP, apEmail);
+      if (rowAP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dAP = shAP.getRange(rowAP, 1, 1, 8).getValues()[0];
+      if (dAP[4] !== apToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dAP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
+
+      var ssMMAP = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shMMAP = ssMMAP.getSheetByName('MM');
+      if (!shMMAP) return jsonResponse({ success: false, error: 'Hoja MM no encontrada' });
+      shMMAP.appendRow([
+        e.parameter.marca        || '',
+        e.parameter.categoria    || '',
+        e.parameter.subcategoria || '',
+        e.parameter.control      || '',
+        e.parameter.importancia  || '',
+        e.parameter.explicacion  || '',
+        e.parameter.pregunta     || '',
+        e.parameter.imagen       || '',
+        e.parameter.tipoRespuesta || '',
+        e.parameter.explicacionDetallada || '',
+        e.parameter.validacion   || '',
+      ]);
+      cacheRemoveKey('preguntas_mm');
+      return jsonResponse({ success: true });
+    } catch(apErr) { return jsonResponse({ success: false, error: apErr.message }); }
+  }
+
+  // ============================================================
+  // editPregunta — edita fila por rowIndex en MM (solo Admin)
+  // ============================================================
+  if (action === 'editPregunta') {
+    var epEmail = ((e.parameter.email)||'').toLowerCase().trim();
+    var epToken = e.parameter.token || '';
+    var epRow   = parseInt(e.parameter.rowIndex || '0', 10);
+    if (!epEmail || !epToken || !epRow) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssEP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shEP = ensureUsuariosSheet(ssEP);
+      var rowEP = encontrarUsuarioRow(shEP, epEmail);
+      if (rowEP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dEP = shEP.getRange(rowEP, 1, 1, 8).getValues()[0];
+      if (dEP[4] !== epToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dEP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
+
+      var ssMMEP = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shMMEP = ssMMEP.getSheetByName('MM');
+      if (!shMMEP || epRow < 2 || epRow > shMMEP.getLastRow()) return jsonResponse({ success: false, error: 'Fila inválida' });
+      shMMEP.getRange(epRow, 1, 1, 11).setValues([[
+        e.parameter.marca        || '',
+        e.parameter.categoria    || '',
+        e.parameter.subcategoria || '',
+        e.parameter.control      || '',
+        e.parameter.importancia  || '',
+        e.parameter.explicacion  || '',
+        e.parameter.pregunta     || '',
+        e.parameter.imagen       || '',
+        e.parameter.tipoRespuesta || '',
+        e.parameter.explicacionDetallada || '',
+        e.parameter.validacion   || '',
+      ]]);
+      cacheRemoveKey('preguntas_mm');
+      return jsonResponse({ success: true });
+    } catch(epErr) { return jsonResponse({ success: false, error: epErr.message }); }
+  }
+
+  // ============================================================
+  // deletePregunta — borra fila por rowIndex en MM (solo Admin)
+  // ============================================================
+  if (action === 'deletePregunta') {
+    var dpEmail = ((e.parameter.email)||'').toLowerCase().trim();
+    var dpToken = e.parameter.token || '';
+    var dpRow   = parseInt(e.parameter.rowIndex || '0', 10);
+    if (!dpEmail || !dpToken || !dpRow) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssDP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shDP = ensureUsuariosSheet(ssDP);
+      var rowDP = encontrarUsuarioRow(shDP, dpEmail);
+      if (rowDP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dDP = shDP.getRange(rowDP, 1, 1, 8).getValues()[0];
+      if (dDP[4] !== dpToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dDP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
+
+      var ssMMDP = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shMMDP = ssMMDP.getSheetByName('MM');
+      if (!shMMDP || dpRow < 2 || dpRow > shMMDP.getLastRow()) return jsonResponse({ success: false, error: 'Fila inválida' });
+      shMMDP.deleteRow(dpRow);
+      cacheRemoveKey('preguntas_mm');
+      return jsonResponse({ success: true });
+    } catch(dpErr) { return jsonResponse({ success: false, error: dpErr.message }); }
+  }
+
   return jsonResponse({ version: '2026-06-16-v1' });
 }
 
