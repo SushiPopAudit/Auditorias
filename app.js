@@ -95,6 +95,7 @@ const state = {
   calendarioMes:          new Date().getMonth(),   // 0-11
   calendarioAnio:         new Date().getFullYear(),
   calendarioTab:          'calendario', // 'calendario' | 'visitas' | 'resumen'
+  calendarioVisitasFiltro: 'proximas',  // 'proximas' | 'pasadas'
   calendarioDiaSeleccionado: null,  // 'YYYY-MM-DD' o null
   calendarioFallasCargando: {},     // { visitaId: true/false }
   calendarioFallas:       {},       // { local: [{auditId, fecha, fallas}] }
@@ -887,13 +888,30 @@ function renderCalendario() {
 
     // ── TAB VISITAS ──
     if (tab === 'visitas') {
-      const proximasVisitas = visitas
-        .filter(function(v) { return v.fecha >= hoyStr; })
-        .sort(function(a, b) { return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0; });
+      const filtro = state.calendarioVisitasFiltro || 'proximas';
+      const visitasFiltradas = visitas
+        .filter(function(v) { return filtro === 'pasadas' ? (v.fecha < hoyStr && v.fecha.startsWith(mesStr)) : v.fecha >= hoyStr; })
+        .sort(function(a, b) {
+          if (filtro === 'pasadas') return a.fecha > b.fecha ? -1 : a.fecha < b.fecha ? 1 : 0; // más reciente primero
+          return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0;
+        });
 
-      const listaHtml = proximasVisitas.length === 0
-        ? '<p style="color:#6b7280;font-size:0.88rem;text-align:center;padding:32px 0">No hay visitas próximas.</p>'
-        : proximasVisitas.map(function(v) {
+      const pill = function(label, val) {
+        const active = filtro === val;
+        return '<button data-cal-filtro="' + val + '" style="border:none;border-radius:20px;padding:5px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;'
+          + (active ? 'background:#1a1a1a;color:#fff' : 'background:#f1f5f9;color:#6b7280') + '">' + label + '</button>';
+      };
+      const toggleHtml = '<div style="display:flex;gap:8px;margin-bottom:12px">'
+        + pill('Próximas', 'proximas') + pill('Pasadas del mes', 'pasadas') + '</div>';
+
+      const emptyMsg = filtro === 'pasadas'
+        ? 'No hay visitas pasadas este mes.'
+        : 'No hay visitas próximas.';
+
+      const listaHtml = visitasFiltradas.length === 0
+        ? '<p style="color:#6b7280;font-size:0.88rem;text-align:center;padding:32px 0">' + emptyMsg + '</p>'
+        : visitasFiltradas.map(function(v) {
+            const yaRealizada = v.estado === 'Realizada';
             return '<div style="display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
               + '<div style="flex:1;min-width:0">'
               + '<div style="font-size:0.75rem;color:#6b7280">' + formatFechaLarga(v.fecha) + '</div>'
@@ -902,11 +920,15 @@ function renderCalendario() {
               + '</div>'
               + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
               + estadobadge(v.estado)
+              + (!yaRealizada && filtro === 'pasadas'
+                  ? '<button data-cal-realizar="' + escHtml(v.visitaId) + '" style="background:#dcfce7;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;color:#166534;font-weight:600">✓ Realizada</button>'
+                  : '')
               + '<button data-cal-borrar="' + escHtml(v.visitaId) + '" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;color:#6b7280">Borrar</button>'
               + '</div></div>';
           }).join('');
 
-      bodyHtml = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">' + listaHtml + '</div>';
+      bodyHtml = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">'
+        + toggleHtml + listaHtml + '</div>';
     }
 
     // ── TAB RESUMEN ──
@@ -3608,6 +3630,40 @@ function attachListeners() {
       if (errEl) errEl.textContent = 'Error de conexión.';
       if (btn) { btn.disabled = false; btn.textContent = 'Agregar visita'; }
     }
+  });
+
+  // Toggle filtro visitas proximas/pasadas
+  document.querySelectorAll('[data-cal-filtro]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      state.calendarioVisitasFiltro = btn.dataset.calFiltro;
+      render();
+    });
+  });
+
+  // Marcar visita como Realizada
+  document.querySelectorAll('[data-cal-realizar]').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      const visitaId = btn.dataset.calRealizar;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await callAPI({
+          action:     'marcarVisitaRealizada',
+          adminEmail: state.user.email,
+          adminToken: state.user.token,
+          visitaId,
+        });
+        if (res.success) {
+          state.calendarioVisitas = null;
+          await goToCalendario();
+        } else {
+          alert(res.error || 'Error al actualizar.');
+          btn.disabled = false; btn.textContent = '✓ Realizada';
+        }
+      } catch(e) {
+        alert('Error de conexión.');
+        btn.disabled = false; btn.textContent = '✓ Realizada';
+      }
+    });
   });
 
   // Borrar visita

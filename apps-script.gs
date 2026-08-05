@@ -2050,6 +2050,31 @@ function doGet(e) {
   }
 
   // ============================================================
+  // marcarVisitaRealizada
+  // ============================================================
+  if (action === 'marcarVisitaRealizada') {
+    var mvAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var mvAdminToken = e.parameter.adminToken || '';
+    var mvVisitaId   = e.parameter.visitaId || '';
+    if (!mvAdminEmail || !mvAdminToken || !mvVisitaId) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssMV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssMV, mvAdminEmail, mvAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var ssDataMV = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shCalMV  = ensureCalendarioSheet(ssDataMV);
+      if (shCalMV.getLastRow() < 2) return jsonResponse({ success: false, error: 'Visita no encontrada' });
+      var dataMV = shCalMV.getRange(2, 1, shCalMV.getLastRow() - 1, 1).getValues();
+      var rowMV = -1;
+      for (var mi = 0; mi < dataMV.length; mi++) {
+        if (String(dataMV[mi][0]) === mvVisitaId) { rowMV = mi + 2; break; }
+      }
+      if (rowMV < 0) return jsonResponse({ success: false, error: 'Visita no encontrada' });
+      shCalMV.getRange(rowMV, 7).setValue('Realizada');
+      return jsonResponse({ success: true });
+    } catch(mvErr) { return jsonResponse({ success: false, error: mvErr.message }); }
+  }
+
+  // ============================================================
   // getLocalFallas â€” Ãºltimas 2 auditorÃ­as de un local: No Cumple + CrÃ­tico Parcial
   // ============================================================
   if (action === 'getLocalFallas') {
