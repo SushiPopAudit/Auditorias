@@ -289,6 +289,34 @@ function evaluarFecha(val) {
   return { resultado: 'Cumple', advertencia: null };
 }
 
+// Restaura el estado de respuesta de una pregunta a partir de una fila del historial
+function restoreAnswerFromRow(q, row) {
+  const regla = parseValidacion(q.validacion || '');
+  const ans = { valor: row.respuesta || '', observacion: row.observacion || '' };
+  if (regla && regla.tipo === 'numero') {
+    ans.rawValor = row.rawValor || '';
+    // Si rawValor existe, recalcular valor (por si el rango cambió); si no, mantener respuesta
+    if (ans.rawValor) ans.valor = evaluarNumero(ans.rawValor, regla) || ans.rawValor;
+  } else if (regla && regla.tipo === 'fecha') {
+    ans.fechaRaw = row.rawValor || '';
+    if (ans.fechaRaw) {
+      const ev = evaluarFecha(ans.fechaRaw);
+      ans.valor = ev ? ev.resultado : ans.fechaRaw;
+    }
+  } else if (regla && regla.tipo === 'headcount') {
+    // observacion tiene "salon: 3 | cocina: 2" — restaurar headcount object
+    ans.valor = 'N/A';
+    if (row.observacion) {
+      ans.headcount = {};
+      row.observacion.split('|').forEach(part => {
+        const [k, v] = part.split(':').map(s => s.trim());
+        if (k && v !== undefined) ans.headcount[k.replace(/ /g, '_')] = v;
+      });
+    }
+  }
+  return ans;
+}
+
 // ============================================================
 // SISTEMA DE PUNTOS
 // ============================================================
@@ -3035,6 +3063,7 @@ function attachListeners() {
   });
 
   // ✏️ Editar (carga detalle y abre cat-select)
+
   document.querySelectorAll('.hist-btn-editar').forEach(btn => {
     btn.addEventListener('click', async () => {
       const auditId = btn.dataset.auditId;
@@ -3049,7 +3078,7 @@ function attachListeners() {
         cats.forEach(cat => {
           cat.questions.forEach(q => {
             const row = d.respuestas.find(r => r.control === q.control);
-            if (row) newAnswers[q.id] = { valor: row.respuesta || '', observacion: row.observacion || '' };
+            if (row) newAnswers[q.id] = restoreAnswerFromRow(q, row);
           });
         });
         Object.assign(state, {
@@ -3130,9 +3159,7 @@ function attachListeners() {
     cats.forEach(cat => {
       cat.questions.forEach(q => {
         const row = d.respuestas.find(r => r.control === q.control);
-        if (row) {
-          newAnswers[q.id] = { valor: row.respuesta || '', observacion: row.observacion || '' };
-        }
+        if (row) newAnswers[q.id] = restoreAnswerFromRow(q, row);
       });
     });
     Object.assign(state, {
@@ -3447,51 +3474,66 @@ async function submitAudit() {
   document.body.appendChild(overlay);
 
   try {
-    // Enviar la auditoría (no-cors: no podemos leer la respuesta)
-    const controller = new AbortController();
-    const timeoutId  = setTimeout(() => controller.abort(), 45000);
-    const sendStart  = Date.now();
-    try {
-      await fetch(CONFIG.appsScriptURL, {
-        method: 'POST',
-        body:   JSON.stringify(payload),
-        mode:   'no-cors',
-        signal: controller.signal,
-      });
-    } catch (fetchErr) {
-      if (fetchErr.name !== 'AbortError') throw fetchErr;
-      // AbortError: solo continuar si el request estuvo en vuelo bastante tiempo
-      // (< 3s probablemente fue rechazado antes de llegar al servidor)
-      if (Date.now() - sendStart < 3000) {
-        throw new Error('La auditoría no pudo enviarse. Verificá tu conexión e intentá de nuevo.');
-      }
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const originalAuditId = state.editingAuditId;
 
-    // Verificar con GET que el auditId quedó guardado en el sheet (hasta 4 intentos, 6s entre c/u)
-    overlay.querySelector('.overlay-text').textContent = 'Verificando que llegó al servidor...';
-    let confirmed = false;
-    for (let i = 0; i < 4; i++) {
-      await new Promise(r => setTimeout(r, 6000));
-      try {
-        const vRes = await callAPI({ action: 'verificarAudit', auditId });
-        if (vRes.found) { confirmed = true; break; }
-      } catch(e) { /* red inestable, reintentar */ }
-    }
-
-    if (confirmed) {
-      const oldId = state.editingAuditId;
-      setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], editingAuditId: '' });
+    if (originalAuditId) {
+      // ── EDICIÓN EN EL LUGAR ──────────────────────────────────
+      overlay.querySelector('.overlay-text').textContent = 'Guardando cambios...';
+      const editPayload = {
+        action:          'editarAuditoria',
+        originalAuditId,
+        hora:            new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+        auditorEmail:    state.auditorEmail,
+        token:           state.user?.token || '',
+        respuestas,
+      };
+      const editRaw = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(editPayload), redirect: 'follow' });
+      if (!editRaw.ok) throw new Error('HTTP ' + editRaw.status);
+      const editRes = await editRaw.json();
+      if (!editRes.success) throw new Error(editRes.error || 'Error al guardar cambios');
+      const editPuntaje = { pct: editRes.pct, nivel: editRes.nivel, reprobado: editRes.reprobado };
+      setState({ screen: 'success', auditId: originalAuditId, emailStatus: '', lastPuntaje: editPuntaje, desviosRepetidos: [], editingAuditId: '' });
       borrarBorrador();
-      if (oldId) {
-        try { await callAPI({ action: 'borrarAuditoria', auditId: oldId }); } catch(e) { /* no crítico */ }
-      }
+      // ─────────────────────────────────────────────────────────
     } else {
-      // El POST llegó (o creemos que sí) pero no aparece en el sheet todavía
-      setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], sendUnconfirmed: true });
-      // Guardar flag en localStorage para que persista si el usuario cierra la app
-      try { localStorage.setItem('audit_unconfirmed', auditId); } catch(e) {}
+      // ── NUEVA AUDITORÍA ──────────────────────────────────────
+      const controller = new AbortController();
+      const timeoutId  = setTimeout(() => controller.abort(), 45000);
+      const sendStart  = Date.now();
+      try {
+        await fetch(CONFIG.appsScriptURL, {
+          method: 'POST',
+          body:   JSON.stringify(payload),
+          mode:   'no-cors',
+          signal: controller.signal,
+        });
+      } catch (fetchErr) {
+        if (fetchErr.name !== 'AbortError') throw fetchErr;
+        if (Date.now() - sendStart < 3000) {
+          throw new Error('La auditoría no pudo enviarse. Verificá tu conexión e intentá de nuevo.');
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      overlay.querySelector('.overlay-text').textContent = 'Verificando que llegó al servidor...';
+      let confirmed = false;
+      for (let i = 0; i < 4; i++) {
+        await new Promise(r => setTimeout(r, 6000));
+        try {
+          const vRes = await callAPI({ action: 'verificarAudit', auditId });
+          if (vRes.found) { confirmed = true; break; }
+        } catch(e) { /* red inestable, reintentar */ }
+      }
+
+      if (confirmed) {
+        setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], editingAuditId: '' });
+        borrarBorrador();
+      } else {
+        setState({ screen: 'success', auditId, emailStatus: '', lastPuntaje: puntaje, desviosRepetidos: [], sendUnconfirmed: true });
+        try { localStorage.setItem('audit_unconfirmed', auditId); } catch(e) {}
+      }
+      // ─────────────────────────────────────────────────────────
     }
   } catch (err) {
     console.error(err);

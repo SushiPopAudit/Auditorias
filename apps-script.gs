@@ -30,6 +30,63 @@ function doPost(e) {
     const ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
     let sheet  = ss.getSheetByName(SHEET_NAME);
 
+    // ── Edición en el lugar ──────────────────────────────────────
+    if (data.action === 'editarAuditoria') {
+      // Verificar token
+      if (data.auditorEmail && data.token) {
+        var ssAuthE = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+        var shAuthE = ensureUsuariosSheet(ssAuthE);
+        var rowAuthE = encontrarUsuarioRow(shAuthE, data.auditorEmail);
+        if (rowAuthE < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+        var dAuthE = shAuthE.getRange(rowAuthE, 1, 1, 8).getValues()[0];
+        if (dAuthE[4] !== data.token) return jsonResponse({ success: false, error: 'Sin autorización' });
+        if (dAuthE[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      }
+      if (!sheet || sheet.getLastRow() < 2) return jsonResponse({ success: false, error: 'Sin datos' });
+      var origId = String(data.originalAuditId || '').trim();
+      if (!origId) return jsonResponse({ success: false, error: 'originalAuditId requerido' });
+
+      var allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 21).getValues();
+      var idxMap  = {}; // control.toLowerCase() → índice en allRows
+      allRows.forEach(function(r, i) {
+        if (String(r[0]).trim() === origId) idxMap[String(r[8]).trim().toLowerCase()] = i;
+      });
+      if (!Object.keys(idxMap).length) return jsonResponse({ success: false, error: 'Auditoría no encontrada: ' + origId });
+
+      // Actualizar respuesta / observacion / rawValor por control; no tocar fotos (col N)
+      var respMap = {};
+      (data.respuestas || []).forEach(function(r) { respMap[String(r.control || '').trim().toLowerCase()] = r; });
+
+      Object.keys(idxMap).forEach(function(ctrl) {
+        var shRow = idxMap[ctrl] + 2; // 1-indexed + header
+        var r = respMap[ctrl];
+        if (!r) return;
+        sheet.getRange(shRow, 12).setValue(r.respuesta   || ''); // col L
+        sheet.getRange(shRow, 13).setValue(r.observacion || ''); // col M
+        var rawU = (r.rawValor != null && r.rawValor !== '') ? String(r.rawValor) : (r.fechaRaw || '');
+        sheet.getRange(shRow, 21).setValue(rawU);                // col U
+      });
+      sheet.getRange(2, 21, sheet.getLastRow() - 1, 1).setNumberFormat('@');
+
+      // Recalcular puntaje con las filas actualizadas
+      var updRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 21).getValues()
+        .filter(function(r) { return String(r[0]).trim() === origId; });
+      var res = recalcularPuntaje(updRows);
+      Object.keys(idxMap).forEach(function(ctrl) {
+        var shRow = idxMap[ctrl] + 2;
+        sheet.getRange(shRow, 16).setValue(res.pct);
+        sheet.getRange(shRow, 17).setValue(res.nivel);
+        sheet.getRange(shRow, 18).setValue(res.reprobado ? 'Sí' : 'No');
+        sheet.getRange(shRow, 3).setValue(data.hora || ''); // hora de edición
+      });
+
+      // Invalidar cachés
+      if (data.auditorEmail) { cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase()); cacheRemoveKey('db_' + data.auditorEmail.toLowerCase()); }
+      cacheRemoveKey('aud_all');
+      return jsonResponse({ success: true, pct: res.pct, nivel: res.nivel, reprobado: res.reprobado });
+    }
+    // ────────────────────────────────────────────────────────────
+
     // Crear hoja si no existe
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_NAME);
