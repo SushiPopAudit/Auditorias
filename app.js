@@ -1215,10 +1215,25 @@ function renderAdminPreguntas() {
       + (err ? '<div style="background:#fff1f2;border:1px solid #fca5a5;border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.85rem;color:#e4001b">' + escHtml(err) + '</div>' : '')
       + (msg ? '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.85rem;color:#16a34a">' + escHtml(msg) + '</div>' : '')
       + sel('pf-marca', 'Marca *', p.marca, [{v:'Multimarca',l:'Multimarca'},{v:'Causa',l:'Causa'}])
-      + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Categoría *</label>'
-      + '<input id="pf-categoria" list="pf-cats-list" value="' + escHtml(p.categoria || '') + '" placeholder="Ej: BPM" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box">'
-      + '<datalist id="pf-cats-list">' + cats.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('') + '</datalist></div>'
-      + inp('pf-subcategoria', 'Subcategoría', p.subcategoria, 'Ej: Limpieza')
+      + (function() {
+          // Mapa subcategorías por categoría
+          const subcatMap = {};
+          preguntas.forEach(function(px) {
+            if (!subcatMap[px.categoria]) subcatMap[px.categoria] = new Set();
+            if (px.subcategoria) subcatMap[px.categoria].add(px.subcategoria);
+          });
+          const subcatsForCat = Array.from((subcatMap[p.categoria] || new Set())).sort();
+          const subcatsAllJson = JSON.stringify(Object.fromEntries(Object.entries(subcatMap).map(function(e) { return [e[0], Array.from(e[1]).sort()]; })));
+          return '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Categoría *</label>'
+            + '<input id="pf-categoria" list="pf-cats-list" value="' + escHtml(p.categoria || '') + '" placeholder="Ej: BPM" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box" autocomplete="off">'
+            + '<datalist id="pf-cats-list">' + cats.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('') + '</datalist>'
+            + '<div style="font-size:0.7rem;color:#9ca3af;margin-top:3px">Elegí una existente o escribí una nueva</div></div>'
+            + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Subcategoría</label>'
+            + '<input id="pf-subcategoria" list="pf-subcats-list" value="' + escHtml(p.subcategoria || '') + '" placeholder="Ej: Limpieza" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box" autocomplete="off">'
+            + '<datalist id="pf-subcats-list">' + subcatsForCat.map(function(s) { return '<option value="' + escHtml(s) + '">'; }).join('') + '</datalist>'
+            + '<div style="font-size:0.7rem;color:#9ca3af;margin-top:3px">Elegí una existente o escribí una nueva</div></div>'
+            + '<script>window.__subcatMap=' + subcatsAllJson.replace(/<\/script>/g,'<\\/script>') + ';<\/script>';
+        }())
       + inp('pf-control', 'Control *', p.control, 'Nombre del punto de control')
       + sel('pf-importancia', 'Importancia *', p.importancia || 'Media', [{v:'Crítico',l:'Crítico'},{v:'Alta',l:'Alta'},{v:'Media',l:'Media'},{v:'Baja',l:'Baja'}])
       + inp('pf-explicacion', 'Explicación corta', p.explicacion, 'Breve descripción visible durante la auditoría')
@@ -3401,6 +3416,15 @@ function attachListeners() {
   if (pfFilCat) pfFilCat.addEventListener('change', function() { state.adminPreguntasCat = this.value; render(); });
   const pfSearch = document.getElementById('pf-search');
   if (pfSearch) pfSearch.addEventListener('input', function() { state.adminPreguntasSearch = this.value; render(); });
+
+  // Categoría → actualizar datalist de subcategoría sin re-render
+  const pfCat = document.getElementById('pf-categoria');
+  if (pfCat) pfCat.addEventListener('input', function() {
+    const dl = document.getElementById('pf-subcats-list');
+    if (!dl || !window.__subcatMap) return;
+    const subcats = window.__subcatMap[this.value] || [];
+    dl.innerHTML = subcats.map(function(s) { return '<option value="' + s.replace(/"/g,'&quot;') + '">'; }).join('');
+  });
 
   // Tipo respuesta → re-render para mostrar/ocultar campos
   const pfTipo = document.getElementById('pf-tipo');
