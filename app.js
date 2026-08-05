@@ -81,6 +81,7 @@ const state = {
   calendarioError:        '',
   calendarioMes:          new Date().getMonth(),   // 0-11
   calendarioAnio:         new Date().getFullYear(),
+  calendarioTab:          'calendario', // 'calendario' | 'visitas' | 'resumen'
   calendarioDiaSeleccionado: null,  // 'YYYY-MM-DD' o null
   calendarioFallasCargando: {},     // { visitaId: true/false }
   calendarioFallas:       {},       // { local: [{auditId, fecha, fallas}] }
@@ -430,6 +431,7 @@ function render() {
     case 'historial-detalle': app.innerHTML = renderHistorialDetalle();  break;
     case 'historial-editar':  app.innerHTML = renderHistorialEditar();   break;
     case 'dashboard':         app.innerHTML = renderDashboard();         break;
+    case 'ranking':           app.innerHTML = renderRanking();           break;
     case 'calendario':        app.innerHTML = renderCalendario();        break;
     case 'error':            app.innerHTML = renderError();            break;
   }
@@ -611,11 +613,11 @@ function renderAdminBottomNav() {
         </div>
         <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
       </button>
+      <button id="nav-admin-calendario" style="${base};${isCalendario?active:idle}">
+        <span style="${iconStyle}">📅</span><span style="${labelStyle}">Calendario</span>
+      </button>
       <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
         <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
-      </button>
-      <button id="nav-admin-ranking" style="${base};${isDashboard&&state.dashboardView==='ranking'?active:idle}">
-        <span style="${iconStyle}">🏆</span><span style="${labelStyle}">Ranking</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -659,12 +661,15 @@ function renderUserBottomNav() {
       <button id="nav-user-inicio" style="${base};${onWelcome?active:idle}">
         <span style="font-size:1.2rem;line-height:1">🏠</span><span style="${labelStyle}">Inicio</span>
       </button>
-      ${centerBtn}
-      <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
-        <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
-      </button>
       <button id="nav-user-calendario" style="${base};${isCalendario?active:idle}">
         <span style="font-size:1.2rem;line-height:1">📅</span><span style="${labelStyle}">Calendario</span>
+      </button>
+      ${centerBtn}
+      <button id="nav-user-dashboard" style="${base};${isDashboard?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📊</span><span style="${labelStyle}">Dashboard</span>
+      </button>
+      <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -711,160 +716,197 @@ function renderCalendario() {
     return dias[dt.getDay()] + ' ' + d + ' de ' + meses[m - 1];
   }
 
-  // ── ADMIN: calendario grid + lista ──
+  // ── ADMIN: 3 tabs ──
   if (isAdmin) {
     const mes  = state.calendarioMes;
     const anio = state.calendarioAnio;
+    const tab  = state.calendarioTab || 'calendario';
     const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const DIAS_CABECERA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-
-    // Primer día del mes y cantidad de días
-    const primerDia = new Date(anio, mes, 1).getDay(); // 0=Dom
-    const diasEnMes = new Date(anio, mes + 1, 0).getDate();
-
-    // Agrupar visitas del mes actual por fecha
     const mesStr = anio + '-' + String(mes + 1).padStart(2, '0');
-    const visitasPorDia = {};
-    visitas.forEach(v => {
-      if (!v.fecha.startsWith(mesStr)) return;
-      if (!visitasPorDia[v.fecha]) visitasPorDia[v.fecha] = [];
-      visitasPorDia[v.fecha].push(v);
-    });
 
-    // Construir celdas del grid
-    let celdasHtml = '';
-    // Celdas vacías antes del primer día
-    for (let i = 0; i < primerDia; i++) {
-      celdasHtml += `<div style="min-height:44px;padding:4px;background:#f9fafb;border:1px solid #e5e7eb"></div>`;
-    }
-    for (let d = 1; d <= diasEnMes; d++) {
-      const dStr = anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-      const vsDay = visitasPorDia[dStr] || [];
-      const isHoy = dStr === hoyStr;
-      const isSel = dStr === state.calendarioDiaSeleccionado;
-      const dotHtml = vsDay.map(v => {
-        const color = TURNO_COLOR[v.turno] || '#94a3b8';
-        return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin:0 1px"></span>`;
-      }).join('');
-      const borderStyle = isSel ? 'border:2px solid #e4001b' : (isHoy ? 'border:2px solid #16a34a' : 'border:1px solid #e5e7eb');
-      const bgStyle = isSel ? 'background:#fff1f2' : (isHoy ? 'background:#f0fdf4' : 'background:#fff');
-      celdasHtml += `
-        <div data-cal-dia="${escHtml(dStr)}" style="min-height:44px;padding:4px;cursor:pointer;${bgStyle};${borderStyle};border-radius:4px;position:relative">
-          <div style="font-size:0.8rem;font-weight:${isHoy?'700':'500'};color:${isHoy?'#15803d':isSel?'#e4001b':'#1a1a1a'}">${d}</div>
-          ${dotHtml ? `<div style="display:flex;flex-wrap:wrap;gap:1px;margin-top:2px">${dotHtml}</div>` : ''}
-        </div>`;
-    }
+    // Tabs pill buttons
+    const tabsHtml = ['calendario','visitas','resumen'].map(function(t) {
+      const labels = { calendario: '📅 Calendario', visitas: '📋 Visitas', resumen: '📊 Resumen' };
+      const act = tab === t;
+      return '<button data-cal-tab="' + t + '" style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:0.75rem;font-weight:700;cursor:pointer;' + (act ? 'background:#1a1a1a;color:#fff' : 'background:#f3f4f6;color:#6b7280') + '">' + labels[t] + '</button>';
+    }).join('');
 
-    // Modal bottom-sheet para el día seleccionado
+    // Navegación de mes (usada en calendario y resumen)
+    const navMesHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      + '<button id="btn-cal-prev-mes" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:1rem;color:#374151">&#8249;</button>'
+      + '<span style="font-weight:600;font-size:1rem;color:#1a1a1a">' + MESES[mes] + ' ' + anio + '</span>'
+      + '<button id="btn-cal-next-mes" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:1rem;color:#374151">&#8250;</button>'
+      + '</div>';
+
+    // ── TAB CALENDARIO ──
+    let bodyHtml = '';
     let modalDia = '';
-    if (state.calendarioDiaSeleccionado) {
-      const dSel = state.calendarioDiaSeleccionado;
-      const vsDia = visitasPorDia[dSel] || [];
-      const visitasDelDiaHtml = vsDia.length === 0
-        ? '<p style="color:#6b7280;font-size:0.85rem;margin:0 0 4px">Sin visitas asignadas.</p>'
-        : vsDia.map(function(v) {
-            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
-              + turnobage(v.turno)
-              + '<span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">' + escHtml(v.local) + '</span>'
-              + '<span style="font-size:0.82rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span>'
-              + '<span style="margin-left:auto">' + estadobadge(v.estado) + '</span>'
-              + '</div>';
+    if (tab === 'calendario') {
+      const visitasPorDia = {};
+      visitas.forEach(function(v) {
+        if (!v.fecha.startsWith(mesStr)) return;
+        if (!visitasPorDia[v.fecha]) visitasPorDia[v.fecha] = [];
+        visitasPorDia[v.fecha].push(v);
+      });
+
+      const primerDia = new Date(anio, mes, 1).getDay();
+      const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+      let celdasHtml = '';
+      for (let i = 0; i < primerDia; i++) {
+        celdasHtml += '<div style="min-height:44px;padding:4px;background:#f9fafb;border:1px solid #e5e7eb"></div>';
+      }
+      for (let d = 1; d <= diasEnMes; d++) {
+        const dStr = anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        const vsDay = visitasPorDia[dStr] || [];
+        const isHoy = dStr === hoyStr;
+        const isSel = dStr === state.calendarioDiaSeleccionado;
+        const dots = vsDay.map(function(v) {
+          const color = TURNO_COLOR[v.turno] || '#94a3b8';
+          return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin:0 1px"></span>';
+        }).join('');
+        const borderStyle = isSel ? 'border:2px solid #e4001b' : (isHoy ? 'border:2px solid #16a34a' : 'border:1px solid #e5e7eb');
+        const bgStyle     = isSel ? 'background:#fff1f2'      : (isHoy ? 'background:#f0fdf4'      : 'background:#fff');
+        const numColor    = isHoy ? '#15803d' : (isSel ? '#e4001b' : '#1a1a1a');
+        celdasHtml += '<div data-cal-dia="' + escHtml(dStr) + '" style="min-height:44px;padding:4px;cursor:pointer;' + bgStyle + ';' + borderStyle + ';border-radius:4px">'
+          + '<div style="font-size:0.8rem;font-weight:' + (isHoy ? '700' : '500') + ';color:' + numColor + '">' + d + '</div>'
+          + (dots ? '<div style="display:flex;flex-wrap:wrap;gap:1px;margin-top:2px">' + dots + '</div>' : '')
+          + '</div>';
+      }
+
+      const leyenda = Object.entries(TURNO_COLOR).map(function(e) {
+        return '<div style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + e[1] + '"></span><span style="font-size:0.72rem;color:#6b7280">' + e[0] + '</span></div>';
+      }).join('');
+
+      bodyHtml = navMesHtml
+        + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px">'
+        + DIAS_CABECERA.map(function(d) { return '<div style="text-align:center;font-size:0.7rem;font-weight:600;color:#6b7280;padding:4px 0">' + d + '</div>'; }).join('')
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:16px">' + celdasHtml + '</div>'
+        + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">' + leyenda + '</div>';
+
+      // Modal
+      if (state.calendarioDiaSeleccionado) {
+        const dSel = state.calendarioDiaSeleccionado;
+        const vsDia = visitasPorDia[dSel] || [];
+        const visitasDelDiaHtml = vsDia.length === 0
+          ? '<p style="color:#6b7280;font-size:0.85rem;margin:0 0 4px">Sin visitas asignadas.</p>'
+          : vsDia.map(function(v) {
+              return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
+                + turnobage(v.turno) + '<span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">' + escHtml(v.local) + '</span>'
+                + '<span style="font-size:0.82rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span>'
+                + '<span style="margin-left:auto">' + estadobadge(v.estado) + '</span></div>';
+            }).join('');
+
+        const localesOpts = (state.locales||[]).map(function(l) {
+          return '<option value="' + escHtml(l.nombre) + '">' + escHtml(l.nombre) + '</option>';
+        }).join('');
+        const auditoresOpts = (state.adminUsers||[])
+          .filter(function(u) { return u.rol === 'Auditor' || u.rol === 'Admin'; })
+          .filter(function(u) { return u.estado === 'Activo'; })
+          .map(function(u) { return '<option value="' + escHtml(u.email) + '">' + escHtml(u.nombre) + ' (' + escHtml(u.email) + ')</option>'; })
+          .join('');
+
+        modalDia = '<div id="cal-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">'
+          + '<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+          + '<div style="font-weight:700;font-size:1rem;color:#1a1a1a">📅 ' + formatFechaLarga(dSel) + '</div>'
+          + '<button id="btn-cal-modal-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;line-height:1;padding:0 4px">&times;</button>'
+          + '</div>'
+          + '<div style="margin-bottom:14px">' + visitasDelDiaHtml + '</div>'
+          + '<div style="border-top:1px solid #e5e7eb;padding-top:14px">'
+          + '<div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>'
+          + '<div style="display:flex;flex-direction:column;gap:10px">'
+          + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>'
+          + '<select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+          + '<option value="">— Seleccioná un local —</option>' + localesOpts + '</select></div>'
+          + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Turno</label>'
+          + '<select id="sel-cal-turno" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+          + '<option value="Día">Día</option><option value="Noche">Noche</option><option value="Intermedio">Intermedio</option>'
+          + '</select></div>'
+          + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>'
+          + '<select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+          + '<option value="">— Seleccioná un auditor —</option>' + auditoresOpts + '</select></div>'
+          + '<div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>'
+          + '<button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>'
+          + '</div></div></div></div>';
+      }
+    }
+
+    // ── TAB VISITAS ──
+    if (tab === 'visitas') {
+      const proximasVisitas = visitas
+        .filter(function(v) { return v.fecha >= hoyStr; })
+        .sort(function(a, b) { return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0; });
+
+      const listaHtml = proximasVisitas.length === 0
+        ? '<p style="color:#6b7280;font-size:0.88rem;text-align:center;padding:32px 0">No hay visitas próximas.</p>'
+        : proximasVisitas.map(function(v) {
+            return '<div style="display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
+              + '<div style="flex:1;min-width:0">'
+              + '<div style="font-size:0.75rem;color:#6b7280">' + formatFechaLarga(v.fecha) + '</div>'
+              + '<div style="font-size:0.9rem;font-weight:600;color:#1a1a1a;margin-top:1px">' + escHtml(v.local) + '</div>'
+              + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">' + turnobage(v.turno) + '<span style="font-size:0.78rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span></div>'
+              + '</div>'
+              + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
+              + estadobadge(v.estado)
+              + '<button data-cal-borrar="' + escHtml(v.visitaId) + '" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;color:#6b7280">Borrar</button>'
+              + '</div></div>';
           }).join('');
 
-      const localesOpts = (state.locales||[]).map(function(l) {
-        return '<option value="' + escHtml(l.nombre) + '">' + escHtml(l.nombre) + '</option>';
-      }).join('');
-      const auditoresOpts = (state.adminUsers||[])
-        .filter(function(u) { return u.rol === 'Auditor' || u.rol === 'Admin'; })
-        .filter(function(u) { return u.estado === 'Activo'; })
-        .map(function(u) { return '<option value="' + escHtml(u.email) + '">' + escHtml(u.nombre) + ' (' + escHtml(u.email) + ')</option>'; })
-        .join('');
-
-      const modalHeader = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
-        + '<div style="font-weight:700;font-size:1rem;color:#1a1a1a">📅 ' + formatFechaLarga(dSel) + '</div>'
-        + '<button id="btn-cal-modal-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;line-height:1;padding:0 4px">&times;</button>'
-        + '</div>';
-
-      const modalForm = '<div style="border-top:1px solid #e5e7eb;padding-top:14px">'
-        + '<div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>'
-        + '<div style="display:flex;flex-direction:column;gap:10px">'
-        + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>'
-        + '<select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-        + '<option value="">— Seleccioná un local —</option>' + localesOpts + '</select></div>'
-        + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Turno</label>'
-        + '<select id="sel-cal-turno" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-        + '<option value="Día">Día</option><option value="Noche">Noche</option><option value="Intermedio">Intermedio</option>'
-        + '</select></div>'
-        + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>'
-        + '<select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-        + '<option value="">— Seleccioná un auditor —</option>' + auditoresOpts + '</select></div>'
-        + '<div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>'
-        + '<button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>'
-        + '</div></div>';
-
-      modalDia = '<div id="cal-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">'
-        + '<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px">'
-        + modalHeader
-        + '<div style="margin-bottom:14px">' + visitasDelDiaHtml + '</div>'
-        + modalForm
-        + '</div></div>';
+      bodyHtml = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">' + listaHtml + '</div>';
     }
 
-    // Lista de todas las próximas visitas
-    const proximasVisitas = visitas
-      .filter(v => v.fecha >= hoyStr)
-      .sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
+    // ── TAB RESUMEN ──
+    if (tab === 'resumen') {
+      const visitasMes = visitas.filter(function(v) { return v.fecha.startsWith(mesStr); });
 
-    const listaHtml = proximasVisitas.length === 0
-      ? `<p style="color:#6b7280;font-size:0.88rem;text-align:center;padding:16px 0">No hay visitas próximas.</p>`
-      : proximasVisitas.map(v => `
-          <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
-            <div style="min-width:110px">
-              <div style="font-size:0.78rem;color:#6b7280">${formatFechaLarga(v.fecha)}</div>
-              <div style="margin-top:2px">${turnobage(v.turno)}</div>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(v.local)}</div>
-              <div style="font-size:0.78rem;color:#6b7280">${escHtml(v.auditorNombre)}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px">
-              ${estadobadge(v.estado)}
-              <button data-cal-borrar="${escHtml(v.visitaId)}" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.78rem;color:#6b7280">Borrar</button>
-            </div>
-          </div>`).join('');
+      // Por auditor
+      const byAuditor = {};
+      visitasMes.forEach(function(v) {
+        if (!byAuditor[v.auditorNombre]) byAuditor[v.auditorNombre] = { total: 0, realizadas: 0 };
+        byAuditor[v.auditorNombre].total++;
+        if (v.estado === 'Realizada') byAuditor[v.auditorNombre].realizadas++;
+      });
+      // Por local
+      const byLocal = {};
+      visitasMes.forEach(function(v) {
+        if (!byLocal[v.local]) byLocal[v.local] = { total: 0, realizadas: 0 };
+        byLocal[v.local].total++;
+        if (v.estado === 'Realizada') byLocal[v.local].realizadas++;
+      });
 
-    return `
-      <div style="padding:16px">
-        <h2 style="font-size:1.1rem;font-weight:700;color:#1a1a1a;margin:0 0 16px">Calendario de Visitas</h2>
+      function statsRow(nombre, stats) {
+        const pct = stats.total > 0 ? Math.round(stats.realizadas / stats.total * 100) : 0;
+        const barColor = pct >= 80 ? '#16a34a' : pct >= 50 ? '#d97706' : '#e4001b';
+        return '<div style="padding:10px 0;border-bottom:1px solid #f1f5f9">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+          + '<span style="font-size:0.85rem;font-weight:600;color:#1a1a1a">' + escHtml(nombre) + '</span>'
+          + '<span style="font-size:0.78rem;color:#6b7280">' + stats.realizadas + '/' + stats.total + ' realizadas</span>'
+          + '</div>'
+          + '<div style="height:6px;background:#e5e7eb;border-radius:3px"><div style="height:6px;width:' + pct + '%;background:' + barColor + ';border-radius:3px"></div></div>'
+          + '</div>';
+      }
 
-        <!-- Navegación de mes -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <button id="btn-cal-prev-mes" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:1rem;color:#374151">&#8249;</button>
-          <span style="font-weight:600;font-size:1rem;color:#1a1a1a">${MESES[mes]} ${anio}</span>
-          <button id="btn-cal-next-mes" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:1rem;color:#374151">&#8250;</button>
-        </div>
+      const auditorRows = Object.keys(byAuditor).sort().map(function(n) { return statsRow(n, byAuditor[n]); }).join('');
+      const localRows   = Object.keys(byLocal).sort().map(function(n) { return statsRow(n, byLocal[n]); }).join('');
+      const emptyMsg    = '<p style="color:#9ca3af;font-size:0.85rem;text-align:center;padding:16px 0">Sin visitas este mes.</p>';
 
-        <!-- Grid días de semana -->
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px">
-          ${DIAS_CABECERA.map(d => `<div style="text-align:center;font-size:0.7rem;font-weight:600;color:#6b7280;padding:4px 0">${d}</div>`).join('')}
-        </div>
-        <!-- Grid celdas -->
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:16px">
-          ${celdasHtml}
-        </div>
+      bodyHtml = navMesHtml
+        + '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:14px">'
+        + '<div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Por auditor</div>'
+        + (auditorRows || emptyMsg) + '</div>'
+        + '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">'
+        + '<div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Por local</div>'
+        + (localRows || emptyMsg) + '</div>';
+    }
 
-        <!-- Leyenda -->
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-          ${Object.entries(TURNO_COLOR).map(([t,c]) => `<div style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c}"></span><span style="font-size:0.72rem;color:#6b7280">${t}</span></div>`).join('')}
-        </div>
-
-        <!-- Lista próximas visitas -->
-        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">
-          <div style="font-weight:700;font-size:0.9rem;color:#1a1a1a;margin-bottom:12px">Próximas visitas</div>
-          ${listaHtml}
-        </div>
-      </div>
-      ` + modalDia;
+    return '<div style="padding:16px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#1a1a1a;margin:0 0 14px">Calendario de Visitas</h2>'
+      + '<div style="display:flex;gap:6px;margin-bottom:16px">' + tabsHtml + '</div>'
+      + bodyHtml
+      + '</div>'
+      + modalDia;
   }
 
   // ── AUDITOR: solo lista con acordeón ──
@@ -1401,6 +1443,65 @@ function renderDashboard() {
       ${sectionD}
     </div>
   </div>`;
+}
+
+// ============================================================
+// PANTALLA: RANKING DE LOCALES
+// ============================================================
+function renderRanking() {
+  const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
+  const isRanking = true;
+  const data = state.dashboard;
+  const loading = state.dashboardLoading;
+  const period  = state.dashboardRankingPeriod || 'mesActual';
+  const periodLabels = { mesActual: 'Mes actual', mesAnterior: 'Mes anterior', ult3Meses: 'Últ. 3 meses' };
+
+  const header = '<div style="background:#1d4ed8;color:#fff;padding:16px 16px 14px;display:flex;justify-content:space-between;align-items:center">'
+    + '<div style="font-size:1.1rem;font-weight:700">🏆 Ranking de Locales</div>'
+    + '<button id="btn-ranking-refresh" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:0.75rem;cursor:pointer">↻</button>'
+    + '</div>';
+
+  if (loading) return '<div style="display:flex;flex-direction:column;min-height:100vh;' + pb + '">' + header
+    + '<div style="flex:1;display:flex;align-items:center;justify-content:center"><div style="text-align:center;color:#6b7280"><div style="font-size:2rem;margin-bottom:8px">⏳</div><div>Cargando...</div></div></div></div>';
+
+  if (!data) return '<div style="display:flex;flex-direction:column;min-height:100vh;' + pb + '">' + header
+    + '<div style="flex:1;display:flex;align-items:center;justify-content:center"><div style="text-align:center;color:#6b7280"><div style="font-size:2rem;margin-bottom:8px">📊</div><div>Sin datos</div><button id="btn-ranking-refresh" style="margin-top:12px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer">Cargar</button></div></div></div>';
+
+  const rankingData = data.ranking || {};
+  const items = rankingData[period] || [];
+
+  const periodBtns = ['mesActual', 'mesAnterior', 'ult3Meses'].map(function(p) {
+    const act = period === p;
+    return '<button onclick="state.dashboardRankingPeriod=\'' + p + '\';render();" style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:0.72rem;font-weight:700;cursor:pointer;' + (act ? 'background:#1d4ed8;color:#fff' : 'background:#f3f4f6;color:#6b7280') + '">' + periodLabels[p] + '</button>';
+  }).join('');
+
+  const rankHtml = items.length === 0
+    ? '<div style="text-align:center;color:#9ca3af;padding:40px 0">Sin auditorías en este período</div>'
+    : items.map(function(item, idx) {
+        const pos = idx + 1;
+        const medal = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '<span style="font-size:0.8rem;font-weight:700;color:#9ca3af;min-width:20px;text-align:center">' + pos + '</span>';
+        const p = item.promedio;
+        const barColor = p >= 85 ? '#16a34a' : p >= 70 ? '#2563eb' : p >= 55 ? '#d97706' : '#e4001b';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f3f4f6">'
+          + '<div style="width:28px;text-align:center;flex-shrink:0">' + medal + '</div>'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:0.82rem;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(item.local) + '</div>'
+          + '<div style="margin-top:3px;height:4px;background:#e5e7eb;border-radius:2px"><div style="height:4px;width:' + p + '%;background:' + barColor + ';border-radius:2px"></div></div>'
+          + '</div>'
+          + '<div style="text-align:right;flex-shrink:0">'
+          + '<div style="font-size:1.1rem;font-weight:800;color:' + barColor + '">' + p + '%</div>'
+          + '<div style="font-size:0.6rem;color:#9ca3af">' + item.auditCount + ' audit.</div>'
+          + '</div></div>';
+      }).join('');
+
+  return '<div style="display:flex;flex-direction:column;min-height:100vh;background:#f9fafb;' + pb + '">' + header
+    + '<div style="padding:12px 14px 0">'
+    + '<div style="display:flex;gap:6px;margin-bottom:12px">' + periodBtns + '</div>'
+    + '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);padding:14px">'
+    + '<div style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Ranking de locales</div>'
+    + '<div style="font-size:0.65rem;color:#9ca3af;margin-bottom:10px">' + items.length + ' locales · ' + periodLabels[period] + '</div>'
+    + rankHtml
+    + '</div></div></div>';
 }
 
 // ============================================================
@@ -2907,10 +3008,12 @@ function attachListeners() {
       render();
     }
   }
+  on('nav-admin-calendario',   'click', goToCalendario);
   on('nav-admin-ranking', 'click', async () => {
-    setState({ screen: 'dashboard', dashboardView: 'ranking' });
+    setState({ screen: 'ranking' });
     if (!state.dashboard) await recargarDashboard();
   });
+  on('btn-ranking-refresh', 'click', async () => { await recargarDashboard(); });
   // Cerrar modal del día
   on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; render(); });
   const backdrop = document.getElementById('cal-modal-backdrop');
@@ -2930,6 +3033,15 @@ function attachListeners() {
   });
 
   // Click en celda del grid
+  // Tab selector en calendario admin
+  document.querySelectorAll('[data-cal-tab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      state.calendarioTab = btn.dataset.calTab;
+      state.calendarioDiaSeleccionado = null;
+      render();
+    });
+  });
+
   document.querySelectorAll('[data-cal-dia]').forEach(el => {
     el.addEventListener('click', () => {
       const dia = el.dataset.calDia;
@@ -2948,6 +3060,12 @@ function attachListeners() {
     if (!local)   { if (errEl) errEl.textContent = 'Seleccioná un local.';    return; }
     if (!auditor) { if (errEl) errEl.textContent = 'Seleccioná un auditor.';  return; }
     if (!state.calendarioDiaSeleccionado) { if (errEl) errEl.textContent = 'Seleccioná un día.'; return; }
+    const conflicto = (state.calendarioVisitas||[]).find(v =>
+      v.fecha === state.calendarioDiaSeleccionado &&
+      v.turno === turno &&
+      v.auditorEmail.toLowerCase() === auditor.toLowerCase()
+    );
+    if (conflicto) { if (errEl) errEl.textContent = 'Este auditor ya tiene una visita asignada en ese turno.'; return; }
     if (errEl) errEl.textContent = '';
     const btn = document.getElementById('btn-cal-agregar');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
