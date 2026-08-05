@@ -818,6 +818,7 @@ function renderCalendario() {
             </div>
           </div>
         </div>`;
+    }
 
     // Lista de todas las próximas visitas
     const proximasVisitas = visitas
