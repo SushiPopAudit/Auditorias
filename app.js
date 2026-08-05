@@ -61,6 +61,9 @@ const state = {
   historialBorrando:      false,
   historialAccionando:    '',
   editingAuditId:         '',
+  heChanges:              {},   // historial-editar: { control → {valor,observacion,rawValor,fechaRaw} }
+  heEditCats:             null, // historial-editar: categorías para saber tipos de pregunta
+  heSaving:               false,
 
   dashboard:              null,
   dashboardLoading:       false,
@@ -415,6 +418,7 @@ function render() {
     case 'admin':            app.innerHTML = renderAdmin();            break;
     case 'historial':         app.innerHTML = renderHistorial();         break;
     case 'historial-detalle': app.innerHTML = renderHistorialDetalle();  break;
+    case 'historial-editar':  app.innerHTML = renderHistorialEditar();   break;
     case 'dashboard':         app.innerHTML = renderDashboard();         break;
     case 'error':            app.innerHTML = renderError();            break;
   }
@@ -1376,6 +1380,121 @@ function renderHistorialDetalle() {
         </div>`;
       })()}
       ${catHtml}
+    </div>`;
+}
+
+// ============================================================
+// HISTORIAL — MODO EDICIÓN
+// ============================================================
+function renderHistorialEditar() {
+  const d = state.historialDetalle;
+  if (!d) return `<div class="main" style="padding-top:24px"><div class="spinner"></div></div>`;
+
+  const changes  = state.heChanges  || {};
+  const allQs    = (state.heEditCats || []).flatMap(c => c.questions);
+  const saving   = state.heSaving;
+
+  const impBgFn  = imp => imp==='Critico'||imp==='Crítico'?'#fff1f2':imp==='Alta'?'#fff7ed':imp==='Media'?'#fffbeb':'#f0fdf4';
+  const impClFn  = imp => imp==='Critico'||imp==='Crítico'?'#e4001b':imp==='Alta'?'#ea580c':imp==='Media'?'#d97706':'#16a34a';
+
+  const byCat = {}, catOrder = [];
+  d.respuestas.forEach(r => {
+    if (!byCat[r.categoria]) { byCat[r.categoria] = []; catOrder.push(r.categoria); }
+    byCat[r.categoria].push(r);
+  });
+
+  const catHtml = catOrder.map(cat => {
+    const rowsHtml = byCat[cat].map(r => {
+      const ch        = changes[r.control] || {};
+      const q         = allQs.find(q => q.control === r.control);
+      const regla     = q ? parseValidacion(q.validacion || '') : null;
+      const { type, options } = q ? parseAnswerType(q.pregunta) : { type: 'text', options: [] };
+
+      const curValor  = ch.valor       !== undefined ? ch.valor       : (r.respuesta  || '');
+      const curObs    = ch.observacion !== undefined ? ch.observacion  : (r.observacion|| '');
+      const curRaw    = ch.rawValor    !== undefined ? ch.rawValor     : (r.rawValor   || '');
+      const ctrl      = r.control;
+
+      let inputHtml = '';
+      if (regla && regla.tipo === 'numero') {
+        const colorMap = { 'Cumple': '#16a34a', 'Cumple parcialmente': '#d97706', 'No Cumple': '#e4001b' };
+        const bgMap    = { 'Cumple': '#f0fdf4', 'Cumple parcialmente': '#fffbeb', 'No Cumple': '#fff1f2' };
+        const res      = curRaw ? evaluarNumero(curRaw, regla) : null;
+        inputHtml = `
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+            <input class="he-num form-control" type="number" step="0.1"
+              data-ctrl="${escHtml(ctrl)}" value="${escHtml(curRaw)}"
+              style="max-width:140px;font-size:0.9rem">
+            ${res ? `<span style="font-size:0.72rem;font-weight:700;padding:2px 10px;border-radius:99px;background:${bgMap[res]};color:${colorMap[res]}" id="he_badge_${escHtml(ctrl)}">${escHtml(res)}</span>` : `<span id="he_badge_${escHtml(ctrl)}"></span>`}
+          </div>`;
+      } else if (regla && regla.tipo === 'fecha') {
+        inputHtml = `
+          <div style="margin-top:6px">
+            <input class="he-fecha form-control" type="date"
+              data-ctrl="${escHtml(ctrl)}" value="${escHtml(curRaw)}"
+              style="max-width:180px;font-size:0.9rem">
+          </div>`;
+      } else if (regla && regla.tipo === 'headcount') {
+        inputHtml = `<div style="font-size:0.8rem;color:#6b7280;margin-top:4px;font-style:italic">${escHtml(curValor || curObs || '—')}</div>`;
+      } else if (type === 'radio' && options.length) {
+        const vL = curValor.toLowerCase();
+        inputHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">` +
+          options.map(opt => {
+            const oL  = opt.toLowerCase();
+            const sel = vL === oL || (oL==='cumple' && vL==='cumple') || curValor===opt;
+            const bg  = oL.includes('no cumple')?'#fff1f2':oL.includes('parcial')?'#fffbeb':oL==='cumple'?'#f0fdf4':'#f1f5f9';
+            const cl  = oL.includes('no cumple')?'#e4001b':oL.includes('parcial')?'#d97706':oL==='cumple'?'#16a34a':'#6b7280';
+            return `<label style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:99px;border:2px solid ${sel?cl:'#e5e7eb'};background:${sel?bg:'#fff'};font-size:0.75rem;font-weight:700;color:${sel?cl:'#6b7280'};touch-action:manipulation">
+              <input type="radio" class="he-radio" name="he_${escHtml(ctrl)}" data-ctrl="${escHtml(ctrl)}" value="${escHtml(opt)}" ${sel?'checked':''} style="display:none"> ${escHtml(opt)}
+            </label>`;
+          }).join('') + `</div>`;
+      } else {
+        inputHtml = `<textarea class="he-text form-control" data-ctrl="${escHtml(ctrl)}"
+          style="margin-top:6px;min-height:44px;font-size:0.85rem">${escHtml(curValor)}</textarea>`;
+      }
+
+      const changed = !!changes[r.control];
+      return `
+        <div style="padding:11px 0;border-bottom:1px solid #f3f4f6${changed?';border-left:3px solid #3b82f6;padding-left:10px':''}">
+          <div style="font-size:0.7rem;color:#9ca3af">${escHtml(r.subcategoria)}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml(ctrl)}</span>
+            <span style="font-size:0.65rem;font-weight:700;padding:1px 7px;border-radius:99px;background:${impBgFn(r.importancia)};color:${impClFn(r.importancia)}">${escHtml(r.importancia)}</span>
+            ${changed ? `<span style="font-size:0.65rem;font-weight:700;color:#3b82f6">✎ modificado</span>` : ''}
+          </div>
+          ${inputHtml}
+          ${(regla && regla.tipo !== 'headcount') ? `
+          <textarea class="he-obs form-control" data-ctrl="${escHtml(ctrl)}"
+            placeholder="Observación (opcional)..." style="margin-top:6px;min-height:36px;font-size:0.78rem;color:#6b7280">${escHtml(curObs)}</textarea>` : ''}
+        </div>`;
+    }).join('');
+
+    return `
+      <div style="background:#fff;border-radius:12px;border:1px solid #e5e7eb;margin-bottom:10px;overflow:hidden">
+        <div style="padding:10px 16px;background:#f8fafc;font-size:0.86rem;font-weight:700;color:#1a1a1a">${escHtml(cat)}</div>
+        <div style="padding:0 16px">${rowsHtml}</div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="main" style="padding-top:16px;padding-bottom:90px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <button id="btn-he-back" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;color:#6b7280;font-size:0.82rem;flex-shrink:0;touch-action:manipulation">← Volver</button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a">${escHtml(d.local)}</div>
+          <div style="font-size:0.75rem;color:#6b7280">Modificar auditoría · ${escHtml(d.fecha)}</div>
+        </div>
+      </div>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:0.8rem;color:#1d4ed8">
+        Los campos marcados con <strong>✎ modificado</strong> serán actualizados. El resultado se recalcula al guardar.
+      </div>
+      ${catHtml}
+    </div>
+    <div style="position:fixed;bottom:calc(0px + env(safe-area-inset-bottom,0px));left:0;right:0;padding:12px 16px;background:#fff;border-top:1px solid #e5e7eb;z-index:100;display:flex;gap:10px">
+      <button id="btn-he-back2" style="flex:1;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;color:#6b7280;font-size:0.88rem;font-weight:600;cursor:pointer;touch-action:manipulation">Cancelar</button>
+      <button id="btn-he-guardar" style="flex:2;padding:12px;border:none;border-radius:10px;background:#1d4ed8;color:#fff;font-size:0.88rem;font-weight:700;cursor:pointer;touch-action:manipulation${saving?';opacity:0.6':''}" ${saving?'disabled':''}>
+        ${saving ? 'Guardando...' : '💾 Guardar cambios'}
+      </button>
     </div>`;
 }
 
@@ -3071,27 +3190,9 @@ function attachListeners() {
       setState({ historialAccionando: auditId });
       try {
         const d = await cargarDetalleAudit(auditId);
-        setState({ historialAccionando: '', historialDetalle: d });
         const localObj = state.locales.find(l => l.nombre === d.local) || { nombre: d.local, isCausa: false, emails: '' };
         const cats = buildCategories(localObj.isCausa);
-        const newAnswers = {};
-        cats.forEach(cat => {
-          cat.questions.forEach(q => {
-            const row = d.respuestas.find(r => r.control === q.control);
-            if (row) newAnswers[q.id] = restoreAnswerFromRow(q, row);
-          });
-        });
-        Object.assign(state, {
-          screen: 'cat-select', local: localObj,
-          fecha: d.fechaISO || d.fecha || state.fecha,
-          auditor: d.auditor || state.auditor,
-          auditorEmail: d.auditorEmail || state.auditorEmail,
-          acompanante: d.acompanante || '', posicionAcompanante: '',
-          categories: cats, categoryIndex: 0, questionIndex: 0,
-          answers: newAnswers, skipped: {},
-          editingAuditId: auditId,
-        });
-        render();
+        setState({ historialAccionando: '', historialDetalle: d, screen: 'historial-editar', heChanges: {}, heEditCats: cats, heSaving: false });
       } catch(e) {
         setState({ historialAccionando: '' });
         alert('Error al cargar auditoría: ' + e.message);
@@ -3155,30 +3256,113 @@ function attachListeners() {
     if (!d) return;
     const localObj = state.locales.find(l => l.nombre === d.local) || { nombre: d.local, isCausa: false, emails: '' };
     const cats = buildCategories(localObj.isCausa);
-    const newAnswers = {};
-    cats.forEach(cat => {
-      cat.questions.forEach(q => {
-        const row = d.respuestas.find(r => r.control === q.control);
-        if (row) newAnswers[q.id] = restoreAnswerFromRow(q, row);
-      });
-    });
-    Object.assign(state, {
-      screen:              'cat-select',
-      local:               localObj,
-      fecha:               d.fechaISO || d.fecha || state.fecha,
-      auditor:             d.auditor  || state.auditor,
-      auditorEmail:        d.auditorEmail || state.auditorEmail,
-      acompanante:         d.acompanante || '',
-      posicionAcompanante: '',
-      categories:          cats,
-      categoryIndex:       0,
-      questionIndex:       0,
-      answers:             newAnswers,
-      skipped:             {},
-      editingAuditId:      d.auditId,
-    });
-    render();
+    setState({ screen: 'historial-editar', heChanges: {}, heEditCats: cats, heSaving: false });
   });
+
+  // ── Historial Editar listeners ────────────────────────────────
+  on('btn-he-back',  'click', () => setState({ screen: 'historial-detalle' }));
+  on('btn-he-back2', 'click', () => setState({ screen: 'historial-detalle' }));
+
+  // Radio
+  document.querySelectorAll('.he-radio').forEach(inp => {
+    inp.addEventListener('change', () => {
+      if (!inp.checked) return;
+      const ctrl = inp.dataset.ctrl;
+      state.heChanges = { ...state.heChanges, [ctrl]: { ...(state.heChanges[ctrl] || {}), valor: inp.value } };
+      render();
+    });
+  });
+
+  // Número validado — actualiza badge sin re-render
+  const colorMapHE = { 'Cumple': '#16a34a', 'Cumple parcialmente': '#d97706', 'No Cumple': '#e4001b' };
+  const bgMapHE    = { 'Cumple': '#f0fdf4', 'Cumple parcialmente': '#fffbeb', 'No Cumple': '#fff1f2' };
+  document.querySelectorAll('.he-num').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const ctrl  = inp.dataset.ctrl;
+      const raw   = inp.value;
+      const allQs = (state.heEditCats || []).flatMap(c => c.questions);
+      const q     = allQs.find(q => q.control === ctrl);
+      const regla = q ? parseValidacion(q.validacion || '') : null;
+      const res   = raw && regla ? evaluarNumero(raw, regla) : null;
+      state.heChanges = { ...state.heChanges, [ctrl]: { ...(state.heChanges[ctrl] || {}), rawValor: raw, valor: res || raw } };
+      const badge = document.getElementById(`he_badge_${ctrl}`);
+      if (badge) {
+        badge.textContent = res || '';
+        badge.style.background = res ? bgMapHE[res] : '';
+        badge.style.color = res ? colorMapHE[res] : '';
+        badge.style.padding = res ? '2px 10px' : '';
+        badge.style.borderRadius = res ? '99px' : '';
+        badge.style.fontWeight = res ? '700' : '';
+        badge.style.fontSize = res ? '0.72rem' : '';
+      }
+    });
+  });
+
+  // Fecha
+  document.querySelectorAll('.he-fecha').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const ctrl = inp.dataset.ctrl;
+      const raw  = inp.value;
+      const ev   = raw ? evaluarFecha(raw) : null;
+      state.heChanges = { ...state.heChanges, [ctrl]: { ...(state.heChanges[ctrl] || {}), fechaRaw: raw, rawValor: raw, valor: ev ? ev.resultado : raw } };
+      render();
+    });
+  });
+
+  // Texto
+  document.querySelectorAll('.he-text').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const ctrl = inp.dataset.ctrl;
+      state.heChanges = { ...state.heChanges, [ctrl]: { ...(state.heChanges[ctrl] || {}), valor: inp.value } };
+    });
+  });
+
+  // Observación
+  document.querySelectorAll('.he-obs').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const ctrl = inp.dataset.ctrl;
+      state.heChanges = { ...state.heChanges, [ctrl]: { ...(state.heChanges[ctrl] || {}), observacion: inp.value } };
+    });
+  });
+
+  // Guardar cambios
+  on('btn-he-guardar', 'click', async () => {
+    const d = state.historialDetalle;
+    if (!d || state.heSaving) return;
+    setState({ heSaving: true });
+    try {
+      // Armar respuestas: originales + cambios encima
+      const changes = state.heChanges || {};
+      const respuestas = d.respuestas.map(r => {
+        const ch = changes[r.control] || {};
+        return {
+          control:      r.control,
+          respuesta:    ch.valor       !== undefined ? ch.valor       : (r.respuesta   || ''),
+          observacion:  ch.observacion !== undefined ? ch.observacion : (r.observacion || ''),
+          rawValor:     ch.rawValor    !== undefined ? ch.rawValor    : (r.rawValor    || ''),
+          fechaRaw:     ch.fechaRaw    !== undefined ? ch.fechaRaw    : '',
+        };
+      });
+      const payload = {
+        action: 'editarAuditoria', originalAuditId: d.auditId,
+        hora: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+        auditorEmail: state.user.email, token: state.user.token,
+        respuestas,
+      };
+      const raw  = await fetch(CONFIG.appsScriptURL, { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' });
+      if (!raw.ok) throw new Error('HTTP ' + raw.status);
+      const res  = await raw.json();
+      if (!res.success) throw new Error(res.error || 'Error al guardar');
+      // Recargar el detalle actualizado y volver al detalle
+      const updated = await callAPI({ action: 'getAuditoria', email: state.user.email, token: state.user.token, auditId: d.auditId });
+      setState({ heSaving: false, heChanges: {}, historialDetalle: updated.success ? updated : d, historial: null, screen: 'historial-detalle' });
+      await recargarHistorialSilente();
+    } catch(e) {
+      setState({ heSaving: false });
+      alert('Error al guardar: ' + e.message);
+    }
+  });
+  // ─────────────────────────────────────────────────────────────
 }
 
 // ============================================================
