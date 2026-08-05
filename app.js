@@ -442,6 +442,8 @@ function setState(patch) {
 const NO_NAV_SCREENS = new Set(['loading', 'login', 'change-password', 'error']);
 
 function render() {
+  const oldHelpModal = document.getElementById('help-modal-backdrop');
+  if (oldHelpModal) oldHelpModal.remove();
   const app    = document.getElementById('app');
   const hasNav = !!state.user && !NO_NAV_SCREENS.has(state.screen);
   document.body.classList.toggle('admin-nav', hasNav);
@@ -486,8 +488,8 @@ function render() {
         + '<div style="font-size:0.9rem;color:#374151;line-height:1.6;white-space:pre-wrap">' + escHtml(hq.explicacionDetallada) + '</div>'
         + '</div>';
       document.body.appendChild(modal);
-      document.getElementById('btn-help-close').addEventListener('click', function() { state.helpModalQid = null; render(); });
-      modal.addEventListener('click', function(e) { if (e.target === modal) { state.helpModalQid = null; render(); } });
+      document.getElementById('btn-help-close').addEventListener('click', function() { state.helpModalQid = null; modal.remove(); });
+      modal.addEventListener('click', function(e) { if (e.target === modal) { state.helpModalQid = null; modal.remove(); } });
     } else {
       state.helpModalQid = null;
     }
@@ -1223,7 +1225,7 @@ function renderAdminPreguntas() {
             if (px.subcategoria) subcatMap[px.categoria].add(px.subcategoria);
           });
           const subcatsForCat = Array.from((subcatMap[p.categoria] || new Set())).sort();
-          const subcatsAllJson = JSON.stringify(Object.fromEntries(Object.entries(subcatMap).map(function(e) { return [e[0], Array.from(e[1]).sort()]; })));
+          window.__subcatMap = Object.fromEntries(Object.entries(subcatMap).map(function(e) { return [e[0], Array.from(e[1]).sort()]; }));
           return '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Categoría *</label>'
             + '<input id="pf-categoria" list="pf-cats-list" value="' + escHtml(p.categoria || '') + '" placeholder="Ej: BPM" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box" autocomplete="off">'
             + '<datalist id="pf-cats-list">' + cats.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('') + '</datalist>'
@@ -1231,8 +1233,7 @@ function renderAdminPreguntas() {
             + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Subcategoría</label>'
             + '<input id="pf-subcategoria" list="pf-subcats-list" value="' + escHtml(p.subcategoria || '') + '" placeholder="Ej: Limpieza" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box" autocomplete="off">'
             + '<datalist id="pf-subcats-list">' + subcatsForCat.map(function(s) { return '<option value="' + escHtml(s) + '">'; }).join('') + '</datalist>'
-            + '<div style="font-size:0.7rem;color:#9ca3af;margin-top:3px">Elegí una existente o escribí una nueva</div></div>'
-            + '<script>window.__subcatMap=' + subcatsAllJson.replace(/<\/script>/g,'<\\/script>') + ';<\/script>';
+            + '<div style="font-size:0.7rem;color:#9ca3af;margin-top:3px">Elegí una existente o escribí una nueva</div></div>';
         }())
       + inp('pf-control', 'Control *', p.control, 'Nombre del punto de control')
       + sel('pf-importancia', 'Importancia *', p.importancia || 'Media', [{v:'Crítico',l:'Crítico'},{v:'Alta',l:'Alta'},{v:'Media',l:'Media'},{v:'Baja',l:'Baja'}])
@@ -1284,10 +1285,10 @@ function renderAdminPreguntas() {
 
   const listHtml = filtered.length === 0
     ? '<div style="text-align:center;color:#9ca3af;padding:40px 16px">' + (preguntas.length === 0 ? 'No hay preguntas cargadas.' : 'Sin resultados para el filtro.') + '</div>'
-    : filtered.map(function(p) {
+    : filtered.map(function(p, idx) {
         const tipoBadgeColor = p.tipoRespuesta === 'numero' ? '#0284c7' : p.tipoRespuesta === 'fecha' ? '#7c3aed' : '#374151';
         const tipoBadgeBg   = p.tipoRespuesta === 'numero' ? '#e0f2fe' : p.tipoRespuesta === 'fecha' ? '#ede9fe' : '#f1f5f9';
-        return '<div data-pregunta-row="' + p.rowIndex + '" style="padding:12px 16px;border-bottom:1px solid #f3f4f6;cursor:pointer;display:flex;align-items:flex-start;gap:10px">'
+        return '<div data-pregunta-row="' + p.rowIndex + '" style="padding:12px 16px;border-bottom:1px solid #f3f4f6;cursor:pointer;display:flex;align-items:flex-start;gap:10px;background:' + (idx % 2 === 0 ? '#fff' : '#f9fafb') + '">'
           + '<div style="flex:1;min-width:0">'
           + '<div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;margin-bottom:3px">' + escHtml(p.control) + '</div>'
           + '<div style="font-size:0.75rem;color:#6b7280">' + escHtml(p.categoria) + (p.subcategoria ? ' › ' + escHtml(p.subcategoria) : '') + '</div>'
@@ -2753,7 +2754,7 @@ function renderQuestionCard(q) {
       </div>
       <div class="question-control" style="display:flex;align-items:flex-start;gap:8px">
         <span style="flex:1">${escHtml(q.control)}</span>
-        ${q.explicacionDetallada ? `<button class="btn-q-help" data-qid="${q.id}" title="Ver detalle" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid #94a3b8;background:none;cursor:pointer;font-size:0.7rem;font-weight:700;color:#64748b;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px">?</button>` : ''}
+        ${q.explicacionDetallada ? `<button class="btn-q-help" data-qid="${q.id}" title="Ver detalle" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid #94a3b8;background:none;cursor:pointer;font-size:0.75rem;font-weight:900;color:#475569;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px">?</button>` : ''}
       </div>
       ${q.explicacion ? `<div class="question-explicacion">${escHtml(q.explicacion)}</div>` : ''}
       ${inputHtml}
@@ -3415,7 +3416,14 @@ function attachListeners() {
   const pfFilCat = document.getElementById('pf-fil-cat');
   if (pfFilCat) pfFilCat.addEventListener('change', function() { state.adminPreguntasCat = this.value; render(); });
   const pfSearch = document.getElementById('pf-search');
-  if (pfSearch) pfSearch.addEventListener('input', function() { state.adminPreguntasSearch = this.value; render(); });
+  if (pfSearch) pfSearch.addEventListener('input', function() {
+    const val = this.value;
+    const pos = this.selectionStart;
+    state.adminPreguntasSearch = val;
+    render();
+    const newEl = document.getElementById('pf-search');
+    if (newEl) { newEl.focus(); newEl.setSelectionRange(pos, pos); }
+  });
 
   // Categoría → actualizar datalist de subcategoría sin re-render
   const pfCat = document.getElementById('pf-categoria');
