@@ -1239,8 +1239,6 @@ function renderAdminPreguntas() {
       + inp('pf-control', 'Control *', p.control, 'Nombre del punto de control')
       + sel('pf-importancia', 'Importancia *', p.importancia || 'Media', [{v:'Crítico',l:'Crítico'},{v:'Alta',l:'Alta'},{v:'Media',l:'Media'},{v:'Baja',l:'Baja'}])
       + inp('pf-explicacion', 'Explicación corta', p.explicacion, 'Breve descripción visible durante la auditoría')
-      + '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Pregunta *</label>'
-      + '<textarea id="pf-pregunta" rows="2" placeholder="Texto de la pregunta al auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box;resize:vertical">' + escHtml(p.pregunta || '') + '</textarea></div>'
       + sel('pf-tipo', 'Tipo de respuesta *', tipoBase, [
           {v:'radio',       l:'Cumple / Parcial / No Cumple / No aplica (estándar)'},
           {v:'radio_custom',l:'Radio con opciones personalizadas'},
@@ -3330,10 +3328,9 @@ function attachListeners() {
     const cat     = (document.getElementById('pf-categoria')?.value || '').trim();
     const control = (document.getElementById('pf-control')?.value || '').trim();
     const impor   = (document.getElementById('pf-importancia')?.value || '').trim();
-    const pregunta = (document.getElementById('pf-pregunta')?.value || '').trim();
     const tipoBase = (document.getElementById('pf-tipo')?.value || 'radio').trim();
     const errEl = document.getElementById('cal-add-error');
-    if (!marca || !cat || !control || !pregunta) {
+    if (!marca || !cat || !control) {
       state.adminPreguntasError = 'Completá los campos obligatorios (*)'; render(); return;
     }
     // Construir tipoRespuesta final
@@ -3368,7 +3365,7 @@ function attachListeners() {
       control:      control,
       importancia:  impor,
       explicacion:  (document.getElementById('pf-explicacion')?.value || '').trim(),
-      pregunta:     pregunta,
+      pregunta:     p.pregunta || '',
       imagen:       (document.getElementById('pf-imagen')?.value || '').trim(),
       tipoRespuesta: tipoFinal,
       explicacionDetallada: (document.getElementById('pf-expl-det')?.value || '').trim(),
