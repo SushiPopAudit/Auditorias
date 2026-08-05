@@ -3300,7 +3300,7 @@ function attachListeners() {
     if (btn) btn.style.opacity = '0.5';
     const u = state.user;
     try {
-      const res = await fetch(GAS_URL + '?action=recalcularBatch&adminEmail=' + encodeURIComponent(u.email) + '&adminToken=' + encodeURIComponent(u.token));
+      const res = await fetch(CONFIG.appsScriptURL + '?action=recalcularBatch&adminEmail=' + encodeURIComponent(u.email) + '&adminToken=' + encodeURIComponent(u.token));
       const data = await res.json();
       if (data.success) {
         alert('Recalculado: ' + data.auditoriasActualizadas + ' auditorías actualizadas.');
