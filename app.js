@@ -602,8 +602,8 @@ function renderAdminBottomNav() {
       <button id="nav-admin-dashboard" style="${base};${isDashboard?active:idle}">
         <span style="${iconStyle}">📊</span><span style="${labelStyle}">Dashboard</span>
       </button>
-      <button id="nav-admin-usuarios" style="${base};${onAdmin&&tab==='usuarios'?active:idle}">
-        <span style="${iconStyle}">👥</span><span style="${labelStyle}">Usuarios</span>
+      <button id="nav-admin-gestion" style="${base};${onAdmin?active:idle}">
+        <span style="${iconStyle}">⚙️</span><span style="${labelStyle}">Gestión</span>
       </button>
       <button id="nav-admin-auditoria" style="flex:1;padding:0 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation;position:relative;top:-10px">
         <div style="width:52px;height:52px;border-radius:50%;background:${isAudit?'#15803d':'#16a34a'};display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(22,163,74,0.4);transition:background 0.15s">
@@ -786,20 +786,29 @@ function renderCalendario() {
           ${visitasDelDiaHtml}
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e5e7eb">
             <div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <select id="sel-cal-local" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
-                <option value="">— Seleccioná un local —</option>
-                ${localesOpts}
-              </select>
-              <select id="sel-cal-turno" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
-                <option value="Día">Día</option>
-                <option value="Noche">Noche</option>
-                <option value="Intermedio">Intermedio</option>
-              </select>
-              <select id="sel-cal-auditor" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
-                <option value="">— Seleccioná un auditor —</option>
-                ${auditoresOpts}
-              </select>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>
+                <select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
+                  <option value="">— Seleccioná un local —</option>
+                  ${localesOpts}
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Turno</label>
+                <select id="sel-cal-turno" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
+                  <option value="Día">Día</option>
+                  <option value="Noche">Noche</option>
+                  <option value="Intermedio">Intermedio</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>
+                <select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
+                  <option value="">— Seleccioná un auditor —</option>
+                  ${auditoresOpts}
+                </select>
+              </div>
               <div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>
               <button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:10px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>
             </div>
@@ -831,7 +840,7 @@ function renderCalendario() {
           </div>`).join('');
 
     return `
-      <div style="padding:16px;max-width:600px;margin:0 auto">
+      <div style="padding:16px">
         <h2 style="font-size:1.1rem;font-weight:700;color:#1a1a1a;margin:0 0 16px">Calendario de Visitas</h2>
 
         <!-- Navegación de mes -->
@@ -990,7 +999,21 @@ function renderAdminMenu() {
         <span style="font-size:0.88rem;color:#94a3b8">${escHtml(u?.nombre||'')}</span>
       </div>
       ${draftBanner}
-      <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px">
+      <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button id="btn-admin-go-usuarios" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+            <span style="font-size:1.6rem">👥</span>
+            <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Usuarios</span>
+          </button>
+          <button id="btn-admin-go-locales" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+            <span style="font-size:1.6rem">📍</span>
+            <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Locales</span>
+          </button>
+          <button id="btn-admin-go-calendario" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+            <span style="font-size:1.6rem">📅</span>
+            <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Calendario</span>
+          </button>
+        </div>
         <button class="btn btn-outline" id="btn-logout" style="width:100%;color:#94a3b8;border-color:#334155;font-size:0.85rem">Cerrar sesión</button>
       </div>
     </div>`;
@@ -2820,7 +2843,8 @@ function attachListeners() {
   }
 
   // Ir a admin
-  on('btn-go-admin', 'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
+  on('btn-go-admin',        'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
+  on('nav-admin-gestion',   'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
 
   on('btn-admin-back', 'click', () => {
     if (state.adminTab === 'menu') { setState({ screen: 'welcome' }); return; }
@@ -2847,7 +2871,9 @@ function attachListeners() {
   }
 
   on('btn-admin-go-usuarios',  'click', goToUsuarios);
-  on('btn-admin-go-locales',   'click', goToLocales);
+  on('btn-admin-go-locales',      'click', goToLocales);
+  on('btn-admin-go-usuarios',     'click', goToUsuarios);
+  on('btn-admin-go-calendario',   'click', goToCalendario);
   on('nav-admin-inicio',       'click', () => setState({ screen: 'admin', adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
   on('nav-admin-dashboard',    'click', async () => {
     setState({ screen: 'dashboard' });
@@ -2870,12 +2896,17 @@ function attachListeners() {
   // ── Calendario nav buttons ──
   async function goToCalendario() {
     setState({ screen: 'calendario', calendarioDiaSeleccionado: null });
-    if (!state.calendarioVisitas) {
+    const needsVisitas = !state.calendarioVisitas;
+    const needsUsuarios = state.user.rol === 'Admin' && !state.adminUsers;
+    if (needsVisitas || needsUsuarios) {
       state.calendarioLoading = true; render();
       try {
-        const res = await callAPI({ action: 'getCalendario', email: state.user.email, token: state.user.token });
-        state.calendarioVisitas = res.success ? (res.visitas || []) : [];
-        state.calendarioError   = res.success ? '' : (res.error || 'Error al cargar calendario');
+        const calls = [callAPI({ action: 'getCalendario', email: state.user.email, token: state.user.token })];
+        if (needsUsuarios) calls.push(callAPI({ action: 'getUsuarios', adminEmail: state.user.email, adminToken: state.user.token }));
+        const [resC, resU] = await Promise.all(calls);
+        state.calendarioVisitas = resC.success ? (resC.visitas || []) : [];
+        state.calendarioError   = resC.success ? '' : (resC.error || 'Error al cargar calendario');
+        if (resU) state.adminUsers = resU.usuarios || [];
       } catch(e) {
         state.calendarioVisitas = [];
         state.calendarioError   = 'Error de conexión: ' + e.message;
