@@ -761,63 +761,53 @@ function renderCalendario() {
       const dSel = state.calendarioDiaSeleccionado;
       const vsDia = visitasPorDia[dSel] || [];
       const visitasDelDiaHtml = vsDia.length === 0
-        ? `<p style="color:#6b7280;font-size:0.85rem;margin:0 0 4px">Sin visitas asignadas.</p>`
-        : vsDia.map(v => `
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
-            ${turnobage(v.turno)}
-            <span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(v.local)}</span>
-            <span style="font-size:0.82rem;color:#6b7280">${escHtml(v.auditorNombre)}</span>
-            <span style="margin-left:auto">${estadobadge(v.estado)}</span>
-          </div>`).join('');
+        ? '<p style="color:#6b7280;font-size:0.85rem;margin:0 0 4px">Sin visitas asignadas.</p>'
+        : vsDia.map(function(v) {
+            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
+              + turnobage(v.turno)
+              + '<span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">' + escHtml(v.local) + '</span>'
+              + '<span style="font-size:0.82rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span>'
+              + '<span style="margin-left:auto">' + estadobadge(v.estado) + '</span>'
+              + '</div>';
+          }).join('');
 
-      const localesOpts = (state.locales||[]).map(l =>
-        `<option value="${escHtml(l.nombre)}">${escHtml(l.nombre)}</option>`
-      ).join('');
+      const localesOpts = (state.locales||[]).map(function(l) {
+        return '<option value="' + escHtml(l.nombre) + '">' + escHtml(l.nombre) + '</option>';
+      }).join('');
       const auditoresOpts = (state.adminUsers||[])
-        .filter(u => u.rol === 'Auditor' || u.rol === 'Admin')
-        .filter(u => u.estado === 'Activo')
-        .map(u => `<option value="${escHtml(u.email)}">${escHtml(u.nombre)} (${escHtml(u.email)})</option>`)
+        .filter(function(u) { return u.rol === 'Auditor' || u.rol === 'Admin'; })
+        .filter(function(u) { return u.estado === 'Activo'; })
+        .map(function(u) { return '<option value="' + escHtml(u.email) + '">' + escHtml(u.nombre) + ' (' + escHtml(u.email) + ')</option>'; })
         .join('');
 
-      modalDia = `
-        <div id="cal-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">
-          <div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-              <div style="font-weight:700;font-size:1rem;color:#1a1a1a">📅 ${formatFechaLarga(dSel)}</div>
-              <button id="btn-cal-modal-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;line-height:1;padding:0 4px">&times;</button>
-            </div>
-            <div style="margin-bottom:14px">${visitasDelDiaHtml}</div>
-            <div style="border-top:1px solid #e5e7eb;padding-top:14px">
-              <div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>
-              <div style="display:flex;flex-direction:column;gap:10px">
-                <div>
-                  <label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>
-                  <select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
-                    <option value="">— Seleccioná un local —</option>
-                    ${localesOpts}
-                  </select>
-                </div>
-                <div>
-                  <label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Turno</label>
-                  <select id="sel-cal-turno" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
-                    <option value="Día">Día</option>
-                    <option value="Noche">Noche</option>
-                    <option value="Intermedio">Intermedio</option>
-                  </select>
-                </div>
-                <div>
-                  <label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>
-                  <select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
-                    <option value="">— Seleccioná un auditor —</option>
-                    ${auditoresOpts}
-                  </select>
-                </div>
-                <div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>
-                <button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>
-              </div>
-            </div>
-          </div>
-        </div>`;
+      const modalHeader = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+        + '<div style="font-weight:700;font-size:1rem;color:#1a1a1a">📅 ' + formatFechaLarga(dSel) + '</div>'
+        + '<button id="btn-cal-modal-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;line-height:1;padding:0 4px">&times;</button>'
+        + '</div>';
+
+      const modalForm = '<div style="border-top:1px solid #e5e7eb;padding-top:14px">'
+        + '<div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>'
+        + '<div style="display:flex;flex-direction:column;gap:10px">'
+        + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>'
+        + '<select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+        + '<option value="">— Seleccioná un local —</option>' + localesOpts + '</select></div>'
+        + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Turno</label>'
+        + '<select id="sel-cal-turno" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+        + '<option value="Día">Día</option><option value="Noche">Noche</option><option value="Intermedio">Intermedio</option>'
+        + '</select></div>'
+        + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>'
+        + '<select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+        + '<option value="">— Seleccioná un auditor —</option>' + auditoresOpts + '</select></div>'
+        + '<div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>'
+        + '<button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>'
+        + '</div></div>';
+
+      modalDia = '<div id="cal-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">'
+        + '<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px">'
+        + modalHeader
+        + '<div style="margin-bottom:14px">' + visitasDelDiaHtml + '</div>'
+        + modalForm
+        + '</div></div>';
     }
 
     // Lista de todas las próximas visitas
@@ -874,7 +864,7 @@ function renderCalendario() {
           ${listaHtml}
         </div>
       </div>
-      ${modalDia}`;
+      ` + modalDia;
   }
 
   // ── AUDITOR: solo lista con acordeón ──
@@ -2921,6 +2911,10 @@ function attachListeners() {
     setState({ screen: 'dashboard', dashboardView: 'ranking' });
     if (!state.dashboard) await recargarDashboard();
   });
+  // Cerrar modal del día
+  on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; render(); });
+  const backdrop = document.getElementById('cal-modal-backdrop');
+  if (backdrop) backdrop.addEventListener('click', function(e) { if (e.target === backdrop) { state.calendarioDiaSeleccionado = null; render(); } });
   on('nav-user-calendario',    'click', goToCalendario);
 
   // Navegación prev/next mes
@@ -2935,15 +2929,12 @@ function attachListeners() {
     setState({ calendarioMes: m, calendarioAnio: a, calendarioDiaSeleccionado: null });
   });
 
-  // Cerrar modal del día
-  on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; render(); });
-  const backdrop = document.getElementById('cal-modal-backdrop');
-  if (backdrop) backdrop.addEventListener('click', e => { if (e.target === backdrop) { state.calendarioDiaSeleccionado = null; render(); } });
-
   // Click en celda del grid
   document.querySelectorAll('[data-cal-dia]').forEach(el => {
     el.addEventListener('click', () => {
-      state.calendarioDiaSeleccionado = el.dataset.calDia;
+      const dia = el.dataset.calDia;
+      const current = state.calendarioDiaSeleccionado;
+      state.calendarioDiaSeleccionado = (current === dia) ? null : dia;
       render();
     });
   });
