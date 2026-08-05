@@ -289,17 +289,17 @@ function parseValidacion(v) {
   if (tipo === 'fecha') return { tipo: 'fecha', allowNA: parts.includes('NA') };
   if (tipo === 'numero') {
     const allowNA = parts.includes('NA');
-    let cumple = null, parcial = null;
+    const cumples = [], parciales = [];
     parts.forEach(p => {
       if (p.startsWith('C:')) {
         const [,a,b] = p.split(':');
-        cumple = { min: a === '*' ? null : parseFloat(a), max: b === undefined ? null : parseFloat(b) };
+        cumples.push({ min: a === '*' ? null : parseFloat(a), max: b === undefined ? null : (b === '*' ? null : parseFloat(b)) });
       } else if (p.startsWith('P:')) {
         const [,a,b] = p.split(':');
-        parcial = { min: parseFloat(a), max: parseFloat(b) };
+        parciales.push({ min: parseFloat(a), max: parseFloat(b) });
       }
     });
-    return { tipo: 'numero', cumple, parcial, allowNA };
+    return { tipo: 'numero', cumple: cumples[0]||null, parcial: parciales[0]||null, cumples, parciales, allowNA };
   }
   return null;
 }
@@ -308,16 +308,15 @@ function evaluarNumero(val, regla) {
   if (!regla || regla.tipo !== 'numero') return null;
   const n = parseFloat(String(val).replace(',', '.'));
   if (isNaN(n)) return null;
-  const { cumple, parcial } = regla;
-  if (cumple) {
-    const okMin = cumple.min === null || n >= cumple.min;
-    const okMax = cumple.max === null || n <= cumple.max;
-    if (okMin && okMax) return 'Cumple';
+  const cumples  = (regla.cumples  && regla.cumples.length)  ? regla.cumples  : (regla.cumple  ? [regla.cumple]  : []);
+  const parciales = (regla.parciales && regla.parciales.length) ? regla.parciales : (regla.parcial ? [regla.parcial] : []);
+  for (var i = 0; i < cumples.length; i++) {
+    const c = cumples[i];
+    if ((c.min === null || n >= c.min) && (c.max === null || n <= c.max)) return 'Cumple';
   }
-  if (parcial) {
-    const okMin = n >= parcial.min;
-    const okMax = n <= parcial.max;
-    if (okMin && okMax) return 'Cumple parcialmente';
+  for (var j = 0; j < parciales.length; j++) {
+    const p = parciales[j];
+    if (n >= p.min && n <= p.max) return 'Cumple parcialmente';
   }
   return 'No Cumple';
 }
@@ -1167,16 +1166,22 @@ function renderAdminPreguntas() {
     const opcionesCustom = colonIdx > -1 ? tipo.slice(colonIdx + 1) : '';
 
     // Rangos para tipo numero
-    let cumpleMin = '', cumpleMax = '', parcialMin = '', parcialMax = '', allowNA = false;
-    if (p.validacion) {
-      const regla = parseValidacion(p.validacion);
+    let cumpleRangos  = p.cumpleRangos  || null;
+    let parcialRangos = p.parcialRangos || null;
+    let allowNA = false;
+    if (!cumpleRangos || !parcialRangos) {
+      const regla = p.validacion ? parseValidacion(p.validacion) : null;
       if (regla && regla.tipo === 'numero') {
-        cumpleMin  = regla.cumple  ? (regla.cumple.min  !== null ? regla.cumple.min  : '') : '';
-        cumpleMax  = regla.cumple  ? (regla.cumple.max  !== null ? regla.cumple.max  : '') : '';
-        parcialMin = regla.parcial ? regla.parcial.min : '';
-        parcialMax = regla.parcial ? regla.parcial.max : '';
-        allowNA    = regla.allowNA || false;
+        allowNA = regla.allowNA || false;
+        cumpleRangos  = regla.cumples.length  ? regla.cumples.map(function(c)  { return { min: c.min  !== null ? String(c.min)  : '', max: c.max  !== null ? String(c.max)  : '' }; }) : [{ min:'', max:'' }];
+        parcialRangos = regla.parciales.length ? regla.parciales.map(function(c) { return { min: String(c.min), max: String(c.max) }; }) : [{ min:'', max:'' }];
+      } else {
+        cumpleRangos  = [{ min:'', max:'' }];
+        parcialRangos = [{ min:'', max:'' }];
       }
+    } else if (p.validacion) {
+      const regla = parseValidacion(p.validacion);
+      if (regla && regla.tipo === 'numero') allowNA = regla.allowNA || false;
     }
 
     function inp(id, label, value, placeholder) {
@@ -1193,14 +1198,34 @@ function renderAdminPreguntas() {
     // Categorías únicas de las preguntas existentes
     const cats = Array.from(new Set(preguntas.map(function(p) { return p.categoria; }))).sort();
 
+    const inputStyle = 'width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px';
+    const btnDelStyle = 'border:none;background:none;color:#ef4444;font-size:1rem;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;margin-top:18px';
+    const btnAddStyle = 'border:none;background:none;color:#2563eb;font-size:0.75rem;font-weight:600;cursor:pointer;padding:2px 6px';
+    function rangoRow(prefix, idx, r, canDel) {
+      return '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px">'
+        + '<div style="flex:1"><label style="font-size:0.7rem;font-weight:600;color:#6b7280">Mín</label>'
+        + '<input id="' + prefix + '-min-' + idx + '" type="number" step="0.1" value="' + escHtml(String(r.min)) + '" placeholder="ej: 0" style="' + inputStyle + '"></div>'
+        + '<div style="flex:1"><label style="font-size:0.7rem;font-weight:600;color:#6b7280">Máx</label>'
+        + '<input id="' + prefix + '-max-' + idx + '" type="number" step="0.1" value="' + escHtml(String(r.max)) + '" placeholder="ej: 10" style="' + inputStyle + '"></div>'
+        + (canDel ? '<button type="button" data-del-' + prefix + '="' + idx + '" style="' + btnDelStyle + '">×</button>' : '<div style="width:26px"></div>')
+        + '</div>';
+    }
     const rangosHtml = (tipoBase === 'numero')
       ? '<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:12px">'
         + '<div style="font-size:0.78rem;font-weight:700;color:#374151;margin-bottom:10px">Rangos de cumplimiento</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
-        + '<div><label style="font-size:0.72rem;font-weight:600;color:#16a34a">Cumple — Mín</label><input id="pf-cumple-min" type="number" step="0.1" value="' + escHtml(String(cumpleMin)) + '" placeholder="ej: -2" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
-        + '<div><label style="font-size:0.72rem;font-weight:600;color:#16a34a">Cumple — Máx</label><input id="pf-cumple-max" type="number" step="0.1" value="' + escHtml(String(cumpleMax)) + '" placeholder="ej: 2" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
-        + '<div><label style="font-size:0.72rem;font-weight:600;color:#d97706">Parcial — Mín</label><input id="pf-parcial-min" type="number" step="0.1" value="' + escHtml(String(parcialMin)) + '" placeholder="opcional" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
-        + '<div><label style="font-size:0.72rem;font-weight:600;color:#d97706">Parcial — Máx</label><input id="pf-parcial-max" type="number" step="0.1" value="' + escHtml(String(parcialMax)) + '" placeholder="opcional" style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:7px;font-size:0.85rem;box-sizing:border-box;margin-top:2px"></div>'
+        + '<div style="margin-bottom:10px">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+        + '<span style="font-size:0.72rem;font-weight:700;color:#16a34a">✓ Cumple</span>'
+        + '<button type="button" id="btn-cumple-add" style="' + btnAddStyle + '">+ Agregar rango</button>'
+        + '</div>'
+        + cumpleRangos.map(function(r, i) { return rangoRow('pf-cumple', i, r, cumpleRangos.length > 1); }).join('')
+        + '</div>'
+        + '<div style="margin-bottom:10px">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+        + '<span style="font-size:0.72rem;font-weight:700;color:#d97706">~ Cumple parcialmente</span>'
+        + '<button type="button" id="btn-parcial-add" style="' + btnAddStyle + '">+ Agregar rango</button>'
+        + '</div>'
+        + parcialRangos.map(function(r, i) { return rangoRow('pf-parcial', i, r, parcialRangos.length > 1); }).join('')
         + '</div>'
         + '<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:#6b7280"><input type="checkbox" id="pf-allow-na"' + (allowNA ? ' checked' : '') + '> Permite "No aplica"</label>'
         + '</div>'
@@ -3306,7 +3331,7 @@ function attachListeners() {
   });
 
   on('btn-pregunta-nueva', 'click', function() {
-    state.adminEditingPregunta = { marca:'Multimarca', categoria:'', subcategoria:'', control:'', importancia:'Media', explicacion:'', pregunta:'', imagen:'', tipoRespuesta:'radio', explicacionDetallada:'', validacion:'' };
+    state.adminEditingPregunta = { marca:'Multimarca', categoria:'', subcategoria:'', control:'', importancia:'Media', explicacion:'', pregunta:'', imagen:'', tipoRespuesta:'radio', explicacionDetallada:'', validacion:'', cumpleRangos:[{min:'',max:''}], parcialRangos:[{min:'',max:''}] };
     state.adminPreguntasMsg = ''; state.adminPreguntasError = '';
     render();
   });
@@ -3317,6 +3342,49 @@ function attachListeners() {
       const row = parseInt(el.dataset.preguntaRow, 10);
       const p = (state.adminPreguntas || []).find(function(x) { return x.rowIndex === row; });
       if (p) { state.adminEditingPregunta = Object.assign({}, p); state.adminPreguntasMsg = ''; state.adminPreguntasError = ''; render(); }
+    });
+  });
+
+  // Helper: leer rangos actuales del DOM (inputs indexados)
+  function readRangosFromDOM() {
+    var cumpleRangos = [], parcialRangos = [], i = 0;
+    while (document.getElementById('pf-cumple-min-' + i)) {
+      cumpleRangos.push({ min: document.getElementById('pf-cumple-min-' + i).value, max: document.getElementById('pf-cumple-max-' + i).value });
+      i++;
+    }
+    i = 0;
+    while (document.getElementById('pf-parcial-min-' + i)) {
+      parcialRangos.push({ min: document.getElementById('pf-parcial-min-' + i).value, max: document.getElementById('pf-parcial-max-' + i).value });
+      i++;
+    }
+    return { cumpleRangos: cumpleRangos.length ? cumpleRangos : [{min:'',max:''}], parcialRangos: parcialRangos.length ? parcialRangos : [{min:'',max:''}] };
+  }
+
+  // Botones + / × para rangos de cumple/parcial
+  on('btn-cumple-add', 'click', function() {
+    var d = readRangosFromDOM();
+    state.adminEditingPregunta = Object.assign({}, state.adminEditingPregunta, { cumpleRangos: d.cumpleRangos.concat([{min:'',max:''}]), parcialRangos: d.parcialRangos });
+    render();
+  });
+  on('btn-parcial-add', 'click', function() {
+    var d = readRangosFromDOM();
+    state.adminEditingPregunta = Object.assign({}, state.adminEditingPregunta, { cumpleRangos: d.cumpleRangos, parcialRangos: d.parcialRangos.concat([{min:'',max:''}]) });
+    render();
+  });
+  document.querySelectorAll('[data-del-pf-cumple]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var idx = parseInt(btn.dataset.delPfCumple, 10);
+      var d = readRangosFromDOM();
+      state.adminEditingPregunta = Object.assign({}, state.adminEditingPregunta, { cumpleRangos: d.cumpleRangos.filter(function(_,i){return i!==idx;}), parcialRangos: d.parcialRangos });
+      render();
+    });
+  });
+  document.querySelectorAll('[data-del-pf-parcial]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var idx = parseInt(btn.dataset.delPfParcial, 10);
+      var d = readRangosFromDOM();
+      state.adminEditingPregunta = Object.assign({}, state.adminEditingPregunta, { cumpleRangos: d.cumpleRangos, parcialRangos: d.parcialRangos.filter(function(_,i){return i!==idx;}) });
+      render();
     });
   });
 
@@ -3342,14 +3410,11 @@ function attachListeners() {
     // Construir validacion para numero
     let validacion = p.validacion || '';
     if (tipoBase === 'numero') {
-      const cMin = document.getElementById('pf-cumple-min')?.value.trim();
-      const cMax = document.getElementById('pf-cumple-max')?.value.trim();
-      const pMin = document.getElementById('pf-parcial-min')?.value.trim();
-      const pMax = document.getElementById('pf-parcial-max')?.value.trim();
+      const { cumpleRangos: cRangos, parcialRangos: pRangos } = readRangosFromDOM();
       const naOk = document.getElementById('pf-allow-na')?.checked;
       let v = 'numero';
-      if (cMin !== '' || cMax !== '') v += '|C:' + (cMin||'*') + ':' + (cMax||'*');
-      if (pMin !== '' && pMax !== '') v += '|P:' + pMin + ':' + pMax;
+      cRangos.forEach(function(r) { if (r.min !== '' || r.max !== '') v += '|C:' + (r.min||'*') + ':' + (r.max||'*'); });
+      pRangos.forEach(function(r) { if (r.min !== '' && r.max !== '') v += '|P:' + r.min + ':' + r.max; });
       if (naOk) v += '|NA';
       validacion = v;
     }
@@ -3436,9 +3501,9 @@ function attachListeners() {
   const pfTipo = document.getElementById('pf-tipo');
   if (pfTipo) pfTipo.addEventListener('change', function() {
     if (state.adminEditingPregunta) {
+      const { cumpleRangos, parcialRangos } = readRangosFromDOM();
       state.adminEditingPregunta = Object.assign({}, state.adminEditingPregunta, {
         tipoRespuesta: this.value === 'radio_custom' ? 'radio:' : this.value,
-        pregunta: document.getElementById('pf-pregunta')?.value || state.adminEditingPregunta.pregunta,
         categoria: document.getElementById('pf-categoria')?.value || state.adminEditingPregunta.categoria,
         subcategoria: document.getElementById('pf-subcategoria')?.value || state.adminEditingPregunta.subcategoria,
         control: document.getElementById('pf-control')?.value || state.adminEditingPregunta.control,
@@ -3447,6 +3512,7 @@ function attachListeners() {
         explicacionDetallada: document.getElementById('pf-expl-det')?.value || state.adminEditingPregunta.explicacionDetallada,
         imagen: document.getElementById('pf-imagen')?.value || state.adminEditingPregunta.imagen,
         marca: document.getElementById('pf-marca')?.value || state.adminEditingPregunta.marca,
+        cumpleRangos, parcialRangos,
       });
       render();
     }
