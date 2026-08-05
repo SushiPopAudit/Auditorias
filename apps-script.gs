@@ -7,6 +7,7 @@ const SHEET_NAME      = 'Resultados';
 const DRIVE_FOLDER_ID = '1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P';
 const USUARIOS_SHEET          = 'Usuarios';
 const USUARIOS_SPREADSHEET_ID = '1TeeKe1eYsKIZ6-8uEPOY0UT-wrtrwl0FW4hAgBoIkzY';
+const CALENDARIO_SHEET = 'Calendario';
 
 // ============================================================
 // CACHÉ — CacheService (TTL en segundos)
@@ -167,6 +168,23 @@ function doPost(e) {
       cacheRemoveKey('aud_all');
       cacheRemoveKey('db_all'); // dashboard admin uses db_<adminEmail>, but we don't know it — TTL will expire
     }
+
+    // Marcar visita del calendario como Realizada si existe una Pendiente para este local+fecha+auditor
+    try {
+      var shCal = ensureCalendarioSheet(ss);
+      if (shCal.getLastRow() > 1) {
+        var calData = shCal.getRange(2, 1, shCal.getLastRow() - 1, 7).getValues();
+        var fechaAudit = String(data.fecha || '').substring(0, 10);
+        calData.forEach(function(row, i) {
+          if (String(row[3]) === String(data.local || '') &&
+              String(row[1]).substring(0, 10) === fechaAudit &&
+              String(row[4]).toLowerCase() === String(data.auditorEmail || '').toLowerCase() &&
+              String(row[6]) === 'Pendiente') {
+            shCal.getRange(i + 2, 7).setValue('Realizada');
+          }
+        });
+      }
+    } catch(calErr) { console.error('Error marcando visita realizada:', calErr); }
 
     // Detectar desvíos repetidos (aparecen en últimas 2 auditorías del mismo local)
     const desviosRepetidos = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
@@ -888,6 +906,17 @@ function ensureUsuariosSheet(ss) {
     sheet = ss.insertSheet(USUARIOS_SHEET);
     sheet.appendRow(['Email','Nombre','Rol','Locales','PasswordHash','PrimerLogin','Estado','FechaAlta']);
     sheet.getRange(1,1,1,8).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function ensureCalendarioSheet(ss) {
+  var sheet = ss.getSheetByName(CALENDARIO_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(CALENDARIO_SHEET);
+    sheet.appendRow(['VisitaID','Fecha','Turno','Local','AuditorEmail','AuditorNombre','Estado']);
+    sheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -1926,6 +1955,177 @@ function doGet(e) {
       cachePutObj(cacheKeyDB, resDB, 180);
       return jsonResponse(resDB);
     } catch(dbErr) { return jsonResponse({ success: false, error: dbErr.message }); }
+  }
+
+  // ============================================================
+  // getCalendario
+  // ============================================================
+  if (action === 'getCalendario') {
+    var gcEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var gcToken = e.parameter.token || '';
+    if (!gcEmail || !gcToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssAuthGC = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shAuthGC = ensureUsuariosSheet(ssAuthGC);
+      var rowAuthGC = encontrarUsuarioRow(shAuthGC, gcEmail);
+      if (rowAuthGC < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dAuthGC = shAuthGC.getRange(rowAuthGC, 1, 1, 8).getValues()[0];
+      if (dAuthGC[4] !== gcToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dAuthGC[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      var gcRol = String(dAuthGC[2] || '');
+
+      var ssGC = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shGC = ensureCalendarioSheet(ssGC);
+      if (shGC.getLastRow() < 2) return jsonResponse({ success: true, visitas: [] });
+      var dataGC = shGC.getRange(2, 1, shGC.getLastRow() - 1, 7).getValues();
+      var visitas = dataGC.filter(function(r){ return r[0]; }).map(function(r){
+        return {
+          visitaId:      String(r[0] || ''),
+          fecha:         formatFechaISO(r[1]),
+          turno:         String(r[2] || ''),
+          local:         String(r[3] || ''),
+          auditorEmail:  String(r[4] || ''),
+          auditorNombre: String(r[5] || ''),
+          estado:        String(r[6] || ''),
+        };
+      });
+      // Auditor solo ve sus visitas; Admin ve todas
+      if (gcRol !== 'Admin') {
+        visitas = visitas.filter(function(v){ return v.auditorEmail.toLowerCase() === gcEmail; });
+      }
+      return jsonResponse({ success: true, visitas: visitas });
+    } catch(gcErr) { return jsonResponse({ success: false, error: gcErr.message }); }
+  }
+
+  // ============================================================
+  // agregarVisita
+  // ============================================================
+  if (action === 'agregarVisita') {
+    var avAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var avAdminToken = e.parameter.adminToken || '';
+    var avFecha      = e.parameter.fecha || '';
+    var avTurno      = e.parameter.turno || 'Día';
+    var avLocal      = e.parameter.local || '';
+    var avAuditorEmail = ((e.parameter.auditorEmail) || '').toLowerCase().trim();
+    if (!avAdminEmail || !avAdminToken || !avFecha || !avLocal || !avAuditorEmail)
+      return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssAV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssAV, avAdminEmail, avAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+
+      // Obtener nombre del auditor
+      var shUsersAV = ensureUsuariosSheet(ssAV);
+      var rowAV = encontrarUsuarioRow(shUsersAV, avAuditorEmail);
+      var avAuditorNombre = rowAV > 0 ? String(shUsersAV.getRange(rowAV, 2).getValue()) : avAuditorEmail;
+
+      var ssDataAV = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shCalAV  = ensureCalendarioSheet(ssDataAV);
+      var visitaId = 'VIS_' + new Date().getTime();
+      shCalAV.appendRow([visitaId, avFecha, avTurno, avLocal, avAuditorEmail, avAuditorNombre, 'Pendiente']);
+
+      // Enviar email al auditor
+      try {
+        var asunto = 'Nueva visita de auditoría asignada — ' + avLocal + ' (' + avFecha + ')';
+        var cuerpoEmail = 'Hola ' + avAuditorNombre + ',\n\n'
+          + 'Se te asignó una nueva visita de auditoría:\n\n'
+          + '  Local: ' + avLocal + '\n'
+          + '  Fecha: ' + avFecha + '\n'
+          + '  Turno: ' + avTurno + '\n\n'
+          + 'Podés ver tus próximas visitas en el sistema: https://sushipopaudit.github.io/Auditorias/\n\n'
+          + 'Sushi POP Auditorías';
+        GmailApp.sendEmail(avAuditorEmail, asunto, cuerpoEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
+      } catch(mailAV) { console.error('Email auditor error:', mailAV); }
+
+      return jsonResponse({ success: true, visitaId: visitaId });
+    } catch(avErr) { return jsonResponse({ success: false, error: avErr.message }); }
+  }
+
+  // ============================================================
+  // borrarVisita
+  // ============================================================
+  if (action === 'borrarVisita') {
+    var bvAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var bvAdminToken = e.parameter.adminToken || '';
+    var bvVisitaId   = e.parameter.visitaId || '';
+    if (!bvAdminEmail || !bvAdminToken || !bvVisitaId) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssBV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssBV, bvAdminEmail, bvAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var ssDataBV = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shCalBV  = ensureCalendarioSheet(ssDataBV);
+      if (shCalBV.getLastRow() < 2) return jsonResponse({ success: false, error: 'Visita no encontrada' });
+      var dataBV = shCalBV.getRange(2, 1, shCalBV.getLastRow() - 1, 1).getValues();
+      var rowBV = -1;
+      for (var bi = 0; bi < dataBV.length; bi++) {
+        if (String(dataBV[bi][0]) === bvVisitaId) { rowBV = bi + 2; break; }
+      }
+      if (rowBV < 0) return jsonResponse({ success: false, error: 'Visita no encontrada' });
+      shCalBV.deleteRow(rowBV);
+      return jsonResponse({ success: true });
+    } catch(bvErr) { return jsonResponse({ success: false, error: bvErr.message }); }
+  }
+
+  // ============================================================
+  // getLocalFallas — últimas 2 auditorías de un local: No Cumple + Crítico Parcial
+  // ============================================================
+  if (action === 'getLocalFallas') {
+    var lfEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var lfToken = e.parameter.token || '';
+    var lfLocal = e.parameter.local || '';
+    if (!lfEmail || !lfToken || !lfLocal) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssAuthLF = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shAuthLF = ensureUsuariosSheet(ssAuthLF);
+      var rowAuthLF = encontrarUsuarioRow(shAuthLF, lfEmail);
+      if (rowAuthLF < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dAuthLF = shAuthLF.getRange(rowAuthLF, 1, 1, 8).getValues()[0];
+      if (dAuthLF[4] !== lfToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dAuthLF[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+
+      var ssLF = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shLF = ssLF.getSheetByName(SHEET_NAME);
+      if (!shLF || shLF.getLastRow() < 2) return jsonResponse({ success: true, auditorias: [] });
+
+      var allLF = shLF.getRange(2, 1, shLF.getLastRow() - 1, 17).getValues();
+      // Filtrar filas del local (col E = índice 4)
+      var rowsLocal = allLF.filter(function(r){ return String(r[4] || '').trim() === lfLocal && r[0]; });
+      if (!rowsLocal.length) return jsonResponse({ success: true, auditorias: [] });
+
+      // Obtener los últimos 2 AuditIDs distintos por orden de aparición
+      var auditIds = [];
+      rowsLocal.forEach(function(r){
+        var id = String(r[0]);
+        if (auditIds.indexOf(id) === -1) auditIds.push(id);
+      });
+      var last2 = auditIds.slice(-2);
+
+      var result = last2.map(function(id) {
+        var rows = rowsLocal.filter(function(r){ return String(r[0]) === id; });
+        var first = rows[0];
+        var fallas = rows.filter(function(r){
+          var res = String(r[11]||'').toLowerCase();
+          var imp = String(r[9]||'').toLowerCase();
+          var isNoCumple   = res.includes('no cumple') || res === 'nocumple';
+          var isCritParcial= res.includes('parcial') && (imp === 'critico' || imp === 'crítico');
+          return isNoCumple || isCritParcial;
+        }).map(function(r){
+          return {
+            categoria:   String(r[6]||''),
+            subcategoria:String(r[7]||''),
+            control:     String(r[8]||''),
+            importancia: String(r[9]||''),
+            respuesta:   String(r[11]||''),
+          };
+        });
+        return {
+          auditId: id,
+          fecha:   formatFechaISO(first[1]),
+          fallas:  fallas,
+        };
+      });
+
+      return jsonResponse({ success: true, auditorias: result });
+    } catch(lfErr) { return jsonResponse({ success: false, error: lfErr.message }); }
   }
 
   return jsonResponse({ version: '2026-06-16-v1' });

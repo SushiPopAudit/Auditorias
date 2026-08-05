@@ -74,6 +74,16 @@ const state = {
   dashboardRankingPeriod: 'mesActual',
 
   historialTipo:          '',
+
+  // Calendario
+  calendarioVisitas:      null,   // array de visitas o null si no cargado
+  calendarioLoading:      false,
+  calendarioError:        '',
+  calendarioMes:          new Date().getMonth(),   // 0-11
+  calendarioAnio:         new Date().getFullYear(),
+  calendarioDiaSeleccionado: null,  // 'YYYY-MM-DD' o null
+  calendarioFallasCargando: {},     // { visitaId: true/false }
+  calendarioFallas:       {},       // { local: [{auditId, fecha, fallas}] }
 };
 
 // ============================================================
@@ -420,6 +430,7 @@ function render() {
     case 'historial-detalle': app.innerHTML = renderHistorialDetalle();  break;
     case 'historial-editar':  app.innerHTML = renderHistorialEditar();   break;
     case 'dashboard':         app.innerHTML = renderDashboard();         break;
+    case 'calendario':        app.innerHTML = renderCalendario();        break;
     case 'error':            app.innerHTML = renderError();            break;
   }
   if (hasNav) {
@@ -579,6 +590,7 @@ function renderAdminBottomNav() {
   const isAudit      = auditScreens.has(state.screen);
   const isHistorial  = histScreens.has(state.screen);
   const isDashboard  = state.screen === 'dashboard';
+  const isCalendario = state.screen === 'calendario';
   const onAdmin      = state.screen === 'admin';
   const active = 'color:#e4001b;font-weight:700';
   const idle   = 'color:#9ca3af;font-weight:400';
@@ -602,8 +614,8 @@ function renderAdminBottomNav() {
       <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
         <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
       </button>
-      <button id="nav-admin-locales" style="${base};${onAdmin&&tab==='locales'?active:idle}">
-        <span style="${iconStyle}">🏪</span><span style="${labelStyle}">Locales</span>
+      <button id="nav-admin-calendario" style="${base};${isCalendario?active:idle}">
+        <span style="${iconStyle}">📅</span><span style="${labelStyle}">Calendario</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -615,6 +627,7 @@ function renderUserBottomNav() {
   const isAudit      = auditScreens.has(state.screen);
   const isHistorial  = histScreens.has(state.screen);
   const isDashboard  = state.screen === 'dashboard';
+  const isCalendario = state.screen === 'calendario';
   const onWelcome    = state.screen === 'welcome';
   const rol          = state.user?.rol || '';
   const active = 'color:#e4001b;font-weight:700';
@@ -650,8 +663,277 @@ function renderUserBottomNav() {
       <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
         <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
       </button>
+      <button id="nav-user-calendario" style="${base};${isCalendario?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📅</span><span style="${labelStyle}">Calendario</span>
+      </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
+}
+
+// ============================================================
+// PANTALLA: CALENDARIO DE VISITAS
+// ============================================================
+function renderCalendario() {
+  const u = state.user;
+  if (!u) return '';
+  const isAdmin = u.rol === 'Admin';
+
+  if (state.calendarioLoading) {
+    return `<div style="padding:24px;text-align:center"><div class="spinner"></div><p style="color:#6b7280;margin-top:12px;font-size:0.9rem">Cargando visitas...</p></div>`;
+  }
+  if (state.calendarioError) {
+    return `<div style="padding:24px"><div style="background:#fff1f2;border:1px solid #fecaca;border-radius:10px;padding:16px;color:#e4001b;font-size:0.9rem">${escHtml(state.calendarioError)}</div></div>`;
+  }
+  if (!state.calendarioVisitas) {
+    return `<div style="padding:24px;text-align:center"><p style="color:#6b7280;font-size:0.9rem">Cargando...</p></div>`;
+  }
+
+  const visitas = state.calendarioVisitas;
+  const hoy = new Date();
+  const hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
+
+  // Colores por turno
+  const TURNO_COLOR = { 'Día': '#f97316', 'Noche': '#6366f1', 'Intermedio': '#14b8a6' };
+  const TURNO_BG    = { 'Día': '#fff7ed', 'Noche': '#eef2ff', 'Intermedio': '#f0fdfa' };
+  const TURNO_TEXT  = { 'Día': '#c2410c', 'Noche': '#4338ca', 'Intermedio': '#0f766e' };
+
+  function estadobadge(estado) {
+    if (estado === 'Realizada') return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:#dcfce7;color:#166534">${escHtml(estado)}</span>`;
+    return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:#fef9c3;color:#854d0e">${escHtml(estado)}</span>`;
+  }
+
+  function formatFechaLarga(isoStr) {
+    if (!isoStr) return '';
+    const [y, m, d] = isoStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return dias[dt.getDay()] + ' ' + d + ' de ' + meses[m - 1];
+  }
+
+  // ── ADMIN: calendario grid + lista ──
+  if (isAdmin) {
+    const mes  = state.calendarioMes;
+    const anio = state.calendarioAnio;
+    const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const DIAS_CABECERA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+    // Primer día del mes y cantidad de días
+    const primerDia = new Date(anio, mes, 1).getDay(); // 0=Dom
+    const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+
+    // Agrupar visitas del mes actual por fecha
+    const mesStr = anio + '-' + String(mes + 1).padStart(2, '0');
+    const visitasPorDia = {};
+    visitas.forEach(v => {
+      if (!v.fecha.startsWith(mesStr)) return;
+      if (!visitasPorDia[v.fecha]) visitasPorDia[v.fecha] = [];
+      visitasPorDia[v.fecha].push(v);
+    });
+
+    // Construir celdas del grid
+    let celdasHtml = '';
+    // Celdas vacías antes del primer día
+    for (let i = 0; i < primerDia; i++) {
+      celdasHtml += `<div style="min-height:44px;padding:4px;background:#f9fafb;border:1px solid #e5e7eb"></div>`;
+    }
+    for (let d = 1; d <= diasEnMes; d++) {
+      const dStr = anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      const vsDay = visitasPorDia[dStr] || [];
+      const isHoy = dStr === hoyStr;
+      const isSel = dStr === state.calendarioDiaSeleccionado;
+      const dotHtml = vsDay.map(v => {
+        const color = TURNO_COLOR[v.turno] || '#94a3b8';
+        return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin:0 1px"></span>`;
+      }).join('');
+      const borderStyle = isSel ? 'border:2px solid #e4001b' : (isHoy ? 'border:2px solid #16a34a' : 'border:1px solid #e5e7eb');
+      const bgStyle = isSel ? 'background:#fff1f2' : (isHoy ? 'background:#f0fdf4' : 'background:#fff');
+      celdasHtml += `
+        <div data-cal-dia="${escHtml(dStr)}" style="min-height:44px;padding:4px;cursor:pointer;${bgStyle};${borderStyle};border-radius:4px;position:relative">
+          <div style="font-size:0.8rem;font-weight:${isHoy?'700':'500'};color:${isHoy?'#15803d':isSel?'#e4001b':'#1a1a1a'}">${d}</div>
+          ${dotHtml ? `<div style="display:flex;flex-wrap:wrap;gap:1px;margin-top:2px">${dotHtml}</div>` : ''}
+        </div>`;
+    }
+
+    // Panel del día seleccionado
+    let panelDia = '';
+    if (state.calendarioDiaSeleccionado) {
+      const dSel = state.calendarioDiaSeleccionado;
+      const vsDia = visitasPorDia[dSel] || [];
+      const visitasDelDiaHtml = vsDia.length === 0
+        ? `<p style="color:#6b7280;font-size:0.85rem;margin:0 0 12px">Sin visitas asignadas este día.</p>`
+        : vsDia.map(v => `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
+            ${turnobage(v.turno)}
+            <span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(v.local)}</span>
+            <span style="font-size:0.82rem;color:#6b7280">${escHtml(v.auditorNombre)}</span>
+            <span style="margin-left:auto">${estadobadge(v.estado)}</span>
+          </div>`).join('');
+
+      // Formulario agregar visita
+      const localesOpts = (state.locales||[]).map(l =>
+        `<option value="${escHtml(l.nombre)}">${escHtml(l.nombre)}</option>`
+      ).join('');
+      const auditoresOpts = (state.adminUsers||[])
+        .filter(u => u.rol === 'Auditor' || u.rol === 'Admin')
+        .filter(u => u.estado === 'Activo')
+        .map(u => `<option value="${escHtml(u.email)}">${escHtml(u.nombre)} (${escHtml(u.email)})</option>`)
+        .join('');
+
+      panelDia = `
+        <div id="panel-dia-cal" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:20px">
+          <div style="font-weight:700;font-size:0.95rem;color:#1a1a1a;margin-bottom:12px">📅 ${formatFechaLarga(dSel)}</div>
+          ${visitasDelDiaHtml}
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e5e7eb">
+            <div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <select id="sel-cal-local" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
+                <option value="">— Seleccioná un local —</option>
+                ${localesOpts}
+              </select>
+              <select id="sel-cal-turno" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
+                <option value="Día">Día</option>
+                <option value="Noche">Noche</option>
+                <option value="Intermedio">Intermedio</option>
+              </select>
+              <select id="sel-cal-auditor" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">
+                <option value="">— Seleccioná un auditor —</option>
+                ${auditoresOpts}
+              </select>
+              <div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>
+              <button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:10px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Lista de todas las próximas visitas
+    const proximasVisitas = visitas
+      .filter(v => v.fecha >= hoyStr)
+      .sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
+
+    const listaHtml = proximasVisitas.length === 0
+      ? `<p style="color:#6b7280;font-size:0.88rem;text-align:center;padding:16px 0">No hay visitas próximas.</p>`
+      : proximasVisitas.map(v => `
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
+            <div style="min-width:110px">
+              <div style="font-size:0.78rem;color:#6b7280">${formatFechaLarga(v.fecha)}</div>
+              <div style="margin-top:2px">${turnobage(v.turno)}</div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(v.local)}</div>
+              <div style="font-size:0.78rem;color:#6b7280">${escHtml(v.auditorNombre)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              ${estadobadge(v.estado)}
+              <button data-cal-borrar="${escHtml(v.visitaId)}" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.78rem;color:#6b7280">Borrar</button>
+            </div>
+          </div>`).join('');
+
+    return `
+      <div style="padding:16px;max-width:600px;margin:0 auto">
+        <h2 style="font-size:1.1rem;font-weight:700;color:#1a1a1a;margin:0 0 16px">Calendario de Visitas</h2>
+
+        <!-- Navegación de mes -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <button id="btn-cal-prev-mes" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:1rem;color:#374151">&#8249;</button>
+          <span style="font-weight:600;font-size:1rem;color:#1a1a1a">${MESES[mes]} ${anio}</span>
+          <button id="btn-cal-next-mes" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:1rem;color:#374151">&#8250;</button>
+        </div>
+
+        <!-- Grid días de semana -->
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px">
+          ${DIAS_CABECERA.map(d => `<div style="text-align:center;font-size:0.7rem;font-weight:600;color:#6b7280;padding:4px 0">${d}</div>`).join('')}
+        </div>
+        <!-- Grid celdas -->
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:16px">
+          ${celdasHtml}
+        </div>
+
+        <!-- Leyenda -->
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          ${Object.entries(TURNO_COLOR).map(([t,c]) => `<div style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c}"></span><span style="font-size:0.72rem;color:#6b7280">${t}</span></div>`).join('')}
+        </div>
+
+        ${panelDia}
+
+        <!-- Lista próximas visitas -->
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">
+          <div style="font-weight:700;font-size:0.9rem;color:#1a1a1a;margin-bottom:12px">Próximas visitas</div>
+          ${listaHtml}
+        </div>
+      </div>`;
+  }
+
+  // ── AUDITOR: solo lista con acordeón ──
+  const misVisitas = visitas
+    .filter(v => v.fecha >= hoyStr)
+    .sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
+
+  const listaAuditorHtml = misVisitas.length === 0
+    ? `<p style="color:#6b7280;font-size:0.88rem;text-align:center;padding:24px 0">No tenés visitas próximas asignadas.</p>`
+    : misVisitas.map(v => {
+        const fallas = state.calendarioFallas[v.local];
+        const cargando = state.calendarioFallasCargando[v.visitaId];
+        let acordeonBody = '';
+        if (cargando) {
+          acordeonBody = `<div style="padding:10px;text-align:center"><div class="spinner" style="width:20px;height:20px;border-width:2px"></div></div>`;
+        } else if (fallas) {
+          if (!fallas.length) {
+            acordeonBody = `<p style="font-size:0.82rem;color:#6b7280;padding:8px 0">Sin auditorías previas para este local.</p>`;
+          } else {
+            acordeonBody = fallas.map(aud => {
+              const fallasHtml = aud.fallas.length === 0
+                ? `<p style="font-size:0.82rem;color:#16a34a;margin:4px 0 0">Sin fallas en esta auditoría.</p>`
+                : aud.fallas.map(f => {
+                    const isCrit = f.importancia.toLowerCase().includes('critico') || f.importancia.toLowerCase().includes('crítico');
+                    const bg   = isCrit ? '#fff1f2' : '#fff7ed';
+                    const text = isCrit ? '#b91c1c'  : '#c2410c';
+                    return `<div style="padding:6px 8px;border-radius:6px;background:${bg};margin-bottom:4px">
+                      <div style="font-size:0.8rem;font-weight:600;color:${text}">${escHtml(f.control)}</div>
+                      <div style="font-size:0.75rem;color:#6b7280">${escHtml(f.categoria)} · ${escHtml(f.respuesta)}</div>
+                    </div>`;
+                  }).join('');
+              return `<div style="margin-bottom:10px">
+                <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px">Auditoría: ${formatFechaLarga(aud.fecha)}</div>
+                ${fallasHtml}
+              </div>`;
+            }).join('');
+          }
+        }
+
+        const expanded = !!fallas || !!cargando;
+
+        return `
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${expanded?'10':'0'}px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:0.78rem;color:#6b7280">${formatFechaLarga(v.fecha)}</div>
+                <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-top:2px">${escHtml(v.local)}</div>
+                <div style="display:flex;gap:6px;align-items:center;margin-top:4px">${turnobage(v.turno)}${estadobadge(v.estado)}</div>
+              </div>
+              <button data-cal-fallas-local="${escHtml(v.local)}" data-cal-fallas-visita="${escHtml(v.visitaId)}" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:0.78rem;color:#6b7280;white-space:nowrap">
+                ${expanded ? 'Ocultar' : 'Ver fallas anteriores'}
+              </button>
+            </div>
+            ${expanded ? `<div style="margin-top:8px;padding-top:10px;border-top:1px solid #f1f5f9">${acordeonBody}</div>` : ''}
+          </div>`;
+      }).join('');
+
+  return `
+    <div style="padding:16px;max-width:600px;margin:0 auto">
+      <h2 style="font-size:1.1rem;font-weight:700;color:#1a1a1a;margin:0 0 16px">Mis Próximas Visitas</h2>
+      ${listaAuditorHtml}
+    </div>`;
+}
+
+// Helper turno badge (con 'e' — la versión anterior tenía typo)
+function turnobage(turno) {
+  const TURNO_BG   = { 'Día': '#fff7ed', 'Noche': '#eef2ff', 'Intermedio': '#f0fdfa' };
+  const TURNO_TEXT = { 'Día': '#c2410c', 'Noche': '#4338ca', 'Intermedio': '#0f766e' };
+  const bg   = TURNO_BG[turno]   || '#f1f5f9';
+  const text = TURNO_TEXT[turno] || '#64748b';
+  return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:${bg};color:${text}">${escHtml(turno)}</span>`;
 }
 
 function renderAdmin() {
@@ -2583,6 +2865,139 @@ function attachListeners() {
   on('nav-user-historial',     'click', async () => {
     setState({ screen: 'historial', historialDetalle: null });
     if (!state.historial) await recargarHistorial();
+  });
+
+  // ── Calendario nav buttons ──
+  async function goToCalendario() {
+    setState({ screen: 'calendario', calendarioDiaSeleccionado: null });
+    if (!state.calendarioVisitas) {
+      state.calendarioLoading = true; render();
+      try {
+        const res = await callAPI({ action: 'getCalendario', email: state.user.email, token: state.user.token });
+        state.calendarioVisitas = res.success ? (res.visitas || []) : [];
+        state.calendarioError   = res.success ? '' : (res.error || 'Error al cargar calendario');
+      } catch(e) {
+        state.calendarioVisitas = [];
+        state.calendarioError   = 'Error de conexión: ' + e.message;
+      }
+      state.calendarioLoading = false;
+      render();
+    }
+  }
+  on('nav-admin-calendario',   'click', goToCalendario);
+  on('nav-user-calendario',    'click', goToCalendario);
+
+  // Navegación prev/next mes
+  on('btn-cal-prev-mes', 'click', () => {
+    let m = state.calendarioMes, a = state.calendarioAnio;
+    if (m === 0) { m = 11; a--; } else { m--; }
+    setState({ calendarioMes: m, calendarioAnio: a, calendarioDiaSeleccionado: null });
+  });
+  on('btn-cal-next-mes', 'click', () => {
+    let m = state.calendarioMes, a = state.calendarioAnio;
+    if (m === 11) { m = 0; a++; } else { m++; }
+    setState({ calendarioMes: m, calendarioAnio: a, calendarioDiaSeleccionado: null });
+  });
+
+  // Click en celda del grid
+  document.querySelectorAll('[data-cal-dia]').forEach(el => {
+    el.addEventListener('click', () => {
+      const dia = el.dataset.calDia;
+      const current = state.calendarioDiaSeleccionado;
+      state.calendarioDiaSeleccionado = (current === dia) ? null : dia;
+      render();
+    });
+  });
+
+  // Agregar visita
+  on('btn-cal-agregar', 'click', async () => {
+    const local   = document.getElementById('sel-cal-local')?.value   || '';
+    const turno   = document.getElementById('sel-cal-turno')?.value   || 'Día';
+    const auditor = document.getElementById('sel-cal-auditor')?.value || '';
+    const errEl   = document.getElementById('cal-add-error');
+    if (!local)   { if (errEl) errEl.textContent = 'Seleccioná un local.';    return; }
+    if (!auditor) { if (errEl) errEl.textContent = 'Seleccioná un auditor.';  return; }
+    if (!state.calendarioDiaSeleccionado) { if (errEl) errEl.textContent = 'Seleccioná un día.'; return; }
+    if (errEl) errEl.textContent = '';
+    const btn = document.getElementById('btn-cal-agregar');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+      const res = await callAPI({
+        action:       'agregarVisita',
+        adminEmail:   state.user.email,
+        adminToken:   state.user.token,
+        fecha:        state.calendarioDiaSeleccionado,
+        turno,
+        local,
+        auditorEmail: auditor,
+      });
+      if (res.success) {
+        state.calendarioVisitas = null; // forzar recarga
+        state.calendarioDiaSeleccionado = null;
+        await goToCalendario();
+      } else {
+        if (errEl) errEl.textContent = res.error || 'Error al agregar.';
+        if (btn) { btn.disabled = false; btn.textContent = 'Agregar visita'; }
+      }
+    } catch(e) {
+      if (errEl) errEl.textContent = 'Error de conexión.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Agregar visita'; }
+    }
+  });
+
+  // Borrar visita
+  document.querySelectorAll('[data-cal-borrar]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const visitaId = btn.dataset.calBorrar;
+      if (!confirm('¿Borrar esta visita?')) return;
+      btn.disabled = true;
+      try {
+        const res = await callAPI({
+          action:     'borrarVisita',
+          adminEmail: state.user.email,
+          adminToken: state.user.token,
+          visitaId,
+        });
+        if (res.success) {
+          state.calendarioVisitas = null;
+          await goToCalendario();
+        } else {
+          alert(res.error || 'Error al borrar.');
+          btn.disabled = false;
+        }
+      } catch(e) {
+        alert('Error de conexión.');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Ver fallas anteriores (acordeón auditor)
+  document.querySelectorAll('[data-cal-fallas-local]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const local    = btn.dataset.calFallasLocal;
+      const visitaId = btn.dataset.calFallasVisita;
+      if (state.calendarioFallas[local]) {
+        // Ocultar si ya está cargado
+        const newFallas = Object.assign({}, state.calendarioFallas);
+        delete newFallas[local];
+        state.calendarioFallas = newFallas;
+        render();
+        return;
+      }
+      state.calendarioFallasCargando = Object.assign({}, state.calendarioFallasCargando, { [visitaId]: true });
+      render();
+      try {
+        const res = await callAPI({ action: 'getLocalFallas', email: state.user.email, token: state.user.token, local });
+        state.calendarioFallas = Object.assign({}, state.calendarioFallas, { [local]: res.success ? (res.auditorias || []) : [] });
+      } catch(e) {
+        state.calendarioFallas = Object.assign({}, state.calendarioFallas, { [local]: [] });
+      }
+      const newCargando = Object.assign({}, state.calendarioFallasCargando);
+      delete newCargando[visitaId];
+      state.calendarioFallasCargando = newCargando;
+      render();
+    });
   });
 
   // New user / new local toggle
