@@ -1224,8 +1224,9 @@ function renderAdminPreguntas() {
             if (!subcatMap[px.categoria]) subcatMap[px.categoria] = new Set();
             if (px.subcategoria) subcatMap[px.categoria].add(px.subcategoria);
           });
-          const subcatsForCat = Array.from((subcatMap[p.categoria] || new Set())).sort();
           window.__subcatMap = Object.fromEntries(Object.entries(subcatMap).map(function(e) { return [e[0], Array.from(e[1]).sort()]; }));
+          const allSubcats = Array.from(new Set(Object.values(window.__subcatMap).flat())).sort();
+          const subcatsForCat = p.categoria ? (window.__subcatMap[p.categoria] || []) : allSubcats;
           return '<div style="margin-bottom:12px"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Categoría *</label>'
             + '<input id="pf-categoria" list="pf-cats-list" value="' + escHtml(p.categoria || '') + '" placeholder="Ej: BPM" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;font-size:0.88rem;color:#1a1a1a;background:#fff;box-sizing:border-box" autocomplete="off">'
             + '<datalist id="pf-cats-list">' + cats.map(function(c) { return '<option value="' + escHtml(c) + '">'; }).join('') + '</datalist>'
