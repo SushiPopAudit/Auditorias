@@ -123,6 +123,7 @@ async function init() {
       state.auditorEmail = session.email;
       setState({ screen: session.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
       setTimeout(recargarHistorialSilente, 800);
+      if (session.rol === 'Auditor') setTimeout(precargarCalendarioAuditor, 1200);
     } else {
       setState({ screen: 'login' });
     }
@@ -613,11 +614,11 @@ function renderAdminBottomNav() {
         </div>
         <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
       </button>
-      <button id="nav-admin-calendario" style="${base};${isCalendario?active:idle}">
-        <span style="${iconStyle}">📅</span><span style="${labelStyle}">Calendario</span>
-      </button>
       <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
         <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
+      </button>
+      <button id="nav-admin-ranking" style="${base};${state.screen==='ranking'?active:idle}">
+        <span style="${iconStyle}">🏆</span><span style="${labelStyle}">Ranking</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -662,7 +663,7 @@ function renderUserBottomNav() {
         <span style="font-size:1.2rem;line-height:1">🏠</span><span style="${labelStyle}">Inicio</span>
       </button>
       <button id="nav-user-calendario" style="${base};${isCalendario?active:idle}">
-        <span style="font-size:1.2rem;line-height:1">📅</span><span style="${labelStyle}">Calendario</span>
+        <span style="font-size:1.2rem;line-height:1;position:relative;display:inline-block">📅${(function(){const hoy=new Date().toISOString().slice(0,10);const cnt=(state.calendarioVisitas||[]).filter(function(v){return v.estado==='Pendiente'&&v.fecha>=hoy&&v.auditorEmail&&state.user&&v.auditorEmail.toLowerCase()===state.user.email.toLowerCase();}).length;return cnt>0?'<span style="position:absolute;top:-4px;right:-6px;background:#e4001b;color:#fff;border-radius:50%;width:14px;height:14px;font-size:0.55rem;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1">'+cnt+'</span>':'';}())}</span><span style="${labelStyle}">Calendario</span>
       </button>
       ${centerBtn}
       <button id="nav-user-dashboard" style="${base};${isDashboard?active:idle}">
@@ -804,7 +805,7 @@ function renderCalendario() {
         const auditoresOpts = (state.adminUsers||[])
           .filter(function(u) { return u.rol === 'Auditor' || u.rol === 'Admin'; })
           .filter(function(u) { return u.estado === 'Activo'; })
-          .map(function(u) { return '<option value="' + escHtml(u.email) + '">' + escHtml(u.nombre) + ' (' + escHtml(u.email) + ')</option>'; })
+          .map(function(u) { return '<option value="' + escHtml(u.email) + '">' + escHtml(u.nombre) + '</option>'; })
           .join('');
 
         modalDia = '<div id="cal-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">'
@@ -2777,6 +2778,18 @@ function renderError() {
 
 // ============================================================
 // EVENT LISTENERS
+function precargarCalendarioAuditor() {
+  if (!state.user || state.calendarioVisitas !== null) return;
+  callAPI({ action: 'getCalendario', email: state.user.email, token: state.user.token })
+    .then(function(res) {
+      if (res.success && res.visitas) {
+        state.calendarioVisitas = res.visitas;
+        render(); // re-render to show badge
+      }
+    })
+    .catch(function() {});
+}
+
 function recargarHistorialSilente() {
   if (!state.user || state.historial !== null) return;
   callAPI({ action: 'getAuditorias', email: state.user.email, token: state.user.token })
@@ -3008,7 +3021,6 @@ function attachListeners() {
       render();
     }
   }
-  on('nav-admin-calendario',   'click', goToCalendario);
   on('nav-admin-ranking', 'click', async () => {
     setState({ screen: 'ranking' });
     if (!state.dashboard) await recargarDashboard();

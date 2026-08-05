@@ -1537,9 +1537,7 @@ function doGet(e) {
       dataGA.forEach(function(r) {
         var id = String(r[0] || '').trim();
         if (!id || seenGA[id]) return;
-        if (gaRol === 'Auditor') {
-          if ((String(r[14] || '')).toLowerCase().trim() !== gaEmail) return;
-        } else if (gaRol === 'Franquiciado' && gaLocales !== 'todos') {
+        if ((gaRol === 'Auditor' || gaRol === 'Franquiciado') && gaLocales !== 'todos') {
           var gaAllowed = gaLocales.split(',').map(function(l){ return l.trim().toLowerCase(); });
           if (gaAllowed.indexOf((String(r[4] || '')).toLowerCase().trim()) === -1) return;
         }
@@ -1667,15 +1665,14 @@ function doGet(e) {
       var dataDB = shDB.getRange(2, 1, shDB.getLastRow() - 1, 20).getValues();
 
       // Filter rows by role + tipo for porLocal/global
-      var allowedLocalesDB = (dbRol === 'Franquiciado' && dbLocales !== 'todos')
+      var allowedLocalesDB = ((dbRol === 'Franquiciado' || dbRol === 'Auditor') && dbLocales !== 'todos')
         ? dbLocales.split(',').map(function(l){ return l.trim().toLowerCase(); })
         : null;
       var filtered = dataDB.filter(function(r) {
         if (!r[0]) return false;
         var rowTipo = (String(r[19]||'').trim()) || 'Oficial';
         if (dbTipo && rowTipo !== dbTipo) return false;
-        if (dbRol === 'Auditor') return (String(r[14]||'')).toLowerCase().trim() === dbEmail;
-        if (dbRol === 'Franquiciado' && allowedLocalesDB) return allowedLocalesDB.indexOf((String(r[4]||'')).toLowerCase().trim()) !== -1;
+        if (allowedLocalesDB) return allowedLocalesDB.indexOf((String(r[4]||'')).toLowerCase().trim()) !== -1;
         return true;
       });
 
@@ -2022,19 +2019,6 @@ function doGet(e) {
       var shCalAV  = ensureCalendarioSheet(ssDataAV);
       var visitaId = 'VIS_' + new Date().getTime();
       shCalAV.appendRow([visitaId, avFecha, avTurno, avLocal, avAuditorEmail, avAuditorNombre, 'Pendiente']);
-
-      // Enviar email al auditor
-      try {
-        var asunto = 'Nueva visita de auditoría asignada — ' + avLocal + ' (' + avFecha + ')';
-        var cuerpoEmail = 'Hola ' + avAuditorNombre + ',\n\n'
-          + 'Se te asignó una nueva visita de auditoría:\n\n'
-          + '  Local: ' + avLocal + '\n'
-          + '  Fecha: ' + avFecha + '\n'
-          + '  Turno: ' + avTurno + '\n\n'
-          + 'Podés ver tus próximas visitas en el sistema: https://sushipopaudit.github.io/Auditorias/\n\n'
-          + 'Sushi POP Auditorías';
-        GmailApp.sendEmail(avAuditorEmail, asunto, cuerpoEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
-      } catch(mailAV) { console.error('Email auditor error:', mailAV); }
 
       return jsonResponse({ success: true, visitaId: visitaId });
     } catch(avErr) { return jsonResponse({ success: false, error: avErr.message }); }
