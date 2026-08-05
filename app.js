@@ -1454,14 +1454,23 @@ function renderHistorialEditar() {
       }
 
       const changed = !!changes[r.control];
+      // Valor original para mostrar cuando hay cambio
+      const origValor = r.respuesta || '—';
+      const origRaw   = r.rawValor  || '';
+      const origLabel = (regla && regla.tipo === 'numero' && origRaw) ? `${origRaw} → ${origValor}`
+                      : (regla && regla.tipo === 'fecha'  && origRaw) ? `${origRaw} → ${origValor}`
+                      : origValor;
       return `
         <div style="padding:11px 0;border-bottom:1px solid #f3f4f6${changed?';border-left:3px solid #3b82f6;padding-left:10px':''}">
           <div style="font-size:0.7rem;color:#9ca3af">${escHtml(r.subcategoria)}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml(ctrl)}</span>
             <span style="font-size:0.65rem;font-weight:700;padding:1px 7px;border-radius:99px;background:${impBgFn(r.importancia)};color:${impClFn(r.importancia)}">${escHtml(r.importancia)}</span>
-            ${changed ? `<span style="font-size:0.65rem;font-weight:700;color:#3b82f6">✎ modificado</span>` : ''}
           </div>
+          ${changed ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:4px 8px;background:#eff6ff;border-radius:6px">
+            <span style="font-size:0.72rem;color:#6b7280">Anterior: <strong>${escHtml(origLabel)}</strong></span>
+            <button class="he-undo" data-ctrl="${escHtml(ctrl)}" style="margin-left:auto;font-size:0.7rem;color:#e4001b;background:none;border:1px solid #fca5a5;border-radius:6px;padding:2px 7px;cursor:pointer;touch-action:manipulation;white-space:nowrap">↩ Deshacer</button>
+          </div>` : ''}
           ${inputHtml}
           ${(regla && regla.tipo !== 'headcount') ? `
           <textarea class="he-obs form-control" data-ctrl="${escHtml(ctrl)}"
@@ -1477,7 +1486,7 @@ function renderHistorialEditar() {
   }).join('');
 
   return `
-    <div class="main" style="padding-top:16px;padding-bottom:90px">
+    <div class="main" style="padding-top:16px;padding-bottom:calc(140px + env(safe-area-inset-bottom,0px))">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <button id="btn-he-back" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;color:#6b7280;font-size:0.82rem;flex-shrink:0;touch-action:manipulation">← Volver</button>
         <div style="flex:1;min-width:0">
@@ -1490,7 +1499,7 @@ function renderHistorialEditar() {
       </div>
       ${catHtml}
     </div>
-    <div style="position:fixed;bottom:calc(0px + env(safe-area-inset-bottom,0px));left:0;right:0;padding:12px 16px;background:#fff;border-top:1px solid #e5e7eb;z-index:100;display:flex;gap:10px">
+    <div style="position:fixed;bottom:calc(68px + env(safe-area-inset-bottom,0px));left:0;right:0;padding:12px 16px;background:#fff;border-top:1px solid #e5e7eb;z-index:200;display:flex;gap:10px">
       <button id="btn-he-back2" style="flex:1;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;color:#6b7280;font-size:0.88rem;font-weight:600;cursor:pointer;touch-action:manipulation">Cancelar</button>
       <button id="btn-he-guardar" style="flex:2;padding:12px;border:none;border-radius:10px;background:#1d4ed8;color:#fff;font-size:0.88rem;font-weight:700;cursor:pointer;touch-action:manipulation${saving?';opacity:0.6':''}" ${saving?'disabled':''}>
         ${saving ? 'Guardando...' : '💾 Guardar cambios'}
@@ -3262,6 +3271,15 @@ function attachListeners() {
   // ── Historial Editar listeners ────────────────────────────────
   on('btn-he-back',  'click', () => setState({ screen: 'historial-detalle' }));
   on('btn-he-back2', 'click', () => setState({ screen: 'historial-detalle' }));
+
+  document.querySelectorAll('.he-undo').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ctrl = btn.dataset.ctrl;
+      const ch = { ...state.heChanges };
+      delete ch[ctrl];
+      setState({ heChanges: ch });
+    });
+  });
 
   // Radio
   document.querySelectorAll('.he-radio').forEach(inp => {
