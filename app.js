@@ -556,10 +556,9 @@ function renderWelcome() {
     <div class="screen-welcome">
       <img src="logo.png" alt="Sushi POP" class="welcome-logo" onerror="this.style.display='none'">
       <h1 class="welcome-title">Sistema de Auditorías</h1>
-      ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span></div>` : ''}
+      ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span><button id="btn-logout" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;padding:2px 4px;color:#94a3b8;font-size:0.78rem;text-decoration:underline">Salir</button></div>` : ''}
       <p class="welcome-sub" style="margin-bottom:20px">${u && u.rol === 'Franquiciado' ? 'Auditoría interna' : 'Auditoría oficial'}</p>
       ${draftBanner}
-      <button class="btn btn-outline" id="btn-logout" style="width:100%;max-width:340px;margin-top:8px;color:#94a3b8;border-color:#94a3b8;font-size:0.85rem">Cerrar sesión</button>
     </div>
   `;
 }
@@ -1104,6 +1103,7 @@ function renderAdminMenu() {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
         <span style="font-size:0.75rem;background:#7c3aed;color:#fff;padding:2px 8px;border-radius:999px;font-weight:600">Admin</span>
         <span style="font-size:0.88rem;color:#94a3b8">${escHtml(u?.nombre||'')}</span>
+        <button id="btn-logout" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;padding:2px 4px;color:#94a3b8;font-size:0.78rem;text-decoration:underline">Salir</button>
       </div>
       ${draftBanner}
       <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
@@ -1125,7 +1125,6 @@ function renderAdminMenu() {
             <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Auditoría</span>
           </button>
         </div>
-        <button class="btn btn-outline" id="btn-logout" style="width:100%;color:#94a3b8;border-color:#334155;font-size:0.85rem">Cerrar sesión</button>
       </div>
     </div>`;
 }
