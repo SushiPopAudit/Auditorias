@@ -306,6 +306,17 @@ function formatFechaISO(f) {
 // ============================================================
 // HELPER: FORMATEAR FECHA YYYY-MM-DD â†’ DD/MM/AAAA
 // ============================================================
+function formatFechaHora(f) {
+  if (!f) return '';
+  var d = (f instanceof Date) ? f : new Date(f);
+  if (isNaN(d.getTime())) return '';
+  var dd = ('0' + d.getDate()).slice(-2);
+  var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+  var hh = ('0' + d.getHours()).slice(-2);
+  var mi = ('0' + d.getMinutes()).slice(-2);
+  return dd + '/' + mm + '/' + d.getFullYear() + ' ' + hh + ':' + mi;
+}
+
 function formatFecha(f) {
   if (!f) return '';
   // Si es Date (de getValues()), usar mÃ©todos locales directamente
@@ -1083,7 +1094,7 @@ function doGet(e) {
         return { email: r[0], nombre: r[1], rol: r[2], locales: r[3],
           primerLogin: r[5] === true || String(r[5]).toLowerCase() === 'true',
           estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '',
-          ultimoLogin: r[8] ? formatFecha(r[8]) : '' };
+          ultimoLogin: r[8] ? formatFechaHora(r[8]) : '' };
       });
       var resGU = { success: true, usuarios: usuarios };
       cachePutObj('usuarios', resGU, 300);
