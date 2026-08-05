@@ -654,11 +654,11 @@ function renderAdminBottomNav() {
   const labelStyle = 'font-size:0.6rem;letter-spacing:0.01em';
   return `
     <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
-      <button id="nav-admin-dashboard" style="${base};${isDashboard?active:idle}">
-        <span style="${iconStyle}">📊</span><span style="${labelStyle}">Dashboard</span>
-      </button>
       <button id="nav-admin-gestion" style="${base};${onAdmin?active:idle}">
         <span style="${iconStyle}">⚙️</span><span style="${labelStyle}">Gestión</span>
+      </button>
+      <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
+        <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
       </button>
       <button id="nav-admin-auditoria" style="flex:1;padding:0 2px 5px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:manipulation;position:relative;top:-10px">
         <div style="width:52px;height:52px;border-radius:50%;background:${isAudit?'#15803d':'#16a34a'};display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(22,163,74,0.4);transition:background 0.15s">
@@ -666,10 +666,10 @@ function renderAdminBottomNav() {
         </div>
         <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
       </button>
-      <button id="nav-admin-historial" style="${base};${isHistorial?active:idle}">
-        <span style="${iconStyle}">📋</span><span style="${labelStyle}">Historial</span>
+      <button id="nav-admin-dashboard" style="${base};${isDashboard?active:idle}">
+        <span style="${iconStyle}">📊</span><span style="${labelStyle}">Dashboard</span>
       </button>
-      <button id="nav-admin-ranking" style="${base};${state.screen==='ranking'?active:idle}">
+      <button id="nav-admin-ranking" style="${base};${isDashboard&&state.dashboardView==='ranking'?active:idle}">
         <span style="${iconStyle}">🏆</span><span style="${labelStyle}">Ranking</span>
       </button>
     </nav>
