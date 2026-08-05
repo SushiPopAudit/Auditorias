@@ -1986,6 +1986,14 @@ function doGet(e) {
           estado:        String(r[6] || ''),
         };
       });
+      // Deduplicar: si hay Pendiente Y Realizada para mismo local+fecha+turno+auditor, quedarse solo con Realizada
+      var dedupMap = {};
+      visitas.forEach(function(v) {
+        var key = v.fecha + '|' + v.local + '|' + v.turno + '|' + v.auditorEmail.toLowerCase();
+        if (!dedupMap[key] || v.estado === 'Realizada') dedupMap[key] = v;
+      });
+      visitas = Object.values(dedupMap);
+
       // Auditor solo ve sus visitas; Admin ve todas
       if (gcRol !== 'Admin') {
         visitas = visitas.filter(function(v){ return v.auditorEmail.toLowerCase() === gcEmail; });
