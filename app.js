@@ -3193,19 +3193,18 @@ function nextQuestion() {
   const val0 = (ans0.valor || '').toLowerCase();
 
   // Solo validar reglas condicionales si hay una respuesta
-  const regla0 = parseValidacion(q0.validacion || '');
-  const tieneVal0 = regla0 && (regla0.tipo === 'numero' || regla0.tipo === 'fecha');
-  if (!tieneVal0 && (val0 === 'no cumple' || val0.includes('parcial'))) {
-    if (!(ans0.observacion || '').trim()) {
-      alert('La observación es obligatoria cuando la respuesta es "No cumple" o parcial.');
-      return;
+  // En modo edición no se aplican restricciones de obs/foto obligatoria
+  if (!state.editingAuditId) {
+    const regla0 = parseValidacion(q0.validacion || '');
+    const tieneVal0 = regla0 && (regla0.tipo === 'numero' || regla0.tipo === 'fecha');
+    if (!tieneVal0 && (val0 === 'no cumple' || val0.includes('parcial'))) {
+      if (!(ans0.observacion || '').trim()) {
+        alert('La observación es obligatoria cuando la respuesta es "No cumple" o parcial.');
+        return;
+      }
     }
-  }
-
-  // Validar foto obligatoria si No cumple / Parcial
-  if (val0 === 'no cumple' || val0.includes('parcial')) {
     const fotos0 = ans0.fotos || (ans0.foto ? [ans0.foto] : []);
-    if (!fotos0.length) {
+    if ((val0 === 'no cumple' || val0.includes('parcial')) && !fotos0.length) {
       alert('La foto es obligatoria cuando la respuesta es "No cumple" o parcial.');
       return;
     }
