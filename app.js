@@ -1148,6 +1148,15 @@ function renderAdminMenu() {
           </button>
         </div>
       </div>
+      <div style="width:100%;max-width:340px">
+        <button id="btn-admin-recalcular" style="width:100%;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left">
+          <span style="font-size:1.4rem">🔄</span>
+          <div>
+            <div style="font-size:0.82rem;font-weight:600;color:#92400e">Recalcular todas las auditorías</div>
+            <div style="font-size:0.75rem;color:#b45309">Corrige puntaje, nivel y reprobado</div>
+          </div>
+        </button>
+      </div>
     </div>`;
 }
 
@@ -3286,6 +3295,24 @@ function attachListeners() {
   on('btn-admin-go-locales',     'click', goToLocales);
   on('btn-admin-go-calendario',  'click', goToCalendario);
   on('btn-admin-go-preguntas',   'click', goToPreguntas);
+  on('btn-admin-recalcular', 'click', async function() {
+    const btn = document.getElementById('btn-admin-recalcular');
+    if (btn) btn.style.opacity = '0.5';
+    const u = state.user;
+    try {
+      const res = await fetch(GAS_URL + '?action=recalcularBatch&adminEmail=' + encodeURIComponent(u.email) + '&adminToken=' + encodeURIComponent(u.token));
+      const data = await res.json();
+      if (data.success) {
+        alert('Recalculado: ' + data.auditoriasActualizadas + ' auditorías actualizadas.');
+      } else {
+        alert('Error: ' + (data.error || 'desconocido'));
+      }
+    } catch(err) {
+      alert('Error de conexión: ' + err.message);
+    } finally {
+      if (btn) btn.style.opacity = '1';
+    }
+  });
   on('nav-admin-inicio',       'click', () => setState({ screen: 'admin', adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
   on('nav-admin-dashboard',    'click', async () => {
     setState({ screen: 'dashboard' });
