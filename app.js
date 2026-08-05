@@ -893,7 +893,25 @@ function renderCalendario() {
       const localRows   = Object.keys(byLocal).sort().map(function(n) { return statsRow(n, byLocal[n]); }).join('');
       const emptyMsg    = '<p style="color:#9ca3af;font-size:0.85rem;text-align:center;padding:16px 0">Sin visitas este mes.</p>';
 
+      // Locales visitados vs total de locales configurados
+      const totalLocales   = (state.locales || []).length;
+      const localesVisitados = Object.keys(byLocal).length;
+      const pctLocales = totalLocales > 0 ? Math.round(localesVisitados / totalLocales * 100) : 0;
+      const barLocColor = pctLocales >= 80 ? '#16a34a' : pctLocales >= 50 ? '#d97706' : '#e4001b';
+      const resumenHeader = totalLocales > 0
+        ? '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:14px">'
+          + '<div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Cobertura del mes</div>'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+          + '<span style="font-size:0.9rem;font-weight:600;color:#1a1a1a">Locales visitados</span>'
+          + '<span style="font-size:1rem;font-weight:800;color:' + barLocColor + '">' + localesVisitados + ' / ' + totalLocales + '</span>'
+          + '</div>'
+          + '<div style="height:8px;background:#e5e7eb;border-radius:4px"><div style="height:8px;width:' + pctLocales + '%;background:' + barLocColor + ';border-radius:4px;transition:width .3s"></div></div>'
+          + '<div style="font-size:0.72rem;color:#9ca3af;margin-top:4px;text-align:right">' + pctLocales + '% de cobertura</div>'
+          + '</div>'
+        : '';
+
       bodyHtml = navMesHtml
+        + resumenHeader
         + '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:14px">'
         + '<div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Por auditor</div>'
         + (auditorRows || emptyMsg) + '</div>'

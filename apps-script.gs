@@ -1537,7 +1537,7 @@ function doGet(e) {
       dataGA.forEach(function(r) {
         var id = String(r[0] || '').trim();
         if (!id || seenGA[id]) return;
-        if ((gaRol === 'Auditor' || gaRol === 'Franquiciado') && gaLocales !== 'todos') {
+        if ((gaRol === 'Auditor' || gaRol === 'Franquiciado') && gaLocales && gaLocales !== 'todos') {
           var gaAllowed = gaLocales.split(',').map(function(l){ return l.trim().toLowerCase(); });
           if (gaAllowed.indexOf((String(r[4] || '')).toLowerCase().trim()) === -1) return;
         }
@@ -1665,7 +1665,7 @@ function doGet(e) {
       var dataDB = shDB.getRange(2, 1, shDB.getLastRow() - 1, 20).getValues();
 
       // Filter rows by role + tipo for porLocal/global
-      var allowedLocalesDB = ((dbRol === 'Franquiciado' || dbRol === 'Auditor') && dbLocales !== 'todos')
+      var allowedLocalesDB = ((dbRol === 'Franquiciado' || dbRol === 'Auditor') && dbLocales && dbLocales !== 'todos')
         ? dbLocales.split(',').map(function(l){ return l.trim().toLowerCase(); })
         : null;
       var filtered = dataDB.filter(function(r) {
