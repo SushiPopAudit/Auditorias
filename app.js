@@ -2258,6 +2258,8 @@ function renderAdminUsuarios() {
         <div style="display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap">
           <div><div style="font-size:0.78rem;color:#6b7280">Rol</div><div style="font-size:0.85rem;color:#1a1a1a">${escHtml(usr.rol)}</div></div>
           <div><div style="font-size:0.78rem;color:#6b7280">Estado</div><div style="font-size:0.85rem;font-weight:600;color:${estadoColor}">${escHtml(usr.estado)}</div></div>
+          ${usr.fechaAlta ? `<div><div style="font-size:0.78rem;color:#6b7280">Alta</div><div style="font-size:0.85rem;color:#1a1a1a">${escHtml(usr.fechaAlta)}</div></div>` : ''}
+          ${usr.ultimoLogin ? `<div><div style="font-size:0.78rem;color:#6b7280">Último login</div><div style="font-size:0.85rem;color:#1a1a1a">${escHtml(usr.ultimoLogin)}</div></div>` : ''}
         </div>
         <div style="font-size:0.78rem;color:#6b7280;margin-bottom:4px">Locales</div>
         <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:10px">${escHtml(usr.locales||'Todos')}</div>

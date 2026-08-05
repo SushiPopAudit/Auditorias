@@ -959,6 +959,7 @@ function doGet(e) {
       var dLog = sheetLog.getRange(rowLog, 1, 1, 8).getValues()[0];
       if (dLog[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       if (dLog[4] !== hashLog)  return jsonResponse({ success: false, error: 'ContraseÃ±a incorrecta' });
+      sheetLog.getRange(rowLog, 9).setValue(new Date());
       return jsonResponse({ success: true, user: {
         email:      dLog[0],
         nombre:     dLog[1],
@@ -1077,11 +1078,12 @@ function doGet(e) {
       var sheetGU = ensureUsuariosSheet(ssGU);
       var lastGU  = sheetGU.getLastRow();
       if (lastGU < 2) return jsonResponse({ success: true, usuarios: [] });
-      var dataGU = sheetGU.getRange(2, 1, lastGU - 1, 8).getValues();
+      var dataGU = sheetGU.getRange(2, 1, lastGU - 1, 9).getValues();
       var usuarios = dataGU.filter(function(r){ return r[0]; }).map(function(r){
         return { email: r[0], nombre: r[1], rol: r[2], locales: r[3],
           primerLogin: r[5] === true || String(r[5]).toLowerCase() === 'true',
-          estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '' };
+          estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '',
+          ultimoLogin: r[8] ? formatFecha(r[8]) : '' };
       });
       var resGU = { success: true, usuarios: usuarios };
       cachePutObj('usuarios', resGU, 300);
