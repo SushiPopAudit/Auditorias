@@ -1175,6 +1175,15 @@ function renderGastos() {
         <div style="height:100%;width:${pct}%;background:${barColor};border-radius:4px;transition:width 0.3s"></div>
       </div>
     </div>
+    ${d && d.ingresos && d.ingresos.length ? `
+    <div style="margin-bottom:14px">
+      <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px">Ingresos de viáticos</div>
+      ${d.ingresos.map(ing => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px">
+        <span style="font-size:0.78rem;color:#16a34a;font-weight:600">+ ${fmtPesos(ing.importe)}</span>
+        <span style="font-size:0.72rem;color:#6b7280">${escHtml(ing.fecha)}</span>
+      </div>`).join('')}
+    </div>` : ''}
     ${warningBanner}
     <button id="btn-registrar-gasto" style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer;margin-bottom:14px">+ Registrar gasto</button>
     ${listHtml}
@@ -1368,6 +1377,15 @@ function renderAdminGastosDetalle() {
         <div style="text-align:right"><div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Saldo</div><div style="font-size:0.95rem;font-weight:700;color:${saldo<0?'#ef4444':'#16a34a'}">${fmtPesos(saldo)}</div></div>
       </div>
     </div>
+    ${aud.ingresos && aud.ingresos.length ? `
+    <div style="margin-bottom:14px">
+      <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px">Ingresos de viáticos</div>
+      ${aud.ingresos.map(ing => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px">
+        <span style="font-size:0.78rem;color:#16a34a;font-weight:600">+ ${fmtPesos(ing.importe)}</span>
+        <span style="font-size:0.72rem;color:#6b7280">${escHtml(ing.fecha)}</span>
+      </div>`).join('')}
+    </div>` : ''}
     <div style="font-size:0.82rem;font-weight:600;color:#374151;margin-bottom:8px">Gastos del mes</div>
     ${gastosHtml}
   </div>`;
