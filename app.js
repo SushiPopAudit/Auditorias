@@ -1258,11 +1258,11 @@ function renderGastosForm() {
       ${(!foto || state.gastosPhotoRemoved) ? `
         <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
           📎 Adjuntar foto
-          <input id="inp-gasto-foto" type="file" accept="image/*" capture="environment" style="display:none">
+          <input id="inp-gasto-foto" type="file" accept="image/*" style="display:none">
         </label>` : `
         <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
           🔄 Reemplazar foto
-          <input id="inp-gasto-foto" type="file" accept="image/*" capture="environment" style="display:none">
+          <input id="inp-gasto-foto" type="file" accept="image/*" style="display:none">
         </label>`}
     </div>
     <div style="margin-bottom:18px;background:#f8fafc;border-radius:8px;padding:10px 12px">
