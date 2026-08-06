@@ -696,15 +696,22 @@ function renderUserBottomNav() {
       </div>
       <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
     </button>`;
+  const isRanking = state.screen === 'ranking';
   if (rol === 'Franquiciado') {
     return `
     <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
+      <button id="nav-user-inicio" style="${base};${onWelcome?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">🏠</span><span style="${labelStyle}">Inicio</span>
+      </button>
+      <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
+      </button>
+      ${centerBtn}
       <button id="nav-user-dashboard" style="${base};${isDashboard?active:idle}">
         <span style="font-size:1.2rem;line-height:1">📊</span><span style="${labelStyle}">Dashboard</span>
       </button>
-      ${centerBtn}
-      <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
-        <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
+      <button id="nav-user-ranking" style="${base};${isRanking?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">🏆</span><span style="${labelStyle}">Ranking</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -3311,6 +3318,10 @@ function attachListeners() {
   });
   on('nav-user-dashboard',     'click', async () => {
     setState({ screen: 'dashboard' });
+    if (!state.dashboard) await recargarDashboard();
+  });
+  on('nav-user-ranking', 'click', async () => {
+    setState({ screen: 'ranking' });
     if (!state.dashboard) await recargarDashboard();
   });
   on('nav-admin-usuarios',     'click', goToUsuarios);
