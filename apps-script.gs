@@ -2471,7 +2471,7 @@ function doGet(e) {
       var shViat = ensureViaticosSheet(ssGG);
       var ggVLast = shViat.getLastRow();
       if (ggVLast >= 2) {
-        var ggVData = shViat.getRange(2, 1, ggVLast - 1, 6).getValues();
+        var ggVData = shViat.getRange(2, 1, ggVLast - 1, 7).getValues();
         ggVData.forEach(function(vr) {
           if (getMesStr(vr[0]) === ggMes && (vr[1]||'').toLowerCase() === ggEmail) {
             var imp = Number(vr[3]) || 0;
@@ -2582,7 +2582,7 @@ function doGet(e) {
       }
       var shGVAV = ensureViaticosSheet(ssGVA);
       var gvaVLast = shGVAV.getLastRow();
-      var gvaVData = gvaVLast >= 2 ? shGVAV.getRange(2, 1, gvaVLast - 1, 6).getValues() : [];
+      var gvaVData = gvaVLast >= 2 ? shGVAV.getRange(2, 1, gvaVLast - 1, 7).getValues() : [];
 
       var ssGVA2 = SpreadsheetApp.openById(SPREADSHEET_ID);
       var shGVAG = ensureGastosSheet(ssGVA2);
