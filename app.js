@@ -1151,7 +1151,7 @@ function renderGastos() {
       <div style="flex:1;min-width:0">
         <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
         ${g.descripcion ? `<div style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(g.descripcion)}</div>` : ''}
-        <div style="font-size:0.75rem;color:#6b7280">${escHtml((g.fecha||'').split('-').reverse().join('/'))} ${escHtml(g.hora)}</div>
+        <div style="font-size:0.75rem;color:#6b7280">${escHtml((g.fecha||'').split('-').reverse().join('/'))}</div>
       </div>
       <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-right:8px">${fmtPesos(g.importe)}</div>
       <button id="btn-gasto-edit-${escHtml(g.gastoId)}" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">✏️</button>
@@ -1279,6 +1279,17 @@ function renderAdminGastos() {
       <span style="font-size:0.95rem;font-weight:700;color:#1a1a1a">${mesLabel(mes)}</span>
       <button id="btn-admin-gastos-mes-next" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:4px 12px;font-size:1.1rem;color:#374151">›</button>
     </div>
+    ${d ? (function(){
+      const totalViat = d.auditores.reduce((s,a)=>s+(a.viaticos||0),0);
+      const totalGast = d.auditores.reduce((s,a)=>s+(a.totalGastado||0),0);
+      const totalSald = totalViat - totalGast;
+      const saldColor = totalSald < 0 ? '#ef4444' : '#16a34a';
+      return `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between">
+        <div><div style="font-size:0.68rem;color:#6b7280;text-transform:uppercase">Total viáticos</div><div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">${fmtPesos(totalViat)}</div></div>
+        <div style="text-align:center"><div style="font-size:0.68rem;color:#6b7280;text-transform:uppercase">Total gastado</div><div style="font-size:0.9rem;font-weight:700;color:#ef4444">${fmtPesos(totalGast)}</div></div>
+        <div style="text-align:right"><div style="font-size:0.68rem;color:#6b7280;text-transform:uppercase">Saldo total</div><div style="font-size:0.9rem;font-weight:700;color:${saldColor}">${fmtPesos(totalSald)}</div></div>
+      </div>`;
+    })() : ''}
     ${listHtml}
   </div>`;
 }
@@ -1339,14 +1350,15 @@ function renderAdminGastosDetalle() {
     <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div>
-          <div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Viáticos del mes</div>
+          <div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Viáticos acumulados</div>
           <div style="font-size:1rem;font-weight:700;color:#1a1a1a" id="admin-viat-display">${fmtPesos(aud.viaticos)}</div>
         </div>
         <button id="btn-admin-viat-edit" style="width:32px;height:32px;border-radius:50%;background:#16a34a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;font-weight:300;line-height:1">+</button>
       </div>
       <div id="admin-viat-form" style="display:none;margin-bottom:8px">
+        <div style="font-size:0.75rem;color:#6b7280;margin-bottom:6px">Agregar monto a viáticos</div>
         <div style="display:flex;gap:8px">
-          <input id="inp-admin-viat" type="text" inputmode="decimal" placeholder="${fmtPesos(aud.viaticos)}" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
+          <input id="inp-admin-viat" type="text" inputmode="decimal" placeholder="0" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
           <button id="btn-admin-viat-save" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.83rem;cursor:pointer;font-weight:600">Guardar</button>
           <button id="btn-admin-viat-cancel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:0.83rem;cursor:pointer">✕</button>
         </div>
