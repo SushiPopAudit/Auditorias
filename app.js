@@ -108,6 +108,7 @@ const state = {
   adminGastosData:        null,
   adminGastosAuditor:     null,
   adminGastosMes:         '',
+  adminGastoModal:        null,
 };
 
 // ============================================================
@@ -1141,7 +1142,7 @@ function renderGastos() {
       <div style="flex:1;min-width:0">
         <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
         ${g.descripcion ? `<div style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(g.descripcion)}</div>` : ''}
-        <div style="font-size:0.75rem;color:#6b7280">${escHtml(g.fecha)} ${escHtml(g.hora)}</div>
+        <div style="font-size:0.75rem;color:#6b7280">${escHtml((g.fecha||'').split('-').reverse().join('/'))} ${escHtml(g.hora)}</div>
       </div>
       <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-right:8px">${fmtPesos(g.importe)}</div>
       <button id="btn-gasto-edit-${escHtml(g.gastoId)}" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">✏️</button>
@@ -1272,16 +1273,40 @@ function renderAdminGastosDetalle() {
   const saldo = aud.viaticos - aud.totalGastado;
   const gastosHtml = aud.gastos.length === 0 ? `<div style="text-align:center;padding:20px 0;color:#94a3b8">Sin gastos.</div>` :
     aud.gastos.map(g => `
-    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <span style="font-size:1.2rem">${CAT_ICONS[g.categoria]||'📦'}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
-        ${g.descripcion ? `<div style="font-size:0.72rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(g.descripcion)}</div>` : ''}
-        <div style="font-size:0.72rem;color:#6b7280">${escHtml(g.fecha)} ${escHtml(g.hora)}</div>
+<button id="btn-admin-gasto-row-${escHtml(g.gastoId)}" style="width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:6px;text-align:left;cursor:pointer">
+  <span style="font-size:1.2rem">${CAT_ICONS[g.categoria]||'📦'}</span>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
+    ${g.descripcion ? `<div style="font-size:0.72rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(g.descripcion)}</div>` : ''}
+    <div style="font-size:0.72rem;color:#6b7280">${escHtml((g.fecha||'').split('-').reverse().join('/'))}</div>
+  </div>
+  <div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">${fmtPesos(g.importe)}</div>
+  <span style="color:#9ca3af;font-size:0.8rem">›</span>
+</button>`).join('');
+  const modalHtml = state.adminGastoModal ? (function() {
+    const mg = state.adminGastoModal;
+    return `
+  <div id="admin-gasto-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;display:flex;align-items:flex-end">
+    <div style="background:#fff;border-radius:16px 16px 0 0;padding:20px 16px;width:100%;box-sizing:border-box;max-height:80vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:1.6rem">${CAT_ICONS[mg.categoria]||'📦'}</span>
+          <div>
+            <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a">${escHtml(mg.categoria)}</div>
+            ${mg.descripcion ? `<div style="font-size:0.78rem;color:#6b7280">${escHtml(mg.descripcion)}</div>` : ''}
+          </div>
+        </div>
+        <button id="btn-admin-gasto-modal-close" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:#6b7280;padding:4px">✕</button>
       </div>
-      <div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">${fmtPesos(g.importe)}</div>
-    </div>`).join('');
-  return `
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <div><div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase">Importe</div><div style="font-size:1.1rem;font-weight:700;color:#1a1a1a">${fmtPesos(mg.importe)}</div></div>
+        <div style="text-align:right"><div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase">Fecha</div><div style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml((mg.fecha||'').split('-').reverse().join('/'))} ${escHtml(mg.hora||'')}</div></div>
+      </div>
+      ${mg.fotoUrl ? `<div style="text-align:center;margin-top:8px"><img src="${escHtml(mg.fotoUrl)}" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e5e7eb"></div>` : `<div style="text-align:center;color:#94a3b8;font-size:0.83rem;padding:20px 0">Sin foto adjunta</div>`}
+    </div>
+  </div>`;
+  })() : '';
+  return modalHtml + `
   <div style="padding:16px 16px 0;${pb}">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
       <button id="btn-admin-gastos-detalle-back" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">‹</button>
@@ -1296,11 +1321,11 @@ function renderAdminGastosDetalle() {
           <div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Viáticos del mes</div>
           <div style="font-size:1rem;font-weight:700;color:#1a1a1a" id="admin-viat-display">${fmtPesos(aud.viaticos)}</div>
         </div>
-        <button id="btn-admin-viat-edit" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:6px 12px;font-size:0.78rem;cursor:pointer;color:#374151">Editar</button>
+        <button id="btn-admin-viat-edit" style="width:32px;height:32px;border-radius:50%;background:#16a34a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;font-weight:300;line-height:1">+</button>
       </div>
       <div id="admin-viat-form" style="display:none;margin-bottom:8px">
         <div style="display:flex;gap:8px">
-          <input id="inp-admin-viat" type="number" min="0" step="1000" value="${aud.viaticos}" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
+          <input id="inp-admin-viat" type="text" inputmode="decimal" placeholder="${fmtPesos(aud.viaticos)}" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
           <button id="btn-admin-viat-save" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.83rem;cursor:pointer;font-weight:600">Guardar</button>
           <button id="btn-admin-viat-cancel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:0.83rem;cursor:pointer">✕</button>
         </div>
@@ -4820,14 +4845,22 @@ function attachListeners() {
   on('btn-registrar-gasto', 'click', () => setState({ gastosScreen: 'form', gastosEditing: null }));
   on('btn-gastos-form-cancel', 'click', () => setState({ gastosScreen: 'list' }));
   on('btn-gastos-mes-prev', 'click', async () => {
-    const cur = state.gastosMes || new Date().toISOString().slice(0,7);
-    state.gastosMes = prevMes(cur);
-    await cargarGastos();
+    const newMes = prevMes(state.gastosMes || new Date().toISOString().slice(0,7));
+    state.gastosMes = newMes;
+    setState({ gastosData: null });
+    try {
+      const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes: newMes });
+      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 } });
+    } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
   });
   on('btn-gastos-mes-next', 'click', async () => {
-    const cur = state.gastosMes || new Date().toISOString().slice(0,7);
-    state.gastosMes = nextMes(cur);
-    await cargarGastos();
+    const newMes = nextMes(state.gastosMes || new Date().toISOString().slice(0,7));
+    state.gastosMes = newMes;
+    setState({ gastosData: null });
+    try {
+      const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes: newMes });
+      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 } });
+    } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
   });
 
   // Edit buttons for gastos (delegated)
@@ -4859,6 +4892,18 @@ function attachListeners() {
       const rawParts = raw.split(',');
       const intPart = rawParts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       const decPart = rawParts.length > 1 ? ',' + rawParts[1].slice(0,2) : '';
+      this.value = intPart + decPart;
+    });
+  }
+
+  const inpAdminViat = document.getElementById('inp-admin-viat');
+  if (inpAdminViat) {
+    inpAdminViat.addEventListener('input', function() {
+      let raw = this.value.replace(/[^0-9,]/g, '');
+      const parts = raw.split(',');
+      if (parts.length > 2) raw = parts[0] + ',' + parts.slice(1).join('');
+      const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const decPart = parts.length > 1 ? ',' + parts[1].slice(0,2) : '';
       this.value = intPart + decPart;
     });
   }
@@ -4924,14 +4969,22 @@ function attachListeners() {
   });
   on('btn-admin-gastos-back', 'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
   on('btn-admin-gastos-mes-prev', 'click', async () => {
-    const cur = state.adminGastosMes || new Date().toISOString().slice(0,7);
-    state.adminGastosMes = prevMes(cur);
-    await cargarAdminGastos();
+    const newMes = prevMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
+    state.adminGastosMes = newMes;
+    setState({ adminGastosData: null });
+    try {
+      const res = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes: newMes });
+      setState({ adminGastosData: res.success ? res : { mes: newMes, auditores: [] } });
+    } catch(e) { setState({ adminGastosData: { mes: newMes, auditores: [] } }); }
   });
   on('btn-admin-gastos-mes-next', 'click', async () => {
-    const cur = state.adminGastosMes || new Date().toISOString().slice(0,7);
-    state.adminGastosMes = nextMes(cur);
-    await cargarAdminGastos();
+    const newMes = nextMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
+    state.adminGastosMes = newMes;
+    setState({ adminGastosData: null });
+    try {
+      const res = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes: newMes });
+      setState({ adminGastosData: res.success ? res : { mes: newMes, auditores: [] } });
+    } catch(e) { setState({ adminGastosData: { mes: newMes, auditores: [] } }); }
   });
 
   if (state.screen === 'admin-gastos' && state.adminGastosData) {
@@ -4942,6 +4995,19 @@ function attachListeners() {
 
   on('btn-admin-gastos-detalle-back', 'click', () => setState({ screen: 'admin-gastos' }));
 
+  if (state.screen === 'admin-gastos-detalle' && state.adminGastosData) {
+    const aud2 = state.adminGastosData.auditores.find(a => a.email === state.adminGastosAuditor);
+    if (aud2) {
+      (aud2.gastos || []).forEach(g => {
+        on('btn-admin-gasto-row-' + g.gastoId, 'click', () => setState({ adminGastoModal: g }));
+      });
+    }
+  }
+  on('btn-admin-gasto-modal-close', 'click', () => setState({ adminGastoModal: null }));
+  document.getElementById('admin-gasto-modal-backdrop')?.addEventListener('click', function(e) {
+    if (e.target && e.target.id === 'admin-gasto-modal-backdrop') setState({ adminGastoModal: null });
+  });
+
   on('btn-admin-viat-edit', 'click', () => {
     const frm = document.getElementById('admin-viat-form');
     if (frm) frm.style.display = 'flex';
@@ -4951,8 +5017,10 @@ function attachListeners() {
     if (frm) frm.style.display = 'none';
   });
   on('btn-admin-viat-save', 'click', async () => {
-    const importe = parseFloat(document.getElementById('inp-admin-viat')?.value || '0') || 0;
+    const raw = (document.getElementById('inp-admin-viat')?.value || '').replace(/\./g,'').replace(',','.');
+    const importe = parseFloat(raw) || 0;
     const btn = document.getElementById('btn-admin-viat-save');
+    if (!importe) { alert('Ingresá un importe válido.'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
     const mes = state.adminGastosMes || new Date().toISOString().slice(0,7);
     try {
