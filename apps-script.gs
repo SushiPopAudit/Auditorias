@@ -31,6 +31,74 @@ function doPost(e) {
     const ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
     let sheet  = ss.getSheetByName(SHEET_NAME);
 
+    // ── saveGasto (POST) ─────────────────────────────────────────────────
+    if (data.action === 'saveGasto') {
+      var sgEmail      = ((data.email) || '').toLowerCase().trim();
+      var sgToken      = data.token || '';
+      var sgGastoId    = (data.gastoId || '').trim();
+      var sgFecha      = (data.fecha || '').trim();
+      var sgHora       = (data.hora || '').trim();
+      var sgCategoria  = (data.categoria || '').trim();
+      var sgImporte    = parseFloat(data.importe || '0') || 0;
+      var sgFotoBase64 = data.fotoBase64 || '';
+      var sgFotoNombre = data.fotoNombre || 'ticket.jpg';
+      var sgDescripcion = (data.descripcion || '').trim();
+      var sgEliminar = data.eliminarFoto === '1' || data.eliminarFoto === true;
+      if (!sgEmail || !sgToken || !sgFecha || !sgCategoria) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+      try {
+        var ssSG = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+        var shSGU = ssSG.getSheetByName(USUARIOS_SHEET);
+        if (!shSGU) return jsonResponse({ success: false, error: 'Sheet no encontrado' });
+        var sgRow = encontrarUsuarioRow(shSGU, sgEmail);
+        if (sgRow < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+        var sgUD = shSGU.getRange(sgRow, 1, 1, 8).getValues()[0];
+        if (sgUD[4] !== sgToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+        var sgNombre = sgUD[1] || '';
+
+        var sgFotoUrl = '';
+        if (sgFotoBase64) {
+          try {
+            var sgMes = sgFecha.slice(0, 7);
+            var sgRoot = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+            var sgGastosIt = sgRoot.getFoldersByName('Gastos');
+            var sgGastosFolder = sgGastosIt.hasNext() ? sgGastosIt.next() : sgRoot.createFolder('Gastos');
+            var sgEmailIt = sgGastosFolder.getFoldersByName(sgEmail);
+            var sgEmailFolder = sgEmailIt.hasNext() ? sgEmailIt.next() : sgGastosFolder.createFolder(sgEmail);
+            var sgMesIt = sgEmailFolder.getFoldersByName(sgMes);
+            var sgMesFolder = sgMesIt.hasNext() ? sgMesIt.next() : sgEmailFolder.createFolder(sgMes);
+            var sgBlob = Utilities.newBlob(Utilities.base64Decode(sgFotoBase64), 'image/jpeg', sgFotoNombre);
+            var sgFile = sgMesFolder.createFile(sgBlob);
+            sgFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            sgFotoUrl = 'https://drive.google.com/thumbnail?id=' + sgFile.getId() + '&sz=w600';
+          } catch(sgPhotoErr) { console.error('Foto gasto error:', sgPhotoErr); }
+        }
+
+        var ssSG2 = SpreadsheetApp.openById(SPREADSHEET_ID);
+        var shSGastos = ensureGastosSheet(ssSG2);
+
+        if (!sgGastoId) {
+          sgGastoId = 'G-' + Date.now();
+          shSGastos.appendRow([sgGastoId, sgEmail, sgNombre, sgFecha, sgHora, sgCategoria, sgImporte, sgFotoUrl, new Date(), '', sgDescripcion]);
+        } else {
+          var sgLast = shSGastos.getLastRow();
+          if (sgLast >= 2) {
+            var sgData = shSGastos.getRange(2, 1, sgLast - 1, 11).getValues();
+            for (var si = 0; si < sgData.length; si++) {
+              if (sgData[si][0] === sgGastoId) {
+                var sgTargetRow = si + 2;
+                var newFotoUrl = sgFotoBase64 ? sgFotoUrl : (sgEliminar ? '' : sgData[si][7]);
+                shSGastos.getRange(sgTargetRow, 6, 1, 3).setValues([[sgCategoria, sgImporte, newFotoUrl]]);
+                shSGastos.getRange(sgTargetRow, 10).setValue(new Date());
+                shSGastos.getRange(sgTargetRow, 11).setValue(sgDescripcion);
+                break;
+              }
+            }
+          }
+        }
+        return jsonResponse({ success: true, gastoId: sgGastoId, fotoUrl: sgFotoUrl });
+      } catch(sgErr) { return jsonResponse({ success: false, error: sgErr.message }); }
+    }
+
     // â”€â”€ EdiciÃ³n en el lugar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (data.action === 'editarAuditoria') {
       // Verificar token
@@ -366,7 +434,7 @@ function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActu
         pct:       last[15],
         nivel:     last[16],
         fecha:     last[1],
-        reprobado: last[17] === 'SÃ­',
+        reprobado: normImp(last[17]) === 'si',
       };
     }
 
@@ -862,6 +930,10 @@ function colorearDesvios(sheet, rows) {
 function normImp(s) {
   return String(s||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
 }
+function getMesStr(v) {
+  if (v instanceof Date) return v.getFullYear() + '-' + String(v.getMonth()+1).padStart(2,'0');
+  return String(v||'').slice(0,7);
+}
 
 function recalcularPuntaje(rows) {
   var maxPts     = { 'critico':4, 'alta':3, 'media':2, 'baja':1 };
@@ -953,6 +1025,37 @@ function verificarAdmin(ss, adminEmail, adminToken) {
   if (row < 0) return false;
   var data = sheet.getRange(row, 1, 1, 8).getValues()[0];
   return data[2] === 'Admin' && data[4] === adminToken && data[6] === 'Activo';
+}
+
+function ensureGastosSheet(ss) {
+  var sh = ss.getSheetByName('Gastos');
+  if (!sh) {
+    sh = ss.insertSheet('Gastos');
+    sh.getRange(1, 1, 1, 11).setValues([['GastoId','AuditorEmail','AuditorNombre','Fecha','Hora','Categoria','Importe','FotoUrl','RegistradoEn','EditadoEn','Descripcion']]);
+    sh.getRange(1, 1, 1, 11).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function ensureViaticosSheet(ss) {
+  var sh = ss.getSheetByName('Viaticos');
+  if (!sh) {
+    sh = ss.insertSheet('Viaticos');
+    sh.getRange(1, 1, 1, 7).setValues([['Mes','AuditorEmail','AuditorNombre','Importe','CargadoEn','CargadoPor','ViaticoId']]);
+    sh.getRange(1, 1, 1, 7).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  } else {
+    if (sh.getLastColumn() < 7) {
+      sh.getRange(1, 7).setValue('ViaticoId');
+      sh.getRange(1, 7).setFontWeight('bold');
+      var evLast = sh.getLastRow();
+      for (var evi = 2; evi <= evLast; evi++) {
+        if (!sh.getRange(evi, 7).getValue()) sh.getRange(evi, 7).setValue(Utilities.getUuid());
+      }
+    }
+  }
+  return sh;
 }
 
 // ============================================================
@@ -1567,7 +1670,7 @@ function doGet(e) {
           local:    r[4] ? String(r[4]) : '',
           pct:      r[15] !== '' ? Number(r[15]) : null,
           nivel:    r[16] ? String(r[16]) : '',
-          reprobado: String(r[17]) === 'SÃ­',
+          reprobado: normImp(r[17]) === 'si',
           tipo:     r[19] ? String(r[19]) : 'Oficial',
         });
       });
@@ -1720,7 +1823,7 @@ function doGet(e) {
             auditor:   String(first[3] || ''),
             pct:       pct,
             nivel:     String(first[16] || ''),
-            reprobado: String(first[17]) === 'SÃ­',
+            reprobado: normImp(first[17]) === 'si',
             rows:      rows,
           };
         }).sort(function(a, b) {
@@ -2304,6 +2407,353 @@ function doGet(e) {
     } catch(dpErr) { return jsonResponse({ success: false, error: dpErr.message }); }
   }
 
+  // ============================================================
+  // recalcularBatch
+  // ============================================================
+  if (action === 'recalcularBatch') {
+    var rbAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var rbAdminToken = e.parameter.adminToken || '';
+    if (!rbAdminEmail || !rbAdminToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssRB = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssRB, rbAdminEmail, rbAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var count = recalcularTodasLasAuditorias();
+      CacheService.getScriptCache().removeAll(['aud_all']);
+      return jsonResponse({ success: true, auditoriasActualizadas: count });
+    } catch(rbErr) { return jsonResponse({ success: false, error: rbErr.message }); }
+  }
+
+  // ============================================================
+  // getGastos
+  // ============================================================
+  if (action === 'getGastos') {
+    var ggEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var ggToken = e.parameter.token || '';
+    var ggMes   = (e.parameter.mes || '').trim();
+    if (!ggEmail || !ggToken || !ggMes) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssGG = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shGGU = ssGG.getSheetByName(USUARIOS_SHEET);
+      if (!shGGU) return jsonResponse({ success: false, error: 'Sheet no encontrado' });
+      var ggRow = encontrarUsuarioRow(shGGU, ggEmail);
+      if (ggRow < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var ggUD = shGGU.getRange(ggRow, 1, 1, 8).getValues()[0];
+      if (ggUD[4] !== ggToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      var ggNombre = ggUD[1] || '';
+
+      var ssGG2 = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shGastos = ensureGastosSheet(ssGG2);
+      var ggGastos = [];
+      var ggLast = shGastos.getLastRow();
+      if (ggLast >= 2) {
+        var ggData = shGastos.getRange(2, 1, ggLast - 1, 11).getValues();
+        ggData.forEach(function(r) {
+          var ggFecha = r[3] instanceof Date ? formatFechaISO(r[3]) : String(r[3]||'').slice(0,10);
+          if ((r[1]||'').toLowerCase() === ggEmail && ggFecha.slice(0,7) === ggMes) {
+            ggGastos.push({
+              gastoId:      r[0],
+              fecha:        ggFecha,
+              hora:         r[4],
+              categoria:    r[5],
+              importe:      r[6],
+              fotoUrl:      r[7],
+              registradoEn: r[8] ? formatFechaHora(new Date(r[8])) : '',
+              editadoEn:    r[9] ? formatFechaHora(new Date(r[9])) : '',
+              descripcion:  r[10] || '',
+            });
+          }
+        });
+      }
+      ggGastos.sort(function(a,b){ return (b.fecha+b.hora).localeCompare(a.fecha+a.hora); });
+
+      var ggViaticos = 0;
+      var ggIngresos = [];
+      var shViat = ensureViaticosSheet(ssGG);
+      var ggVLast = shViat.getLastRow();
+      if (ggVLast >= 2) {
+        var ggVData = shViat.getRange(2, 1, ggVLast - 1, 6).getValues();
+        ggVData.forEach(function(vr) {
+          if (getMesStr(vr[0]) === ggMes && (vr[1]||'').toLowerCase() === ggEmail) {
+            var imp = Number(vr[3]) || 0;
+            ggViaticos += imp;
+            var fecha = vr[4] instanceof Date ? formatFechaHora(vr[4]) : String(vr[4]||'');
+            ggIngresos.push({ viaticoId: vr[6]||'', importe: imp, fecha: fecha, cargadoPor: vr[5]||'' });
+          }
+        });
+        ggIngresos.sort(function(a,b){ return b.fecha.localeCompare(a.fecha); });
+      }
+
+      var ggTotal = ggGastos.reduce(function(s, g){ return s + (Number(g.importe)||0); }, 0);
+      return jsonResponse({ success: true, gastos: ggGastos, viaticos: ggViaticos, ingresos: ggIngresos, totalGastado: ggTotal });
+    } catch(ggErr) { return jsonResponse({ success: false, error: ggErr.message }); }
+  }
+
+  // ============================================================
+  // saveGasto
+  // ============================================================
+  if (action === 'saveGasto') {
+    var sgEmail      = ((e.parameter.email) || '').toLowerCase().trim();
+    var sgToken      = e.parameter.token || '';
+    var sgGastoId    = (e.parameter.gastoId || '').trim();
+    var sgFecha      = (e.parameter.fecha || '').trim();
+    var sgHora       = (e.parameter.hora || '').trim();
+    var sgCategoria  = (e.parameter.categoria || '').trim();
+    var sgImporte    = parseFloat(e.parameter.importe || '0') || 0;
+    var sgFotoBase64 = e.parameter.fotoBase64 || '';
+    var sgFotoNombre = e.parameter.fotoNombre || 'ticket.jpg';
+    var sgDescripcion = (e.parameter.descripcion || '').trim();
+    var sgEliminar = (e.parameter.eliminarFoto || '') === '1';
+    if (!sgEmail || !sgToken || !sgFecha || !sgCategoria) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssSG = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shSGU = ssSG.getSheetByName(USUARIOS_SHEET);
+      if (!shSGU) return jsonResponse({ success: false, error: 'Sheet no encontrado' });
+      var sgRow = encontrarUsuarioRow(shSGU, sgEmail);
+      if (sgRow < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var sgUD = shSGU.getRange(sgRow, 1, 1, 8).getValues()[0];
+      if (sgUD[4] !== sgToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      var sgNombre = sgUD[1] || '';
+
+      var sgFotoUrl = '';
+      if (sgFotoBase64) {
+        try {
+          var sgMes = sgFecha.slice(0, 7);
+          var sgRoot = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+          var sgGastosIt = sgRoot.getFoldersByName('Gastos');
+          var sgGastosFolder = sgGastosIt.hasNext() ? sgGastosIt.next() : sgRoot.createFolder('Gastos');
+          var sgEmailIt = sgGastosFolder.getFoldersByName(sgEmail);
+          var sgEmailFolder = sgEmailIt.hasNext() ? sgEmailIt.next() : sgGastosFolder.createFolder(sgEmail);
+          var sgMesIt = sgEmailFolder.getFoldersByName(sgMes);
+          var sgMesFolder = sgMesIt.hasNext() ? sgMesIt.next() : sgEmailFolder.createFolder(sgMes);
+          var sgBlob = Utilities.newBlob(Utilities.base64Decode(sgFotoBase64), 'image/jpeg', sgFotoNombre);
+          var sgFile = sgMesFolder.createFile(sgBlob);
+          sgFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          sgFotoUrl = 'https://drive.google.com/thumbnail?id=' + sgFile.getId() + '&sz=w600';
+        } catch(sgPhotoErr) { console.error('Foto gasto error:', sgPhotoErr); }
+      }
+
+      var ssSG2 = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shSGastos = ensureGastosSheet(ssSG2);
+
+      if (!sgGastoId) {
+        sgGastoId = 'G-' + Date.now();
+        shSGastos.appendRow([sgGastoId, sgEmail, sgNombre, sgFecha, sgHora, sgCategoria, sgImporte, sgFotoUrl, new Date(), '', sgDescripcion]);
+      } else {
+        var sgLast = shSGastos.getLastRow();
+        if (sgLast >= 2) {
+          var sgData = shSGastos.getRange(2, 1, sgLast - 1, 11).getValues();
+          for (var si = 0; si < sgData.length; si++) {
+            if (sgData[si][0] === sgGastoId) {
+              var sgTargetRow = si + 2;
+              var newFotoUrl = sgFotoBase64 ? sgFotoUrl : (sgEliminar ? '' : sgData[si][7]);
+              shSGastos.getRange(sgTargetRow, 6, 1, 3).setValues([[sgCategoria, sgImporte, newFotoUrl]]);
+              shSGastos.getRange(sgTargetRow, 10).setValue(new Date());
+              shSGastos.getRange(sgTargetRow, 11).setValue(sgDescripcion);
+              break;
+            }
+          }
+        }
+      }
+      return jsonResponse({ success: true, gastoId: sgGastoId, fotoUrl: sgFotoUrl });
+    } catch(sgErr) { return jsonResponse({ success: false, error: sgErr.message }); }
+  }
+
+  // ============================================================
+  // getViaticosAdmin
+  // ============================================================
+  if (action === 'getViaticosAdmin') {
+    var gvaAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var gvaAdminToken = e.parameter.adminToken || '';
+    var gvaMes        = (e.parameter.mes || '').trim();
+    if (!gvaAdminEmail || !gvaAdminToken || !gvaMes) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssGVA = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssGVA, gvaAdminEmail, gvaAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shGVAU = ssGVA.getSheetByName(USUARIOS_SHEET);
+      var gvaULast = shGVAU.getLastRow();
+      var gvaAuditores = [];
+      if (gvaULast >= 2) {
+        var gvaUData = shGVAU.getRange(2, 1, gvaULast - 1, 8).getValues();
+        gvaUData.forEach(function(r) {
+          if (r[2] === 'Auditor' && r[6] === 'Activo') {
+            gvaAuditores.push({ email: (r[0]||'').toLowerCase(), nombre: r[1]||'' });
+          }
+        });
+      }
+      var shGVAV = ensureViaticosSheet(ssGVA);
+      var gvaVLast = shGVAV.getLastRow();
+      var gvaVData = gvaVLast >= 2 ? shGVAV.getRange(2, 1, gvaVLast - 1, 6).getValues() : [];
+
+      var ssGVA2 = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shGVAG = ensureGastosSheet(ssGVA2);
+      var gvaGLast = shGVAG.getLastRow();
+      var gvaGData = gvaGLast >= 2 ? shGVAG.getRange(2, 1, gvaGLast - 1, 11).getValues() : [];
+
+      var gvaResult = gvaAuditores.map(function(aud) {
+        var gvaViat = 0;
+        var gvaIngresos = [];
+        gvaVData.forEach(function(vr) {
+          if (getMesStr(vr[0]) === gvaMes && (vr[1]||'').toLowerCase() === aud.email) {
+            var vi2Imp = Number(vr[3]) || 0;
+            gvaViat += vi2Imp;
+            var vi2Fecha = vr[4] instanceof Date ? formatFechaHora(vr[4]) : String(vr[4]||'');
+            gvaIngresos.push({ viaticoId: vr[6]||'', importe: vi2Imp, fecha: vi2Fecha, cargadoPor: vr[5]||'' });
+          }
+        });
+        gvaIngresos.sort(function(a,b){ return b.fecha.localeCompare(a.fecha); });
+        var gvaGastos = gvaGData.filter(function(r) {
+          var gvaFecha = r[3] instanceof Date ? formatFechaISO(r[3]) : String(r[3]||'').slice(0,10);
+          return (r[1]||'').toLowerCase() === aud.email && gvaFecha.slice(0,7) === gvaMes;
+        }).map(function(r) {
+          var gvaFecha2 = r[3] instanceof Date ? formatFechaISO(r[3]) : String(r[3]||'').slice(0,10);
+          return { gastoId: r[0], fecha: gvaFecha2, hora: r[4], categoria: r[5], importe: r[6], fotoUrl: r[7], descripcion: r[10] || '' };
+        });
+        gvaGastos.sort(function(a,b){ return (b.fecha+' '+(b.hora||'')).localeCompare(a.fecha+' '+(a.hora||'')); });
+        var gvaTotal = gvaGastos.reduce(function(s,g){ return s+(Number(g.importe)||0); }, 0);
+        return { email: aud.email, nombre: aud.nombre, viaticos: gvaViat, ingresos: gvaIngresos, totalGastado: gvaTotal, saldo: gvaViat - gvaTotal, gastos: gvaGastos };
+      });
+      return jsonResponse({ success: true, mes: gvaMes, auditores: gvaResult });
+    } catch(gvaErr) { return jsonResponse({ success: false, error: gvaErr.message }); }
+  }
+
+  // ============================================================
+  // saveViaticos
+  // ============================================================
+  if (action === 'saveViaticos') {
+    var svAdminEmail    = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var svAdminToken    = e.parameter.adminToken || '';
+    var svAuditorEmail  = ((e.parameter.auditorEmail) || '').toLowerCase().trim();
+    var svMes           = (e.parameter.mes || '').trim();
+    var svImporte       = parseFloat(e.parameter.importe || '0') || 0;
+    if (!svAdminEmail || !svAdminToken || !svAuditorEmail || !svMes) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssSV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssSV, svAdminEmail, svAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+      var shSV = ensureViaticosSheet(ssSV);
+      var ssSVU = ssSV.getSheetByName(USUARIOS_SHEET);
+      var svRow = encontrarUsuarioRow(ssSVU, svAuditorEmail);
+      var svNombre = svRow > 0 ? ssSVU.getRange(svRow, 2).getValue() : '';
+      shSV.appendRow([svMes, svAuditorEmail, svNombre, svImporte, new Date(), svAdminEmail, Utilities.getUuid()]);
+      return jsonResponse({ success: true });
+    } catch(svErr) { return jsonResponse({ success: false, error: svErr.message }); }
+  }
+
+  // ============================================================
+  // deleteViatico
+  // ============================================================
+  if (action === 'deleteViatico') {
+    var dvAdmin = ((e.parameter.adminEmail)||'').toLowerCase().trim();
+    var dvToken = e.parameter.adminToken||'';
+    var dvId    = e.parameter.viaticoId||'';
+    if (!dvAdmin || !dvToken || !dvId) return jsonResponse({ success:false, error:'Faltan parámetros' });
+    try {
+      var ssDV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssDV, dvAdmin, dvToken)) return jsonResponse({ success:false, error:'Sin permisos' });
+      var shDV = ensureViaticosSheet(ssDV);
+      var dvData = shDV.getDataRange().getValues();
+      for (var dvi = dvData.length - 1; dvi >= 1; dvi--) {
+        if (String(dvData[dvi][6]||'') === dvId) { shDV.deleteRow(dvi + 1); return jsonResponse({ success:true }); }
+      }
+      return jsonResponse({ success:false, error:'Ingreso no encontrado' });
+    } catch(dvErr) { return jsonResponse({ success:false, error:dvErr.message }); }
+  }
+
+  // ============================================================
+  // editViatico
+  // ============================================================
+  if (action === 'editViatico') {
+    var evAdmin   = ((e.parameter.adminEmail)||'').toLowerCase().trim();
+    var evToken   = e.parameter.adminToken||'';
+    var evId      = e.parameter.viaticoId||'';
+    var evImporte = parseFloat(e.parameter.importe||'0')||0;
+    if (!evAdmin || !evToken || !evId || !evImporte) return jsonResponse({ success:false, error:'Faltan parámetros' });
+    try {
+      var ssEV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssEV, evAdmin, evToken)) return jsonResponse({ success:false, error:'Sin permisos' });
+      var shEV = ensureViaticosSheet(ssEV);
+      var evData = shEV.getDataRange().getValues();
+      for (var evi2 = 1; evi2 < evData.length; evi2++) {
+        if (String(evData[evi2][6]||'') === evId) {
+          shEV.getRange(evi2 + 1, 4).setValue(evImporte);
+          return jsonResponse({ success:true });
+        }
+      }
+      return jsonResponse({ success:false, error:'Ingreso no encontrado' });
+    } catch(evErr) { return jsonResponse({ success:false, error:evErr.message }); }
+  }
+
+  // ============================================================
+  // solicitarViaticos
+  // ============================================================
+  if (action === 'solicitarViaticos') {
+    var solEmail       = ((e.parameter.email) || '').toLowerCase().trim();
+    var solToken       = e.parameter.token || '';
+    var solMes         = (e.parameter.mes || '').trim();
+    var solTotalGastado = parseFloat(e.parameter.totalGastado || '0') || 0;
+    var solViaticos    = parseFloat(e.parameter.viaticos || '0') || 0;
+    if (!solEmail || !solToken || !solMes) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssSOL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shSOLU = ssSOL.getSheetByName(USUARIOS_SHEET);
+      var solRow = encontrarUsuarioRow(shSOLU, solEmail);
+      if (solRow < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var solUD = shSOLU.getRange(solRow, 1, 1, 8).getValues()[0];
+      if (solUD[4] !== solToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      var solNombre = solUD[1] || '';
+      var solAdminEmail = '';
+      var solLast = shSOLU.getLastRow();
+      if (solLast >= 2) {
+        var solUData = shSOLU.getRange(2, 1, solLast - 1, 8).getValues();
+        for (var si2 = 0; si2 < solUData.length; si2++) {
+          if (solUData[si2][2] === 'Admin' && solUData[si2][6] === 'Activo') {
+            solAdminEmail = (solUData[si2][0]||'').toLowerCase();
+            break;
+          }
+        }
+      }
+      if (!solAdminEmail) return jsonResponse({ success: false, error: 'No se encontró un administrador' });
+      var solSaldo = solViaticos - solTotalGastado;
+      MailApp.sendEmail({
+        to: solAdminEmail,
+        subject: 'Solicitud de viáticos - ' + solNombre + ' (' + solMes + ')',
+        body: 'El auditor ' + solNombre + ' (' + solEmail + ') solicita más viáticos para el mes ' + solMes + '.\n\n' +
+              'Viáticos asignados: $' + solViaticos + '\n' +
+              'Total gastado: $' + solTotalGastado + '\n' +
+              'Saldo: $' + solSaldo + '\n\n' +
+              'Por favor revisá el panel de administración para ajustar el monto.',
+      });
+      return jsonResponse({ success: true });
+    } catch(solErr) { return jsonResponse({ success: false, error: solErr.message }); }
+  }
+
+  // ============================================================
+  // deleteGasto
+  // ============================================================
+  if (action === 'deleteGasto') {
+    var dgEmail  = ((e.parameter.email)||'').toLowerCase().trim();
+    var dgToken  = e.parameter.token || '';
+    var dgId     = (e.parameter.gastoId||'').trim();
+    if (!dgEmail || !dgToken || !dgId) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssDG = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shDGU = ssDG.getSheetByName(USUARIOS_SHEET);
+      var dgRow = encontrarUsuarioRow(shDGU, dgEmail);
+      if (dgRow < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dgUD = shDGU.getRange(dgRow, 1, 1, 8).getValues()[0];
+      if (dgUD[4] !== dgToken) return jsonResponse({ success: false, error: 'Sin autorización' });
+      var ssDG2 = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shDG = ensureGastosSheet(ssDG2);
+      var dgLast = shDG.getLastRow();
+      if (dgLast >= 2) {
+        var dgData = shDG.getRange(2, 1, dgLast - 1, 1).getValues();
+        for (var di = 0; di < dgData.length; di++) {
+          if (String(dgData[di][0]) === dgId) { shDG.deleteRow(di + 2); break; }
+        }
+      }
+      return jsonResponse({ success: true });
+    } catch(dgErr) { return jsonResponse({ success: false, error: dgErr.message }); }
+  }
+
   return jsonResponse({ version: '2026-06-16-v1' });
 }
 
@@ -2440,6 +2890,49 @@ function restaurarRawValor() {
 // Ejecutar UNA VEZ: para filas donde col U sigue vacÃ­a y la
 // respuesta es Cumple/No Cumple, anota el rango de referencia
 // ============================================================
+// ============================================================
+// Recalcula puntaje/nivel/reprobado para TODAS las auditorías
+// existentes en la hoja Resultados. Ejecutar desde el editor
+// de Apps Script o via endpoint recalcularBatch.
+// ============================================================
+function recalcularTodasLasAuditorias() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) { Logger.log('No hay datos'); return 0; }
+  var lastRow = sheet.getLastRow();
+  var data = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+
+  // Leer columnas P/Q/R actuales para escritura batch
+  var pqr = sheet.getRange(2, 16, lastRow - 1, 3).getValues();
+
+  var byId = {};
+  data.forEach(function(r, i) {
+    var id = String(r[0] || '').trim();
+    if (!id) return;
+    if (!byId[id]) byId[id] = [];
+    byId[id].push({ rowIndex: i, data: r });
+  });
+
+  var updated = 0;
+  Object.keys(byId).forEach(function(id) {
+    var grupo = byId[id];
+    var rows = grupo.map(function(x) { return x.data; });
+    var res = recalcularPuntaje(rows);
+    grupo.forEach(function(x) {
+      pqr[x.rowIndex][0] = res.pct;
+      pqr[x.rowIndex][1] = res.nivel;
+      pqr[x.rowIndex][2] = res.reprobado ? 'Sí' : 'No';
+    });
+    updated++;
+  });
+
+  // Escribir todo en una sola llamada
+  sheet.getRange(2, 16, lastRow - 1, 3).setValues(pqr);
+
+  Logger.log('Auditorías recalculadas: ' + updated);
+  return updated;
+}
+
 function agregarRangoReferencia() {
   var RANGOS = {
     'temperatura del salmon': 'rango Cumple: -2Â°C a 2Â°C | Parcial: 2Â°C a 6Â°C',

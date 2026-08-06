@@ -111,6 +111,7 @@ const state = {
   adminGastosAuditor:     null,
   adminGastosMes:         '',
   adminGastoModal:        null,
+  adminViatModal:         null,
 };
 
 // ============================================================
@@ -1364,12 +1365,14 @@ function renderAdminGastosDetalle() {
         </div>
         <button id="btn-admin-viat-edit" style="width:32px;height:32px;border-radius:50%;background:#16a34a;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;font-weight:300;line-height:1">+</button>
       </div>
-      <div id="admin-viat-form" style="display:none;margin-bottom:8px">
-        <div style="font-size:0.75rem;color:#6b7280;margin-bottom:6px">Agregar monto a viáticos</div>
-        <div style="display:flex;gap:8px">
-          <input id="inp-admin-viat" type="text" inputmode="decimal" placeholder="0" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
-          <button id="btn-admin-viat-save" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.83rem;cursor:pointer;font-weight:600">Guardar</button>
-          <button id="btn-admin-viat-cancel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:0.83rem;cursor:pointer">✕</button>
+      <div id="admin-viat-form" style="display:none;margin-bottom:8px;border-top:1px solid #e5e7eb;padding-top:10px">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:0.75rem;color:#6b7280">Agregar monto a viáticos</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="inp-admin-viat" type="text" inputmode="decimal" placeholder="0" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
+            <button id="btn-admin-viat-save" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.83rem;cursor:pointer;font-weight:600">Guardar</button>
+            <button id="btn-admin-viat-cancel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:0.83rem;cursor:pointer">✕</button>
+          </div>
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:4px">
@@ -1384,8 +1387,25 @@ function renderAdminGastosDetalle() {
       <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px">
         <span style="font-size:0.78rem;color:#16a34a;font-weight:600">+ ${fmtPesos(ing.importe)}</span>
         <span style="font-size:0.72rem;color:#6b7280">${escHtml(ing.fecha)}</span>
+        ${ing.viaticoId ? `<button id="btn-viat-edit-${escHtml(ing.viaticoId)}" style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:0.85rem;color:#9ca3af">✎</button>` : ''}
       </div>`).join('')}
     </div>` : ''}
+    ${state.adminViatModal ? (function(){
+      const vm = state.adminViatModal;
+      return `<div id="admin-viat-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:flex-end">
+        <div style="background:#fff;border-radius:18px 18px 0 0;padding:22px 20px 32px;width:100%;box-sizing:border-box">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-size:0.85rem;font-weight:700;color:#1a1a1a">Editar ingreso</div>
+            <button id="btn-viat-modal-close" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#6b7280">✕</button>
+          </div>
+          <div style="font-size:0.75rem;color:#6b7280;margin-bottom:10px">${escHtml(vm.fecha)}</div>
+          <div style="font-size:0.75rem;color:#374151;margin-bottom:4px">Importe</div>
+          <input id="inp-viat-modal" type="text" inputmode="decimal" value="${escHtml(String(vm.importe))}" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:1rem;box-sizing:border-box;margin-bottom:14px">
+          <button id="btn-viat-modal-save" style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer;margin-bottom:8px">Guardar</button>
+          <button id="btn-viat-modal-delete" style="width:100%;background:#fff;color:#ef4444;border:1px solid #fca5a5;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer">Eliminar ingreso</button>
+        </div>
+      </div>`;
+    })() : ''}
     <div style="font-size:0.82rem;font-weight:600;color:#374151;margin-bottom:8px">Gastos del mes</div>
     ${gastosHtml}
   </div>`;
@@ -5122,6 +5142,65 @@ function attachListeners() {
       alert('Error de conexión.');
       if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
     }
+  });
+
+  // Ingresos edit buttons
+  if (state.screen === 'admin-gastos-detalle' && state.adminGastosData) {
+    const audViat = state.adminGastosData.auditores.find(a => a.email === state.adminGastosAuditor);
+    if (audViat) {
+      (audViat.ingresos || []).forEach(ing => {
+        if (!ing.viaticoId) return;
+        on('btn-viat-edit-' + ing.viaticoId, 'click', () => setState({ adminViatModal: ing }));
+      });
+    }
+  }
+  on('btn-viat-modal-close', 'click', () => setState({ adminViatModal: null }));
+  document.getElementById('admin-viat-modal-backdrop')?.addEventListener('click', function(e) {
+    if (e.target && e.target.id === 'admin-viat-modal-backdrop') setState({ adminViatModal: null });
+  });
+  on('btn-viat-modal-save', 'click', async () => {
+    const vm = state.adminViatModal;
+    if (!vm) return;
+    const raw = (document.getElementById('inp-viat-modal')?.value || '').replace(/\./g,'').replace(',','.');
+    const importe = parseFloat(raw) || 0;
+    const btn = document.getElementById('btn-viat-modal-save');
+    if (!importe) { alert('Ingresá un importe válido.'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const res = await callAPI({ action: 'editViatico', adminEmail: state.user.email, adminToken: state.user.token,
+        viaticoId: vm.viaticoId, importe });
+      if (res.success) {
+        const audEmail = state.adminGastosAuditor;
+        const reloadMes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+        const reloadRes = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes: reloadMes });
+        if (reloadRes.success) state.adminGastosData = reloadRes;
+        setState({ adminViatModal: null, screen: 'admin-gastos-detalle', adminGastosAuditor: audEmail });
+      } else {
+        alert(res.error || 'Error al guardar.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+      }
+    } catch(e) { alert('Error de conexión.'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
+  });
+  on('btn-viat-modal-delete', 'click', async () => {
+    const vm = state.adminViatModal;
+    if (!vm) return;
+    if (!confirm('¿Eliminar este ingreso?')) return;
+    const btn = document.getElementById('btn-viat-modal-delete');
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const res = await callAPI({ action: 'deleteViatico', adminEmail: state.user.email, adminToken: state.user.token,
+        viaticoId: vm.viaticoId });
+      if (res.success) {
+        const audEmail = state.adminGastosAuditor;
+        const reloadMes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+        const reloadRes = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes: reloadMes });
+        if (reloadRes.success) state.adminGastosData = reloadRes;
+        setState({ adminViatModal: null, screen: 'admin-gastos-detalle', adminGastosAuditor: audEmail });
+      } else {
+        alert(res.error || 'Error al eliminar.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Eliminar ingreso'; }
+      }
+    } catch(e) { alert('Error de conexión.'); if (btn) { btn.disabled = false; btn.textContent = 'Eliminar ingreso'; } }
   });
 }
 
