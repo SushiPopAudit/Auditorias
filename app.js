@@ -1106,14 +1106,12 @@ function mesLabel(mes) {
   return meses[parseInt(m,10)-1] + ' ' + y;
 }
 function prevMes(mes) {
-  const d = new Date(mes + '-01');
-  d.setMonth(d.getMonth()-1);
-  return d.toISOString().slice(0,7);
+  const [y, m] = mes.split('-').map(Number);
+  return m === 1 ? (y-1) + '-12' : y + '-' + String(m-1).padStart(2,'0');
 }
 function nextMes(mes) {
-  const d = new Date(mes + '-01');
-  d.setMonth(d.getMonth()+1);
-  return d.toISOString().slice(0,7);
+  const [y, m] = mes.split('-').map(Number);
+  return m === 12 ? (y+1) + '-01' : y + '-' + String(m+1).padStart(2,'0');
 }
 const CAT_ICONS = { 'ALIMENTOS/BEBIDAS': '🍽️', 'TRANSPORTE': '🚗', 'OTROS': '📦' };
 const CATEGORIAS = ['ALIMENTOS/BEBIDAS', 'TRANSPORTE', 'OTROS'];
@@ -1177,7 +1175,12 @@ function renderGastosForm() {
   const g = state.gastosEditing;
   const isEdit = !!g;
   const now = new Date();
-  const fecha = g ? g.fecha : now.toISOString().slice(0,10);
+  const currentMes = now.toISOString().slice(0,7);
+  const viewedMes  = state.gastosMes || currentMes;
+  const defaultFecha = viewedMes === currentMes
+    ? now.toISOString().slice(0,10)
+    : (function(){ const [y,m] = viewedMes.split('-').map(Number); return new Date(Date.UTC(y,m,0)).toISOString().slice(0,10); })();
+  const fecha = g ? g.fecha : defaultFecha;
   const hora  = g ? g.hora  : now.toTimeString().slice(0,5);
   const cat   = g ? g.categoria : 'ALIMENTOS/BEBIDAS';
   const imp   = g ? g.importe : '';
