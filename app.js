@@ -113,6 +113,11 @@ const state = {
   adminGastoModal:        null,
   adminViatModal:         null,
   gastosSolicitarModal:   false,
+
+  // Cachés de performance
+  historialDetalleCache:  {},   // { auditId: res }
+  gastosMesCache:         {},   // { 'YYYY-MM': data }
+  dashboardTipoLoaded:    null, // último tipo de dashboard cargado
 };
 
 // ============================================================
@@ -3570,10 +3575,12 @@ function attachListeners() {
 
   // Helpers para recargar datos de admin
   async function recargarDashboard() {
+    const tipoSolicitado = state.dashboardTipo || '';
+    if (state.dashboardTipoLoaded === tipoSolicitado && state.dashboard) return;
     setState({ dashboardLoading: true, dashboardError: '' });
     try {
-      const res = await callAPI({ action: 'getDashboard', email: state.user.email, token: state.user.token, tipo: state.dashboardTipo || '' });
-      if (res.success) setState({ dashboard: res, dashboardLoading: false });
+      const res = await callAPI({ action: 'getDashboard', email: state.user.email, token: state.user.token, tipo: tipoSolicitado });
+      if (res.success) { state.dashboardTipoLoaded = tipoSolicitado; setState({ dashboard: res, dashboardLoading: false }); }
       else setState({ dashboardLoading: false, dashboardError: res.error || 'Error al cargar dashboard' });
     } catch(e) {
       setState({ dashboardLoading: false, dashboardError: 'Error de conexión: ' + e.message });
@@ -3937,7 +3944,7 @@ function attachListeners() {
     setState({ screen: 'ranking' });
     if (!state.dashboard) await recargarDashboard();
   });
-  on('btn-ranking-refresh', 'click', async () => { await recargarDashboard(); });
+  on('btn-ranking-refresh', 'click', async () => { state.dashboardTipoLoaded = null; await recargarDashboard(); });
   // Cerrar modal del día
   on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; render(); });
   const backdrop = document.getElementById('cal-modal-backdrop');
@@ -4456,6 +4463,8 @@ function attachListeners() {
   // Volver a cat-select desde summary
   on('btn-back-to-audit', 'click', () => setState({ screen: 'cat-select' }));
 
+  if (state.screen === 'audit') {
+
   // Respuestas radio
   document.querySelectorAll('.answer-radio').forEach(input => {
     input.addEventListener('change', () => {
@@ -4617,6 +4626,8 @@ function attachListeners() {
     });
   });
 
+  } // end audit screen guard
+
   on('btn-reenviar-audit', 'click', submitAudit);
   on('btn-export-unconfirmed', 'click', exportarBorrador);
   on('btn-confirmar-igualmente', 'click', () => {
@@ -4647,15 +4658,17 @@ function attachListeners() {
     if (!state.historial) await recargarHistorial();
   });
   on('btn-dashboard-refresh', 'click', async () => {
+    state.dashboardTipoLoaded = null;
     setState({ dashboard: null });
     await recargarDashboard();
   });
-  on('btn-dashboard-retry', 'click', recargarDashboard);
+  on('btn-dashboard-retry', 'click', async () => { state.dashboardTipoLoaded = null; await recargarDashboard(); });
   window.__dbTipo = async function(tipo) {
-    if (state.dashboardTipo === tipo && state.dashboardView !== 'ranking') return;
+    if (state.dashboardTipo === tipo && state.dashboardView !== 'ranking' && state.dashboardTipoLoaded === tipo && state.dashboard) return;
     state.dashboardTipo = tipo;
     state.dashboardView = 'local';
     state.dashboard = null;
+    state.dashboardTipoLoaded = null;
     render();
     await recargarDashboard();
   };
@@ -4689,18 +4702,28 @@ function attachListeners() {
     });
   }
 
-  // Helper: cargar detalle completo de una auditoría
+  // Helper: cargar detalle completo de una auditoría (con caché)
   async function cargarDetalleAudit(auditId) {
+    const cached = state.historialDetalleCache[auditId];
+    if (cached) return cached;
     const res = await callAPI({ action: 'getAuditoria', email: state.user.email, token: state.user.token, auditId });
     if (!res.success) throw new Error(res.error || 'Error al cargar');
+    state.historialDetalleCache[res.auditId || auditId] = res;
     return res;
   }
+
+  if (state.screen === 'historial' || state.screen === 'historial-detalle' || state.screen === 'historial-editar') {
 
   // 👁 Ver detalle
   document.querySelectorAll('.hist-btn-ver').forEach(btn => {
     btn.addEventListener('click', async () => {
       const auditId = btn.dataset.auditId;
       if (!auditId) return;
+      const cachedDetalle = state.historialDetalleCache[auditId];
+      if (cachedDetalle) {
+        setState({ screen: 'historial-detalle', historialDetalle: cachedDetalle, historialDetalleLoading: false, historialDetalleError: '', historialAccionando: '' });
+        return;
+      }
       setState({ screen: 'historial-detalle', historialDetalleLoading: true, historialDetalle: null, historialDetalleError: '', historialAccionando: auditId });
       try {
         const res = await cargarDetalleAudit(auditId);
@@ -4892,8 +4915,11 @@ function attachListeners() {
       if (!raw.ok) throw new Error('HTTP ' + raw.status);
       const res  = await raw.json();
       if (!res.success) throw new Error(res.error || 'Error al guardar');
+      // Invalidar caché del detalle editado
+      delete state.historialDetalleCache[d.auditId];
       // Recargar el detalle actualizado y volver al detalle
       const updated = await callAPI({ action: 'getAuditoria', email: state.user.email, token: state.user.token, auditId: d.auditId });
+      if (updated.success) state.historialDetalleCache[updated.auditId || d.auditId] = updated;
       setState({ heSaving: false, heChanges: {}, historialDetalle: updated.success ? updated : d, historial: null, screen: 'historial-detalle' });
       await recargarHistorialSilente();
     } catch(e) {
@@ -4901,6 +4927,8 @@ function attachListeners() {
       alert('Error al guardar: ' + e.message);
     }
   });
+
+  } // end historial/historial-detalle/historial-editar screen guard
   // ─────────────────────────────────────────────────────────────
 
   // ============================================================
@@ -4908,10 +4936,17 @@ function attachListeners() {
   // ============================================================
   async function cargarGastos() {
     const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+    const cacheKey = mes;
+    if (state.gastosMesCache[cacheKey]) {
+      setState({ gastosData: state.gastosMesCache[cacheKey], gastosScreen: 'list' });
+      return;
+    }
     setState({ gastosData: null, gastosScreen: 'list' });
     try {
       const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes });
-      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 } });
+      const data = res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 };
+      state.gastosMesCache[cacheKey] = data;
+      setState({ gastosData: data });
     } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
   }
   async function cargarAdminGastos() {
@@ -4931,24 +4966,38 @@ function attachListeners() {
     setState({ screen: 'gastos', gastosScreen: 'list' });
     await cargarGastos();
   });
+  if (state.screen === 'gastos') {
+
   on('btn-registrar-gasto', 'click', () => setState({ gastosScreen: 'form', gastosEditing: null, gastosPhotoRemoved: false }));
   on('btn-gastos-form-cancel', 'click', () => setState({ gastosScreen: 'list' }));
   on('btn-gastos-mes-prev', 'click', async () => {
     const newMes = prevMes(state.gastosMes || new Date().toISOString().slice(0,7));
     state.gastosMes = newMes;
+    if (state.gastosMesCache[newMes]) {
+      setState({ gastosData: state.gastosMesCache[newMes], gastosScreen: 'list' });
+      return;
+    }
     setState({ gastosData: null });
     try {
       const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes: newMes });
-      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 } });
+      const data = res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 };
+      state.gastosMesCache[newMes] = data;
+      setState({ gastosData: data });
     } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
   });
   on('btn-gastos-mes-next', 'click', async () => {
     const newMes = nextMes(state.gastosMes || new Date().toISOString().slice(0,7));
     state.gastosMes = newMes;
+    if (state.gastosMesCache[newMes]) {
+      setState({ gastosData: state.gastosMesCache[newMes], gastosScreen: 'list' });
+      return;
+    }
     setState({ gastosData: null });
     try {
       const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes: newMes });
-      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 } });
+      const data = res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 };
+      state.gastosMesCache[newMes] = data;
+      setState({ gastosData: data });
     } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
   });
 
@@ -5031,6 +5080,7 @@ function attachListeners() {
       });
       const saveRes = await res.json();
       if (saveRes.success) {
+        delete state.gastosMesCache[state.gastosMes || new Date().toISOString().slice(0,7)];
         await cargarGastos();
       } else {
         alert(saveRes.error || 'Error al guardar.');
@@ -5055,10 +5105,13 @@ function attachListeners() {
       const res = await callAPI({ action: 'deleteGasto', email: state.user.email, token: state.user.token, gastoId: g.gastoId });
       if (res.success) {
         const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+        delete state.gastosMesCache[mes];
         setState({ gastosScreen: 'list', gastosEditing: null, gastosData: null });
         try {
           const d = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes });
-          setState({ gastosData: d.success ? d : { gastos: [], viaticos: 0, totalGastado: 0 } });
+          const data = d.success ? d : { gastos: [], viaticos: 0, totalGastado: 0 };
+          state.gastosMesCache[mes] = data;
+          setState({ gastosData: data });
         } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
       } else {
         alert(res.error || 'Error al eliminar.');
@@ -5110,10 +5163,14 @@ function attachListeners() {
     }
   });
 
+  } // end gastos screen guard
+
   on('btn-admin-go-gastos', 'click', async () => {
     setState({ screen: 'admin-gastos', adminGastosAuditor: null });
     await cargarAdminGastos();
   });
+  if (state.screen === 'admin-gastos' || state.screen === 'admin-gastos-detalle') {
+
   on('btn-admin-gastos-back', 'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
   on('btn-admin-gastos-mes-prev', 'click', async () => {
     const newMes = prevMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
@@ -5261,6 +5318,8 @@ function attachListeners() {
       }
     } catch(e) { alert('Error de conexión.'); if (btn) { btn.disabled = false; btn.textContent = 'Eliminar ingreso'; } }
   });
+
+  } // end admin-gastos/admin-gastos-detalle screen guard
 }
 
 // ============================================================

@@ -73,8 +73,7 @@ function doPost(e) {
           } catch(sgPhotoErr) { console.error('Foto gasto error:', sgPhotoErr); }
         }
 
-        var ssSG2 = SpreadsheetApp.openById(SPREADSHEET_ID);
-        var shSGastos = ensureGastosSheet(ssSG2);
+        var shSGastos = ensureGastosSheet(ss);
 
         if (!sgGastoId) {
           sgGastoId = 'G-' + Date.now();
@@ -116,38 +115,52 @@ function doPost(e) {
       if (!origId) return jsonResponse({ success: false, error: 'originalAuditId requerido' });
 
       var allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 21).getValues();
-      var idxMap  = {}; // control.toLowerCase() â†’ Ã­ndice en allRows
+      var idxMap  = {};
       allRows.forEach(function(r, i) {
         if (String(r[0]).trim() === origId) idxMap[String(r[8]).trim().toLowerCase()] = i;
       });
-      if (!Object.keys(idxMap).length) return jsonResponse({ success: false, error: 'AuditorÃ­a no encontrada: ' + origId });
+      if (!Object.keys(idxMap).length) return jsonResponse({ success: false, error: 'AuditorÃƒÂ­a no encontrada: ' + origId });
 
-      // Actualizar respuesta / observacion / rawValor por control; no tocar fotos (col N)
       var respMap = {};
       (data.respuestas || []).forEach(function(r) { respMap[String(r.control || '').trim().toLowerCase()] = r; });
 
+      var indices = Object.keys(idxMap).map(function(k) { return idxMap[k]; });
+      var minIdx = Math.min.apply(null, indices);
+      var maxIdx = Math.max.apply(null, indices);
+      var numRows = maxIdx - minIdx + 1;
+      var minShRow = minIdx + 2;
+      var rangeRows = sheet.getRange(minShRow, 1, numRows, 21).getValues();
+
       Object.keys(idxMap).forEach(function(ctrl) {
-        var shRow = idxMap[ctrl] + 2; // 1-indexed + header
         var r = respMap[ctrl];
         if (!r) return;
-        sheet.getRange(shRow, 12).setValue(r.respuesta   || ''); // col L
-        sheet.getRange(shRow, 13).setValue(r.observacion || ''); // col M
-        var rawU = (r.rawValor != null && r.rawValor !== '') ? String(r.rawValor) : (r.fechaRaw || '');
-        sheet.getRange(shRow, 21).setValue(rawU);                // col U
+        var rel = idxMap[ctrl] - minIdx;
+        rangeRows[rel][11] = r.respuesta   || '';
+        rangeRows[rel][12] = r.observacion || '';
+        rangeRows[rel][20] = (r.rawValor != null && r.rawValor !== '') ? String(r.rawValor) : (r.fechaRaw || '');
       });
-      sheet.getRange(2, 21, sheet.getLastRow() - 1, 1).setNumberFormat('@');
 
-      // Recalcular puntaje con las filas actualizadas
-      var updRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 21).getValues()
-        .filter(function(r) { return String(r[0]).trim() === origId; });
+      sheet.getRange(minShRow, 12, numRows, 1).setValues(rangeRows.map(function(r) { return [r[11]]; }));
+      sheet.getRange(minShRow, 13, numRows, 1).setValues(rangeRows.map(function(r) { return [r[12]]; }));
+      sheet.getRange(minShRow, 21, numRows, 1).setValues(rangeRows.map(function(r) { return [r[20]]; }));
+      sheet.getRange(minShRow, 21, numRows, 1).setNumberFormat('@');
+      sheet.getRange(minShRow, 12, numRows, 2).setNumberFormat('@');
+
+      var updRows = rangeRows.filter(function(r) { return String(r[0]).trim() === origId; });
       var res = recalcularPuntaje(updRows);
+
       Object.keys(idxMap).forEach(function(ctrl) {
-        var shRow = idxMap[ctrl] + 2;
-        sheet.getRange(shRow, 16).setValue(res.pct);
-        sheet.getRange(shRow, 17).setValue(res.nivel);
-        sheet.getRange(shRow, 18).setValue(res.reprobado ? 'SÃ­' : 'No');
-        sheet.getRange(shRow, 3).setValue(data.hora || ''); // hora de ediciÃ³n
+        var rel = idxMap[ctrl] - minIdx;
+        rangeRows[rel][15] = res.pct;
+        rangeRows[rel][16] = res.nivel;
+        rangeRows[rel][17] = res.reprobado ? 'SÃƒÂ­' : 'No';
+        rangeRows[rel][2]  = data.hora || '';
       });
+
+      sheet.getRange(minShRow, 3,  numRows, 1).setValues(rangeRows.map(function(r) { return [r[2]];  }));
+      sheet.getRange(minShRow, 16, numRows, 1).setValues(rangeRows.map(function(r) { return [r[15]]; }));
+      sheet.getRange(minShRow, 17, numRows, 1).setValues(rangeRows.map(function(r) { return [r[16]]; }));
+      sheet.getRange(minShRow, 18, numRows, 1).setValues(rangeRows.map(function(r) { return [r[17]]; }));
 
       // Invalidar cachÃ©s
       if (data.auditorEmail) { cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase()); cacheRemoveKey('db_' + data.auditorEmail.toLowerCase()); }
@@ -234,7 +247,21 @@ function doPost(e) {
         cacheRemoveKey('db_'  + data.auditorEmail.toLowerCase());
       }
       cacheRemoveKey('aud_all');
-      cacheRemoveKey('db_all'); // dashboard admin uses db_<adminEmail>, but we don't know it â€” TTL will expire
+            try {
+              var ssInv = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+              var shInv = ssInv.getSheetByName(USUARIOS_SHEET);
+              if (shInv && shInv.getLastRow() > 1) {
+                var invData = shInv.getRange(2, 1, shInv.getLastRow() - 1, 8).getValues();
+                invData.forEach(function(ur) {
+                  if (ur[2] === 'Admin' && ur[6] === 'Activo') {
+                    var ae = (ur[0]||'').toLowerCase();
+                    cacheRemoveKey('db_' + ae + '_Oficial');
+                    cacheRemoveKey('db_' + ae + '_Informal');
+                    cacheRemoveKey('db_' + ae);
+                  }
+                });
+              }
+            } catch(invErr) { console.error('cache invalidation error:', invErr); } // dashboard admin uses db_<adminEmail>, but we don't know it â€” TTL will expire
     }
 
     // Marcar visita del calendario como Realizada si existe una Pendiente para este local+fecha+auditor
@@ -255,10 +282,11 @@ function doPost(e) {
     } catch(calErr) { console.error('Error marcando visita realizada:', calErr); }
 
     // Detectar desvÃ­os repetidos (aparecen en Ãºltimas 2 auditorÃ­as del mismo local)
-    const desviosRepetidos = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows);
+    var sharedAllData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 20).getValues();
+    const desviosRepetidos = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows, sharedAllData);
 
     // Calcular historial y generar PDF
-    const historial = calcularHistorial(sheet, data.local, data.auditId, data.fecha, data.puntaje);
+    const historial = calcularHistorial(sheet, data.local, data.auditId, data.fecha, data.puntaje, sharedAllData);
     const pdfResult = generarPDF(data, rows, desviosRepetidos, historial);
 
     // Enviar email al local
@@ -283,13 +311,12 @@ function doPost(e) {
 // ============================================================
 // DETECCIÃ“N DE DESVÃOS REPETIDOS
 // ============================================================
-function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales) {
+function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales, allDataParam) {
   try {
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
+    if (allDataParam) { if (!allDataParam.length) return []; }
+    else { const lastRow = sheet.getLastRow(); if (lastRow < 2) return []; }
 
-    // Leer todas las filas del sheet (sin encabezado)
-    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    const allData = allDataParam || sheet.getRange(2, 1, sheet.getLastRow() - 1, 13).getValues();
 
     // Filtrar filas del mismo local, excluyendo la auditorÃ­a actual
     // Col A(0)=AuditID, Col E(4)=Local, Col I(8)=Control, Col G(6)=Categoria, Col H(7)=Subcategoria, Col L(11)=Respuesta
@@ -410,12 +437,15 @@ function formatFecha(f) {
 // ============================================================
 // HISTORIAL DEL LOCAL
 // ============================================================
-function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActual) {
+function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActual, allDataParam) {
   try {
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return null;
-
-    var allData = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
+    var allData = allDataParam;
+    if (!allData) {
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) return null;
+      allData = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
+    }
+    if (!allData.length) return null;
 
     // Filas del mismo local, excluyendo la auditorÃ­a actual
     var rowsLocal = allData.filter(function(col) {
@@ -1703,14 +1733,11 @@ function doGet(e) {
 
       var lastGD = shGD.getLastRow();
       var allGD  = shGD.getRange(2, 1, lastGD - 1, 21).getValues();
-      var dispGD = shGD.getRange(2, 1, lastGD - 1, 21).getDisplayValues();
-      var rowsGD = allGD.map(function(r, rowIdx) {
+      var rowsGD = allGD.map(function(r) {
         return r.map(function(v, colIdx) {
           if (v == null) return '';
-          // For user-entered text columns (respuesta=11, observacion=12), use display value
-          // to avoid Date-formatted cells returning JS Date objects.
           if ((colIdx === 11 || colIdx === 12 || colIdx === 20) && v instanceof Date) {
-            return String(dispGD[rowIdx][colIdx] || '');
+            return formatFecha(v);
           }
           return String(v);
         });
