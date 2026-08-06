@@ -105,6 +105,8 @@ const state = {
   gastosMes:              '',
   gastosData:             null,
   gastosEditing:          null,
+  gastosPhotoRemoved:     false,
+  gastosPhotoData:        null,
   adminGastosData:        null,
   adminGastosAuditor:     null,
   adminGastosMes:         '',
@@ -1100,6 +1102,13 @@ function turnobage(turno) {
 function fmtPesos(n) {
   return '$' + Math.round(n).toLocaleString('es-AR');
 }
+function driveImgUrl(url) {
+  if (!url) return '';
+  var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w600';
+  return url;
+}
 function mesLabel(mes) {
   if (!mes) return '';
   const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1210,12 +1219,23 @@ function renderGastosForm() {
     </div>
     <div style="margin-bottom:14px">
       <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Foto del ticket *</label>
-      ${foto ? `<div style="margin-bottom:8px"><img src="${escHtml(foto)}" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e5e7eb"></div>` : ''}
+      <div id="gasto-foto-current" style="margin-bottom:8px">
+        ${(foto && !state.gastosPhotoRemoved) ? `
+          <div style="display:inline-flex;align-items:flex-start;gap:6px">
+            <img src="${escHtml(driveImgUrl(foto))}" style="max-width:100px;max-height:100px;border-radius:8px;border:1px solid #e5e7eb">
+            <button id="btn-gasto-foto-remove" style="background:#ef4444;color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:0.75rem;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+          </div>` : ''}
+      </div>
       <div id="gasto-foto-preview" style="margin-bottom:8px"></div>
-      <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
-        📎 Adjuntar foto
-        <input id="inp-gasto-foto" type="file" accept="image/*" style="display:none">
-      </label>
+      ${(!foto || state.gastosPhotoRemoved) ? `
+        <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
+          📎 Adjuntar foto
+          <input id="inp-gasto-foto" type="file" accept="image/*" capture="environment" style="display:none">
+        </label>` : `
+        <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
+          🔄 Reemplazar foto
+          <input id="inp-gasto-foto" type="file" accept="image/*" capture="environment" style="display:none">
+        </label>`}
     </div>
     <div style="margin-bottom:18px;background:#f8fafc;border-radius:8px;padding:10px 12px">
       <div style="font-size:0.78rem;color:#6b7280">Fecha y hora del gasto</div>
@@ -1225,6 +1245,7 @@ function renderGastosForm() {
       <button id="btn-gastos-form-save" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer">Guardar</button>
       <button id="btn-gastos-form-cancel" style="flex:1;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:10px;padding:13px;font-size:0.95rem;cursor:pointer">Cancelar</button>
     </div>
+    ${isEdit ? `<button id="btn-gastos-form-delete" style="width:100%;background:#fff;color:#ef4444;border:1px solid #ef4444;border-radius:10px;padding:11px;font-size:0.9rem;cursor:pointer;margin-top:8px">Eliminar gasto</button>` : ''}
   </div>`;
 }
 
@@ -1302,7 +1323,7 @@ function renderAdminGastosDetalle() {
         <div><div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase">Importe</div><div style="font-size:1.1rem;font-weight:700;color:#1a1a1a">${fmtPesos(mg.importe)}</div></div>
         <div style="text-align:right"><div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase">Fecha</div><div style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml((mg.fecha||'').split('-').reverse().join('/'))} ${escHtml(mg.hora||'')}</div></div>
       </div>
-      ${mg.fotoUrl ? `<div style="text-align:center;margin-top:8px"><img src="${escHtml(mg.fotoUrl)}" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e5e7eb"></div>` : `<div style="text-align:center;color:#94a3b8;font-size:0.83rem;padding:20px 0">Sin foto adjunta</div>`}
+      ${mg.fotoUrl ? `<div style="text-align:center;margin-top:8px"><img src="${escHtml(driveImgUrl(mg.fotoUrl))}" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e5e7eb"></div>` : `<div style="text-align:center;color:#94a3b8;font-size:0.83rem;padding:20px 0">Sin foto adjunta</div>`}
     </div>
   </div>`;
   })() : '';
@@ -4842,7 +4863,7 @@ function attachListeners() {
     setState({ screen: 'gastos', gastosScreen: 'list' });
     await cargarGastos();
   });
-  on('btn-registrar-gasto', 'click', () => setState({ gastosScreen: 'form', gastosEditing: null }));
+  on('btn-registrar-gasto', 'click', () => setState({ gastosScreen: 'form', gastosEditing: null, gastosPhotoRemoved: false }));
   on('btn-gastos-form-cancel', 'click', () => setState({ gastosScreen: 'list' }));
   on('btn-gastos-mes-prev', 'click', async () => {
     const newMes = prevMes(state.gastosMes || new Date().toISOString().slice(0,7));
@@ -4866,7 +4887,7 @@ function attachListeners() {
   // Edit buttons for gastos (delegated)
   if (state.screen === 'gastos' && state.gastosScreen === 'list' && state.gastosData) {
     (state.gastosData.gastos || []).forEach(g => {
-      on('btn-gasto-edit-' + g.gastoId, 'click', () => setState({ gastosScreen: 'form', gastosEditing: g }));
+      on('btn-gasto-edit-' + g.gastoId, 'click', () => setState({ gastosScreen: 'form', gastosEditing: g, gastosPhotoRemoved: false }));
     });
   }
 
@@ -4914,8 +4935,6 @@ function attachListeners() {
     const imp = parseFloat(document.getElementById('inp-gasto-importe')?.value.replace(/\./g,'').replace(',','.') || '0') || 0;
     if (!imp) { alert('Ingresá un importe.'); return; }
     const descripcion = document.getElementById('inp-gasto-desc')?.value || '';
-    const inpFoto = document.getElementById('inp-gasto-foto');
-    if (!g && !inpFoto?.files[0]) { alert('La foto del ticket es obligatoria.'); return; }
     const mes = state.gastosMes || new Date().toISOString().slice(0,7);
     const now = new Date();
     const fecha = g ? g.fecha : now.toISOString().slice(0,10);
@@ -4924,14 +4943,19 @@ function attachListeners() {
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
     try {
       let fotoBase64 = '', fotoNombre = '';
+      let eliminarFoto = false;
+      const inpFoto = document.getElementById('inp-gasto-foto');
       if (inpFoto && inpFoto.files[0]) {
         const dataURL = await compressImage(inpFoto.files[0], 600, 0.55);
         fotoBase64 = dataURL.split(',')[1] || '';
         fotoNombre = inpFoto.files[0].name || 'ticket.jpg';
+      } else if (state.gastosPhotoRemoved) {
+        eliminarFoto = true;
       }
+      if (!g && !fotoBase64) { alert('La foto del ticket es obligatoria.'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
       const params = { action: 'saveGasto', email: state.user.email, token: state.user.token,
         gastoId: g ? g.gastoId : '', fecha, hora, categoria: catSel, importe: imp,
-        fotoBase64, fotoNombre, descripcion };
+        descripcion, fotoBase64, fotoNombre, eliminarFoto: eliminarFoto ? '1' : '' };
       const res = await fetch(CONFIG.appsScriptURL, {
         method: 'POST',
         body: JSON.stringify(params),
@@ -4947,6 +4971,34 @@ function attachListeners() {
     } catch(e) {
       alert('Error de conexión: ' + e.message);
       if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    }
+  });
+
+  on('btn-gasto-foto-remove', 'click', () => {
+    setState({ gastosPhotoRemoved: true });
+  });
+
+  on('btn-gastos-form-delete', 'click', async () => {
+    if (!confirm('¿Eliminar este gasto?')) return;
+    const g = state.gastosEditing;
+    const btn = document.getElementById('btn-gastos-form-delete');
+    if (btn) { btn.disabled = true; btn.textContent = 'Eliminando...'; }
+    try {
+      const res = await callAPI({ action: 'deleteGasto', email: state.user.email, token: state.user.token, gastoId: g.gastoId });
+      if (res.success) {
+        const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+        setState({ gastosScreen: 'list', gastosEditing: null, gastosData: null });
+        try {
+          const d = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes });
+          setState({ gastosData: d.success ? d : { gastos: [], viaticos: 0, totalGastado: 0 } });
+        } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
+      } else {
+        alert(res.error || 'Error al eliminar.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Eliminar gasto'; }
+      }
+    } catch(e) {
+      alert('Error de conexión.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Eliminar gasto'; }
     }
   });
 
@@ -5027,8 +5079,11 @@ function attachListeners() {
       const res = await callAPI({ action: 'saveViaticos', adminEmail: state.user.email, adminToken: state.user.token,
         auditorEmail: state.adminGastosAuditor, mes, importe });
       if (res.success) {
-        await cargarAdminGastos();
-        setState({ screen: 'admin-gastos-detalle' });
+        const audEmail = state.adminGastosAuditor;
+        const reloadMes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+        const reloadRes = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes: reloadMes });
+        if (reloadRes.success) state.adminGastosData = reloadRes;
+        setState({ screen: 'admin-gastos-detalle', adminGastosAuditor: audEmail });
       } else {
         alert(res.error || 'Error al guardar.');
         if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
