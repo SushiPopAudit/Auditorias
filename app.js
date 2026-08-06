@@ -1148,15 +1148,6 @@ function renderAdminMenu() {
           </button>
         </div>
       </div>
-      <div style="width:100%;max-width:340px">
-        <button id="btn-admin-recalcular" style="width:100%;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left">
-          <span style="font-size:1.4rem">🔄</span>
-          <div>
-            <div style="font-size:0.82rem;font-weight:600;color:#92400e">Recalcular todas las auditorías</div>
-            <div style="font-size:0.75rem;color:#b45309">Corrige puntaje, nivel y reprobado</div>
-          </div>
-        </button>
-      </div>
     </div>`;
 }
 
