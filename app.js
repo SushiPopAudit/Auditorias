@@ -572,6 +572,7 @@ function renderWelcome() {
       ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span><button id="btn-logout" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;padding:2px 4px;color:#94a3b8;font-size:0.78rem;text-decoration:underline">Salir</button></div>` : ''}
       <p class="welcome-sub" style="margin-bottom:20px">${u && u.rol === 'Franquiciado' ? 'Auditoría interna' : 'Auditoría oficial'}</p>
       ${draftBanner}
+      ${u && u.rol === 'Auditor' ? `<button id="btn-welcome-gastos" style="width:100%;max-width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;margin-top:4px;text-align:left"><span style="font-size:1.5rem">💰</span><div><div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">Gastos</div><div style="font-size:0.78rem;color:#6b7280">Registrar y ver viáticos</div></div><span style="margin-left:auto;color:#9ca3af;font-size:1.1rem">›</span></button>` : ''}
     </div>
   `;
 }
@@ -743,9 +744,6 @@ function renderUserBottomNav() {
       </button>
       <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
         <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
-      </button>
-      <button id="nav-user-gastos" style="${base};${isGastos?active:idle}">
-        <span style="font-size:1.2rem;line-height:1">💰</span><span style="${labelStyle}">Gastos</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -1124,10 +1122,10 @@ function renderGastos() {
   const mes = state.gastosMes || new Date().toISOString().slice(0,7);
   const d = state.gastosData;
   const gastos = d ? d.gastos : null;
-  const viaticos = d ? (d.viaticos || 150000) : 150000;
+  const viaticos = d ? (d.viaticos || 0) : 0;
   const totalGastado = d ? (d.totalGastado || 0) : 0;
   const saldo = viaticos - totalGastado;
-  const pct = Math.min(100, Math.round(totalGastado / viaticos * 100));
+  const pct = viaticos > 0 ? Math.min(100, Math.round(totalGastado / viaticos * 100)) : 0;
   const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f97316' : '#16a34a';
   const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
   const loading = d === null;
@@ -1144,6 +1142,7 @@ function renderGastos() {
       <span style="font-size:1.4rem">${CAT_ICONS[g.categoria] || '📦'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
+        ${g.descripcion ? `<div style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(g.descripcion)}</div>` : ''}
         <div style="font-size:0.75rem;color:#6b7280">${escHtml(g.fecha)} ${escHtml(g.hora)}</div>
       </div>
       <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-right:8px">${fmtPesos(g.importe)}</div>
@@ -1153,10 +1152,10 @@ function renderGastos() {
 
   return `
   <div style="padding:16px 16px 0;${pb}">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <button id="btn-gastos-mes-prev" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">‹</button>
-      <span style="font-size:1rem;font-weight:700;color:#1a1a1a">${mesLabel(mes)}</span>
-      <button id="btn-gastos-mes-next" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">›</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;background:#f3f4f6;border-radius:10px;padding:6px 10px">
+      <button id="btn-gastos-mes-prev" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:4px 12px;font-size:1.1rem;color:#374151">‹</button>
+      <span style="font-size:0.95rem;font-weight:700;color:#1a1a1a">${mesLabel(mes)}</span>
+      <button id="btn-gastos-mes-next" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:4px 12px;font-size:1.1rem;color:#374151">›</button>
     </div>
     <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
@@ -1182,6 +1181,7 @@ function renderGastosForm() {
   const hora  = g ? g.hora  : now.toTimeString().slice(0,5);
   const cat   = g ? g.categoria : 'ALIMENTOS/BEBIDAS';
   const imp   = g ? g.importe : '';
+  const desc  = g ? (g.descripcion || '') : '';
   const foto  = g ? g.fotoUrl : '';
   const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
   return `
@@ -1194,14 +1194,18 @@ function renderGastosForm() {
       </select>
     </div>
     <div style="margin-bottom:14px">
+      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Descripción</label>
+      <input id="inp-gasto-desc" type="text" maxlength="80" value="${escHtml(desc)}" placeholder="Ej: taxi al local, almuerzo con cliente..." style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:0.92rem">
+    </div>
+    <div style="margin-bottom:14px">
       <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Importe</label>
       <div style="position:relative">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:0.95rem;color:#6b7280;font-weight:600">$</span>
-        <input id="inp-gasto-importe" type="number" min="0" step="1" value="${escHtml(String(imp))}" placeholder="0" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px 10px 28px;font-size:0.92rem">
+        <input id="inp-gasto-importe" type="text" inputmode="decimal" value="${imp ? String(imp).replace('.', ',') : ''}" placeholder="0,00" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px 10px 28px;font-size:0.92rem">
       </div>
     </div>
     <div style="margin-bottom:14px">
-      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Foto del ticket (opcional)</label>
+      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Foto del ticket *</label>
       ${foto ? `<div style="margin-bottom:8px"><img src="${escHtml(foto)}" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e5e7eb"></div>` : ''}
       <div id="gasto-foto-preview" style="margin-bottom:8px"></div>
       <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
@@ -1245,10 +1249,10 @@ function renderAdminGastos() {
       <button id="btn-admin-gastos-back" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">‹</button>
       <span style="font-size:1rem;font-weight:700;flex:1">Viáticos</span>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <button id="btn-admin-gastos-mes-prev" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">‹</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;background:#f3f4f6;border-radius:10px;padding:6px 10px">
+      <button id="btn-admin-gastos-mes-prev" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:4px 12px;font-size:1.1rem;color:#374151">‹</button>
       <span style="font-size:0.95rem;font-weight:700;color:#1a1a1a">${mesLabel(mes)}</span>
-      <button id="btn-admin-gastos-mes-next" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">›</button>
+      <button id="btn-admin-gastos-mes-next" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:4px 12px;font-size:1.1rem;color:#374151">›</button>
     </div>
     ${listHtml}
   </div>`;
@@ -1269,6 +1273,7 @@ function renderAdminGastosDetalle() {
       <span style="font-size:1.2rem">${CAT_ICONS[g.categoria]||'📦'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
+        ${g.descripcion ? `<div style="font-size:0.72rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(g.descripcion)}</div>` : ''}
         <div style="font-size:0.72rem;color:#6b7280">${escHtml(g.fecha)} ${escHtml(g.hora)}</div>
       </div>
       <div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">${fmtPesos(g.importe)}</div>
@@ -4786,15 +4791,15 @@ function attachListeners() {
   // ============================================================
   async function cargarGastos() {
     const mes = state.gastosMes || new Date().toISOString().slice(0,7);
-    setState({ gastosMes: mes, gastosData: null, gastosScreen: 'list' });
+    setState({ gastosData: null, gastosScreen: 'list' });
     try {
       const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes });
-      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 150000, totalGastado: 0 } });
-    } catch(e) { setState({ gastosData: { gastos: [], viaticos: 150000, totalGastado: 0 } }); }
+      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 0, totalGastado: 0 } });
+    } catch(e) { setState({ gastosData: { gastos: [], viaticos: 0, totalGastado: 0 } }); }
   }
   async function cargarAdminGastos() {
     const mes = state.adminGastosMes || new Date().toISOString().slice(0,7);
-    setState({ adminGastosMes: mes, adminGastosData: null });
+    setState({ adminGastosData: null });
     try {
       const res = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes });
       setState({ adminGastosData: res.success ? res : { mes, auditores: [] } });
@@ -4805,14 +4810,20 @@ function attachListeners() {
     setState({ screen: 'gastos', gastosScreen: 'list' });
     await cargarGastos();
   });
+  on('btn-welcome-gastos', 'click', async () => {
+    setState({ screen: 'gastos', gastosScreen: 'list' });
+    await cargarGastos();
+  });
   on('btn-registrar-gasto', 'click', () => setState({ gastosScreen: 'form', gastosEditing: null }));
   on('btn-gastos-form-cancel', 'click', () => setState({ gastosScreen: 'list' }));
   on('btn-gastos-mes-prev', 'click', async () => {
-    state.gastosMes = prevMes(state.gastosMes || new Date().toISOString().slice(0,7));
+    const cur = state.gastosMes || new Date().toISOString().slice(0,7);
+    state.gastosMes = prevMes(cur);
     await cargarGastos();
   });
   on('btn-gastos-mes-next', 'click', async () => {
-    state.gastosMes = nextMes(state.gastosMes || new Date().toISOString().slice(0,7));
+    const cur = state.gastosMes || new Date().toISOString().slice(0,7);
+    state.gastosMes = nextMes(cur);
     await cargarGastos();
   });
 
@@ -4835,11 +4846,28 @@ function attachListeners() {
     });
   }
 
+  // Live importe formatter
+  const inpImporte = document.getElementById('inp-gasto-importe');
+  if (inpImporte) {
+    inpImporte.addEventListener('input', function() {
+      let raw = this.value.replace(/[^0-9,]/g, '');
+      const parts = raw.split(',');
+      if (parts.length > 2) raw = parts[0] + ',' + parts.slice(1).join('');
+      const rawParts = raw.split(',');
+      const intPart = rawParts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const decPart = rawParts.length > 1 ? ',' + rawParts[1].slice(0,2) : '';
+      this.value = intPart + decPart;
+    });
+  }
+
   on('btn-gastos-form-save', 'click', async () => {
     const g = state.gastosEditing;
     const catSel = document.getElementById('sel-gasto-cat')?.value || 'ALIMENTOS/BEBIDAS';
-    const imp = parseFloat(document.getElementById('inp-gasto-importe')?.value || '0') || 0;
+    const imp = parseFloat(document.getElementById('inp-gasto-importe')?.value.replace(/\./g,'').replace(',','.') || '0') || 0;
     if (!imp) { alert('Ingresá un importe.'); return; }
+    const descripcion = document.getElementById('inp-gasto-desc')?.value || '';
+    const inpFoto = document.getElementById('inp-gasto-foto');
+    if (!g && !inpFoto?.files[0]) { alert('La foto del ticket es obligatoria.'); return; }
     const mes = state.gastosMes || new Date().toISOString().slice(0,7);
     const now = new Date();
     const fecha = g ? g.fecha : now.toISOString().slice(0,10);
@@ -4848,7 +4876,6 @@ function attachListeners() {
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
     try {
       let fotoBase64 = '', fotoNombre = '';
-      const inpFoto = document.getElementById('inp-gasto-foto');
       if (inpFoto && inpFoto.files[0]) {
         const dataURL = await compressImage(inpFoto.files[0], 600, 0.55);
         fotoBase64 = dataURL.split(',')[1] || '';
@@ -4856,12 +4883,17 @@ function attachListeners() {
       }
       const params = { action: 'saveGasto', email: state.user.email, token: state.user.token,
         gastoId: g ? g.gastoId : '', fecha, hora, categoria: catSel, importe: imp,
-        fotoBase64, fotoNombre };
-      const res = await callAPI(params);
-      if (res.success) {
+        fotoBase64, fotoNombre, descripcion };
+      const res = await fetch(CONFIG.appsScriptURL, {
+        method: 'POST',
+        body: JSON.stringify(params),
+        redirect: 'follow'
+      });
+      const saveRes = await res.json();
+      if (saveRes.success) {
         await cargarGastos();
       } else {
-        alert(res.error || 'Error al guardar.');
+        alert(saveRes.error || 'Error al guardar.');
         if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
       }
     } catch(e) {
@@ -4889,11 +4921,13 @@ function attachListeners() {
   });
   on('btn-admin-gastos-back', 'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
   on('btn-admin-gastos-mes-prev', 'click', async () => {
-    state.adminGastosMes = prevMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
+    const cur = state.adminGastosMes || new Date().toISOString().slice(0,7);
+    state.adminGastosMes = prevMes(cur);
     await cargarAdminGastos();
   });
   on('btn-admin-gastos-mes-next', 'click', async () => {
-    state.adminGastosMes = nextMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
+    const cur = state.adminGastosMes || new Date().toISOString().slice(0,7);
+    state.adminGastosMes = nextMes(cur);
     await cargarAdminGastos();
   });
 
