@@ -112,6 +112,7 @@ const state = {
   adminGastosMes:         '',
   adminGastoModal:        null,
   adminViatModal:         null,
+  gastosSolicitarModal:   false,
 };
 
 // ============================================================
@@ -1188,6 +1189,23 @@ function renderGastos() {
     ${warningBanner}
     <button id="btn-registrar-gasto" style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer;margin-bottom:14px">+ Registrar gasto</button>
     ${listHtml}
+    ${state.gastosSolicitarModal ? `
+    <div id="solicitar-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:flex-end">
+      <div style="background:#fff;border-radius:18px 18px 0 0;padding:22px 20px 32px;width:100%;box-sizing:border-box">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">Solicitar viáticos</div>
+          <button id="btn-solicitar-modal-close" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#6b7280">✕</button>
+        </div>
+        <div style="font-size:0.75rem;color:#374151;margin-bottom:4px">Importe solicitado</div>
+        <div style="position:relative;margin-bottom:12px">
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:0.95rem;color:#6b7280;font-weight:600">$</span>
+          <input id="inp-solicitar-importe" type="text" inputmode="decimal" placeholder="0" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px 10px 28px;font-size:1rem">
+        </div>
+        <div style="font-size:0.75rem;color:#374151;margin-bottom:4px">Comentario</div>
+        <textarea id="inp-solicitar-comentario" rows="3" placeholder="Ej: Necesito más para el viaje del viernes..." style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:0.9rem;resize:none;margin-bottom:14px"></textarea>
+        <button id="btn-solicitar-enviar" style="width:100%;background:#f97316;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer">Enviar solicitud</button>
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -5052,17 +5070,44 @@ function attachListeners() {
     }
   });
 
-  on('btn-solicitar-viaticos', 'click', async () => {
+  on('btn-solicitar-viaticos', 'click', () => setState({ gastosSolicitarModal: true }));
+  on('btn-solicitar-modal-close', 'click', () => setState({ gastosSolicitarModal: false }));
+  document.getElementById('solicitar-modal-backdrop')?.addEventListener('click', function(e) {
+    if (e.target && e.target.id === 'solicitar-modal-backdrop') setState({ gastosSolicitarModal: false });
+  });
+  const inpSolImporte = document.getElementById('inp-solicitar-importe');
+  if (inpSolImporte) {
+    inpSolImporte.addEventListener('input', function() {
+      let raw = this.value.replace(/[^0-9,]/g, '');
+      const parts = raw.split(',');
+      if (parts.length > 2) raw = parts[0] + ',' + parts.slice(1).join('');
+      const rp = raw.split(',');
+      this.value = rp[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (rp.length > 1 ? ',' + rp[1].slice(0,2) : '');
+    });
+  }
+  on('btn-solicitar-enviar', 'click', async () => {
     const d = state.gastosData;
     const mes = state.gastosMes || new Date().toISOString().slice(0,7);
-    const btn = document.getElementById('btn-solicitar-viaticos');
+    const rawImp = (document.getElementById('inp-solicitar-importe')?.value || '').replace(/\./g,'').replace(',','.');
+    const importe = parseFloat(rawImp) || 0;
+    const comentario = document.getElementById('inp-solicitar-comentario')?.value || '';
+    if (!importe) { alert('Ingresá un importe.'); return; }
+    const btn = document.getElementById('btn-solicitar-enviar');
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
     try {
       const res = await callAPI({ action: 'solicitarViaticos', email: state.user.email, token: state.user.token,
-        mes, totalGastado: d ? d.totalGastado : 0, viaticos: d ? d.viaticos : 150000 });
-      alert(res.success ? 'Solicitud enviada al administrador.' : res.error || 'Error al enviar.');
-    } catch(e) { alert('Error de conexión.'); }
-    if (btn) { btn.disabled = false; btn.textContent = 'Solicitar más'; }
+        mes, importe, comentario, totalGastado: d ? d.totalGastado : 0, viaticos: d ? d.viaticos : 0 });
+      if (res.success) {
+        setState({ gastosSolicitarModal: false });
+        alert('Solicitud enviada al administrador.');
+      } else {
+        alert(res.error || 'Error al enviar.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Enviar solicitud'; }
+      }
+    } catch(e) {
+      alert('Error de conexión.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar solicitud'; }
+    }
   });
 
   on('btn-admin-go-gastos', 'click', async () => {
@@ -5153,6 +5198,20 @@ function attachListeners() {
         on('btn-viat-edit-' + ing.viaticoId, 'click', () => setState({ adminViatModal: ing }));
       });
     }
+  }
+  const inpViatModal = document.getElementById('inp-viat-modal');
+  if (inpViatModal) {
+    // init display with thousands separator
+    const initVal = inpViatModal.value.replace(/\./g,'').replace(',','.');
+    const initNum = parseFloat(initVal) || 0;
+    if (initNum) inpViatModal.value = Math.round(initNum).toLocaleString('es-AR');
+    inpViatModal.addEventListener('input', function() {
+      let raw = this.value.replace(/[^0-9,]/g, '');
+      const parts = raw.split(',');
+      if (parts.length > 2) raw = parts[0] + ',' + parts.slice(1).join('');
+      const rp = raw.split(',');
+      this.value = rp[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (rp.length > 1 ? ',' + rp[1].slice(0,2) : '');
+    });
   }
   on('btn-viat-modal-close', 'click', () => setState({ adminViatModal: null }));
   document.getElementById('admin-viat-modal-backdrop')?.addEventListener('click', function(e) {

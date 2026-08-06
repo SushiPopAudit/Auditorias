@@ -2686,11 +2686,13 @@ function doGet(e) {
   // solicitarViaticos
   // ============================================================
   if (action === 'solicitarViaticos') {
-    var solEmail       = ((e.parameter.email) || '').toLowerCase().trim();
-    var solToken       = e.parameter.token || '';
-    var solMes         = (e.parameter.mes || '').trim();
+    var solEmail        = ((e.parameter.email) || '').toLowerCase().trim();
+    var solToken        = e.parameter.token || '';
+    var solMes          = (e.parameter.mes || '').trim();
+    var solImporte      = parseFloat(e.parameter.importe || '0') || 0;
+    var solComentario   = (e.parameter.comentario || '').trim();
     var solTotalGastado = parseFloat(e.parameter.totalGastado || '0') || 0;
-    var solViaticos    = parseFloat(e.parameter.viaticos || '0') || 0;
+    var solViaticos     = parseFloat(e.parameter.viaticos || '0') || 0;
     if (!solEmail || !solToken || !solMes) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssSOL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
@@ -2716,10 +2718,12 @@ function doGet(e) {
       MailApp.sendEmail({
         to: solAdminEmail,
         subject: 'Solicitud de viáticos - ' + solNombre + ' (' + solMes + ')',
-        body: 'El auditor ' + solNombre + ' (' + solEmail + ') solicita más viáticos para el mes ' + solMes + '.\n\n' +
-              'Viáticos asignados: $' + solViaticos + '\n' +
+        body: 'El auditor ' + solNombre + ' (' + solEmail + ') solicita viáticos adicionales para el mes ' + solMes + '.\n\n' +
+              'Importe solicitado: $' + solImporte + '\n' +
+              (solComentario ? 'Comentario: ' + solComentario + '\n\n' : '\n') +
+              'Viáticos actuales: $' + solViaticos + '\n' +
               'Total gastado: $' + solTotalGastado + '\n' +
-              'Saldo: $' + solSaldo + '\n\n' +
+              'Saldo actual: $' + solSaldo + '\n\n' +
               'Por favor revisá el panel de administración para ajustar el monto.',
       });
       return jsonResponse({ success: true });
