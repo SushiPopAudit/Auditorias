@@ -99,6 +99,15 @@ const state = {
   calendarioDiaSeleccionado: null,  // 'YYYY-MM-DD' o null
   calendarioFallasCargando: {},     // { visitaId: true/false }
   calendarioFallas:       {},       // { local: [{auditId, fecha, fallas}] }
+
+  // Gastos / Viáticos
+  gastosScreen:           'list',
+  gastosMes:              '',
+  gastosData:             null,
+  gastosEditing:          null,
+  adminGastosData:        null,
+  adminGastosAuditor:     null,
+  adminGastosMes:         '',
 };
 
 // ============================================================
@@ -465,6 +474,9 @@ function render() {
     case 'dashboard':         app.innerHTML = renderDashboard();         break;
     case 'ranking':           app.innerHTML = renderRanking();           break;
     case 'calendario':        app.innerHTML = renderCalendario();        break;
+    case 'gastos':            app.innerHTML = state.gastosScreen === 'form' ? renderGastosForm() : renderGastos(); break;
+    case 'admin-gastos':      app.innerHTML = renderAdminGastos();      break;
+    case 'admin-gastos-detalle': app.innerHTML = renderAdminGastosDetalle(); break;
     case 'error':            app.innerHTML = renderError();            break;
   }
   if (hasNav) {
@@ -697,6 +709,7 @@ function renderUserBottomNav() {
       <span style="${labelStyle};${isAudit?active:idle}">Nueva</span>
     </button>`;
   const isRanking = state.screen === 'ranking';
+  const isGastos  = state.screen === 'gastos';
   if (rol === 'Franquiciado') {
     return `
     <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;display:flex;align-items:center;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)">
@@ -730,6 +743,9 @@ function renderUserBottomNav() {
       </button>
       <button id="nav-user-historial" style="${base};${isHistorial?active:idle}">
         <span style="font-size:1.2rem;line-height:1">📋</span><span style="${labelStyle}">Historial</span>
+      </button>
+      <button id="nav-user-gastos" style="${base};${isGastos?active:idle}">
+        <span style="font-size:1.2rem;line-height:1">💰</span><span style="${labelStyle}">Gastos</span>
       </button>
     </nav>
     <div style="height:calc(68px + env(safe-area-inset-bottom,0px))"></div>`;
@@ -1079,6 +1095,218 @@ function turnobage(turno) {
   return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:${bg};color:${text}">${escHtml(turno)}</span>`;
 }
 
+// ============================================================
+// GASTOS / VIÁTICOS
+// ============================================================
+function fmtPesos(n) {
+  return '$' + Math.round(n).toLocaleString('es-AR');
+}
+function mesLabel(mes) {
+  if (!mes) return '';
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const [y, m] = mes.split('-');
+  return meses[parseInt(m,10)-1] + ' ' + y;
+}
+function prevMes(mes) {
+  const d = new Date(mes + '-01');
+  d.setMonth(d.getMonth()-1);
+  return d.toISOString().slice(0,7);
+}
+function nextMes(mes) {
+  const d = new Date(mes + '-01');
+  d.setMonth(d.getMonth()+1);
+  return d.toISOString().slice(0,7);
+}
+const CAT_ICONS = { 'ALIMENTOS/BEBIDAS': '🍽️', 'TRANSPORTE': '🚗', 'OTROS': '📦' };
+const CATEGORIAS = ['ALIMENTOS/BEBIDAS', 'TRANSPORTE', 'OTROS'];
+
+function renderGastos() {
+  const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+  const d = state.gastosData;
+  const gastos = d ? d.gastos : null;
+  const viaticos = d ? (d.viaticos || 150000) : 150000;
+  const totalGastado = d ? (d.totalGastado || 0) : 0;
+  const saldo = viaticos - totalGastado;
+  const pct = Math.min(100, Math.round(totalGastado / viaticos * 100));
+  const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f97316' : '#16a34a';
+  const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
+  const loading = d === null;
+
+  const warningBanner = d && totalGastado >= 0.9 * viaticos ? `
+    <div style="background:#fff7ed;border:1px solid #f97316;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:0.83rem;color:#9a3412;flex:1">⚠️ Estás por agotar tus viáticos</span>
+      <button id="btn-solicitar-viaticos" style="background:#f97316;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:0.78rem;cursor:pointer;font-weight:600">Solicitar más</button>
+    </div>` : '';
+
+  const listHtml = loading ? `<div style="text-align:center;padding:40px 0;color:#94a3b8">Cargando...</div>` :
+    gastos && gastos.length ? gastos.map(g => `
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <span style="font-size:1.4rem">${CAT_ICONS[g.categoria] || '📦'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
+        <div style="font-size:0.75rem;color:#6b7280">${escHtml(g.fecha)} ${escHtml(g.hora)}</div>
+      </div>
+      <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-right:8px">${fmtPesos(g.importe)}</div>
+      <button id="btn-gasto-edit-${escHtml(g.gastoId)}" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">✏️</button>
+    </div>`).join('') :
+    `<div style="text-align:center;padding:40px 0;color:#94a3b8">No hay gastos registrados este mes.</div>`;
+
+  return `
+  <div style="padding:16px 16px 0;${pb}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <button id="btn-gastos-mes-prev" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">‹</button>
+      <span style="font-size:1rem;font-weight:700;color:#1a1a1a">${mesLabel(mes)}</span>
+      <button id="btn-gastos-mes-next" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">›</button>
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <div><div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Viáticos</div><div style="font-size:1rem;font-weight:700;color:#1a1a1a">${fmtPesos(viaticos)}</div></div>
+        <div style="text-align:center"><div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Gastado</div><div style="font-size:1rem;font-weight:700;color:#ef4444">${fmtPesos(totalGastado)}</div></div>
+        <div style="text-align:right"><div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Saldo</div><div style="font-size:1rem;font-weight:700;color:${saldo<0?'#ef4444':'#16a34a'}">${fmtPesos(saldo)}</div></div>
+      </div>
+      <div style="height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:4px;transition:width 0.3s"></div>
+      </div>
+    </div>
+    ${warningBanner}
+    <button id="btn-registrar-gasto" style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer;margin-bottom:14px">+ Registrar gasto</button>
+    ${listHtml}
+  </div>`;
+}
+
+function renderGastosForm() {
+  const g = state.gastosEditing;
+  const isEdit = !!g;
+  const now = new Date();
+  const fecha = g ? g.fecha : now.toISOString().slice(0,10);
+  const hora  = g ? g.hora  : now.toTimeString().slice(0,5);
+  const cat   = g ? g.categoria : 'ALIMENTOS/BEBIDAS';
+  const imp   = g ? g.importe : '';
+  const foto  = g ? g.fotoUrl : '';
+  const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
+  return `
+  <div style="padding:16px;${pb}">
+    <h2 style="font-size:1.05rem;font-weight:700;margin-bottom:18px;color:#1a1a1a">${isEdit ? 'Editar gasto' : 'Nuevo gasto'}</h2>
+    <div style="margin-bottom:14px">
+      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Categoría</label>
+      <select id="sel-gasto-cat" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:0.92rem;background:#fff">
+        ${CATEGORIAS.map(c=>`<option value="${c}" ${c===cat?'selected':''}>${CAT_ICONS[c]} ${c}</option>`).join('')}
+      </select>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Importe</label>
+      <div style="position:relative">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:0.95rem;color:#6b7280;font-weight:600">$</span>
+        <input id="inp-gasto-importe" type="number" min="0" step="1" value="${escHtml(String(imp))}" placeholder="0" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px 10px 28px;font-size:0.92rem">
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Foto del ticket (opcional)</label>
+      ${foto ? `<div style="margin-bottom:8px"><img src="${escHtml(foto)}" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e5e7eb"></div>` : ''}
+      <div id="gasto-foto-preview" style="margin-bottom:8px"></div>
+      <label style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:0.83rem;color:#374151">
+        📎 Adjuntar foto
+        <input id="inp-gasto-foto" type="file" accept="image/*" style="display:none">
+      </label>
+    </div>
+    <div style="margin-bottom:18px;background:#f8fafc;border-radius:8px;padding:10px 12px">
+      <div style="font-size:0.78rem;color:#6b7280">Fecha y hora del gasto</div>
+      <div style="font-size:0.92rem;font-weight:600;color:#1a1a1a;margin-top:2px">${escHtml(fecha)} ${escHtml(hora)}</div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button id="btn-gastos-form-save" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer">Guardar</button>
+      <button id="btn-gastos-form-cancel" style="flex:1;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:10px;padding:13px;font-size:0.95rem;cursor:pointer">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+function renderAdminGastos() {
+  const mes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+  const d = state.adminGastosData;
+  const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
+  const listHtml = !d ? `<div style="text-align:center;padding:40px 0;color:#94a3b8">Cargando...</div>` :
+    d.auditores.length === 0 ? `<div style="text-align:center;padding:40px 0;color:#94a3b8">No hay auditores.</div>` :
+    d.auditores.map(a => {
+      const saldo = a.viaticos - a.totalGastado;
+      const saldoColor = saldo < 0 ? '#ef4444' : saldo < a.viaticos * 0.1 ? '#f97316' : '#16a34a';
+      return `
+      <button id="btn-admin-gastos-aud-${escHtml(a.email)}" style="width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;text-align:left;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.88rem;font-weight:600;color:#1a1a1a">${escHtml(a.nombre)}</div>
+          <div style="font-size:0.75rem;color:#6b7280">${fmtPesos(a.totalGastado)} / ${fmtPesos(a.viaticos)}</div>
+        </div>
+        <div style="font-size:0.9rem;font-weight:700;color:${saldoColor}">${fmtPesos(saldo)}</div>
+        <span style="color:#9ca3af">›</span>
+      </button>`;
+    }).join('');
+  return `
+  <div style="padding:16px 16px 0;${pb}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <button id="btn-admin-gastos-back" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">‹</button>
+      <span style="font-size:1rem;font-weight:700;flex:1">Viáticos</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <button id="btn-admin-gastos-mes-prev" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">‹</button>
+      <span style="font-size:0.95rem;font-weight:700;color:#1a1a1a">${mesLabel(mes)}</span>
+      <button id="btn-admin-gastos-mes-next" style="background:none;border:none;cursor:pointer;padding:6px;font-size:1.1rem;color:#6b7280">›</button>
+    </div>
+    ${listHtml}
+  </div>`;
+}
+
+function renderAdminGastosDetalle() {
+  const mes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+  const email = state.adminGastosAuditor;
+  const d = state.adminGastosData;
+  const pb = 'padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))';
+  if (!d || !email) return `<div style="padding:16px">Sin datos.</div>`;
+  const aud = d.auditores.find(a => a.email === email);
+  if (!aud) return `<div style="padding:16px">Auditor no encontrado.</div>`;
+  const saldo = aud.viaticos - aud.totalGastado;
+  const gastosHtml = aud.gastos.length === 0 ? `<div style="text-align:center;padding:20px 0;color:#94a3b8">Sin gastos.</div>` :
+    aud.gastos.map(g => `
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="font-size:1.2rem">${CAT_ICONS[g.categoria]||'📦'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:0.85rem;font-weight:600;color:#1a1a1a">${escHtml(g.categoria)}</div>
+        <div style="font-size:0.72rem;color:#6b7280">${escHtml(g.fecha)} ${escHtml(g.hora)}</div>
+      </div>
+      <div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">${fmtPesos(g.importe)}</div>
+    </div>`).join('');
+  return `
+  <div style="padding:16px 16px 0;${pb}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <button id="btn-admin-gastos-detalle-back" style="background:none;border:none;cursor:pointer;padding:4px;font-size:1.1rem;color:#6b7280">‹</button>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:1rem;font-weight:700;color:#1a1a1a">${escHtml(aud.nombre)}</div>
+        <div style="font-size:0.78rem;color:#6b7280">${mesLabel(mes)}</div>
+      </div>
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div>
+          <div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Viáticos del mes</div>
+          <div style="font-size:1rem;font-weight:700;color:#1a1a1a" id="admin-viat-display">${fmtPesos(aud.viaticos)}</div>
+        </div>
+        <button id="btn-admin-viat-edit" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:6px 12px;font-size:0.78rem;cursor:pointer;color:#374151">Editar</button>
+      </div>
+      <div id="admin-viat-form" style="display:none;margin-bottom:8px">
+        <div style="display:flex;gap:8px">
+          <input id="inp-admin-viat" type="number" min="0" step="1000" value="${aud.viaticos}" style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem">
+          <button id="btn-admin-viat-save" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.83rem;cursor:pointer;font-weight:600">Guardar</button>
+          <button id="btn-admin-viat-cancel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:0.83rem;cursor:pointer">✕</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px">
+        <div><div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Gastado</div><div style="font-size:0.95rem;font-weight:700;color:#ef4444">${fmtPesos(aud.totalGastado)}</div></div>
+        <div style="text-align:right"><div style="font-size:0.72rem;color:#6b7280;text-transform:uppercase">Saldo</div><div style="font-size:0.95rem;font-weight:700;color:${saldo<0?'#ef4444':'#16a34a'}">${fmtPesos(saldo)}</div></div>
+      </div>
+    </div>
+    <div style="font-size:0.82rem;font-weight:600;color:#374151;margin-bottom:8px">Gastos del mes</div>
+    ${gastosHtml}
+  </div>`;
+}
+
 function renderAdmin() {
   const u = state.user;
   if (!u || u.rol !== 'Admin') return `<div class="screen-center"><p>Acceso denegado.</p></div>`;
@@ -1152,6 +1380,10 @@ function renderAdminMenu() {
           <button id="btn-admin-go-preguntas" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
             <span style="font-size:1.6rem">📋</span>
             <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Auditoría</span>
+          </button>
+          <button id="btn-admin-go-gastos" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+            <span style="font-size:1.6rem">💰</span>
+            <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Viáticos</span>
           </button>
         </div>
       </div>
@@ -4548,6 +4780,159 @@ function attachListeners() {
     }
   });
   // ─────────────────────────────────────────────────────────────
+
+  // ============================================================
+  // GASTOS listeners
+  // ============================================================
+  async function cargarGastos() {
+    const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+    setState({ gastosMes: mes, gastosData: null, gastosScreen: 'list' });
+    try {
+      const res = await callAPI({ action: 'getGastos', email: state.user.email, token: state.user.token, mes });
+      setState({ gastosData: res.success ? res : { gastos: [], viaticos: 150000, totalGastado: 0 } });
+    } catch(e) { setState({ gastosData: { gastos: [], viaticos: 150000, totalGastado: 0 } }); }
+  }
+  async function cargarAdminGastos() {
+    const mes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+    setState({ adminGastosMes: mes, adminGastosData: null });
+    try {
+      const res = await callAPI({ action: 'getViaticosAdmin', adminEmail: state.user.email, adminToken: state.user.token, mes });
+      setState({ adminGastosData: res.success ? res : { mes, auditores: [] } });
+    } catch(e) { setState({ adminGastosData: { mes, auditores: [] } }); }
+  }
+
+  on('nav-user-gastos', 'click', async () => {
+    setState({ screen: 'gastos', gastosScreen: 'list' });
+    await cargarGastos();
+  });
+  on('btn-registrar-gasto', 'click', () => setState({ gastosScreen: 'form', gastosEditing: null }));
+  on('btn-gastos-form-cancel', 'click', () => setState({ gastosScreen: 'list' }));
+  on('btn-gastos-mes-prev', 'click', async () => {
+    state.gastosMes = prevMes(state.gastosMes || new Date().toISOString().slice(0,7));
+    await cargarGastos();
+  });
+  on('btn-gastos-mes-next', 'click', async () => {
+    state.gastosMes = nextMes(state.gastosMes || new Date().toISOString().slice(0,7));
+    await cargarGastos();
+  });
+
+  // Edit buttons for gastos (delegated)
+  if (state.screen === 'gastos' && state.gastosScreen === 'list' && state.gastosData) {
+    (state.gastosData.gastos || []).forEach(g => {
+      on('btn-gasto-edit-' + g.gastoId, 'click', () => setState({ gastosScreen: 'form', gastosEditing: g }));
+    });
+  }
+
+  // Photo preview for gasto form
+  const inpGastoFoto = document.getElementById('inp-gasto-foto');
+  if (inpGastoFoto) {
+    inpGastoFoto.addEventListener('change', async function() {
+      const file = this.files[0];
+      if (!file) return;
+      const preview = document.getElementById('gasto-foto-preview');
+      const dataURL = await compressImage(file, 600, 0.55);
+      if (preview) preview.innerHTML = `<img src="${dataURL}" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e5e7eb">`;
+    });
+  }
+
+  on('btn-gastos-form-save', 'click', async () => {
+    const g = state.gastosEditing;
+    const catSel = document.getElementById('sel-gasto-cat')?.value || 'ALIMENTOS/BEBIDAS';
+    const imp = parseFloat(document.getElementById('inp-gasto-importe')?.value || '0') || 0;
+    if (!imp) { alert('Ingresá un importe.'); return; }
+    const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+    const now = new Date();
+    const fecha = g ? g.fecha : now.toISOString().slice(0,10);
+    const hora  = g ? g.hora  : now.toTimeString().slice(0,5);
+    const btn = document.getElementById('btn-gastos-form-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+      let fotoBase64 = '', fotoNombre = '';
+      const inpFoto = document.getElementById('inp-gasto-foto');
+      if (inpFoto && inpFoto.files[0]) {
+        const dataURL = await compressImage(inpFoto.files[0], 600, 0.55);
+        fotoBase64 = dataURL.split(',')[1] || '';
+        fotoNombre = inpFoto.files[0].name || 'ticket.jpg';
+      }
+      const params = { action: 'saveGasto', email: state.user.email, token: state.user.token,
+        gastoId: g ? g.gastoId : '', fecha, hora, categoria: catSel, importe: imp,
+        fotoBase64, fotoNombre };
+      const res = await callAPI(params);
+      if (res.success) {
+        await cargarGastos();
+      } else {
+        alert(res.error || 'Error al guardar.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+      }
+    } catch(e) {
+      alert('Error de conexión: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    }
+  });
+
+  on('btn-solicitar-viaticos', 'click', async () => {
+    const d = state.gastosData;
+    const mes = state.gastosMes || new Date().toISOString().slice(0,7);
+    const btn = document.getElementById('btn-solicitar-viaticos');
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const res = await callAPI({ action: 'solicitarViaticos', email: state.user.email, token: state.user.token,
+        mes, totalGastado: d ? d.totalGastado : 0, viaticos: d ? d.viaticos : 150000 });
+      alert(res.success ? 'Solicitud enviada al administrador.' : res.error || 'Error al enviar.');
+    } catch(e) { alert('Error de conexión.'); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Solicitar más'; }
+  });
+
+  on('btn-admin-go-gastos', 'click', async () => {
+    setState({ screen: 'admin-gastos', adminGastosAuditor: null });
+    await cargarAdminGastos();
+  });
+  on('btn-admin-gastos-back', 'click', () => setState({ screen: 'admin', adminTab: 'menu' }));
+  on('btn-admin-gastos-mes-prev', 'click', async () => {
+    state.adminGastosMes = prevMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
+    await cargarAdminGastos();
+  });
+  on('btn-admin-gastos-mes-next', 'click', async () => {
+    state.adminGastosMes = nextMes(state.adminGastosMes || new Date().toISOString().slice(0,7));
+    await cargarAdminGastos();
+  });
+
+  if (state.screen === 'admin-gastos' && state.adminGastosData) {
+    (state.adminGastosData.auditores || []).forEach(a => {
+      on('btn-admin-gastos-aud-' + a.email, 'click', () => setState({ screen: 'admin-gastos-detalle', adminGastosAuditor: a.email }));
+    });
+  }
+
+  on('btn-admin-gastos-detalle-back', 'click', () => setState({ screen: 'admin-gastos' }));
+
+  on('btn-admin-viat-edit', 'click', () => {
+    const frm = document.getElementById('admin-viat-form');
+    if (frm) frm.style.display = 'flex';
+  });
+  on('btn-admin-viat-cancel', 'click', () => {
+    const frm = document.getElementById('admin-viat-form');
+    if (frm) frm.style.display = 'none';
+  });
+  on('btn-admin-viat-save', 'click', async () => {
+    const importe = parseFloat(document.getElementById('inp-admin-viat')?.value || '0') || 0;
+    const btn = document.getElementById('btn-admin-viat-save');
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    const mes = state.adminGastosMes || new Date().toISOString().slice(0,7);
+    try {
+      const res = await callAPI({ action: 'saveViaticos', adminEmail: state.user.email, adminToken: state.user.token,
+        auditorEmail: state.adminGastosAuditor, mes, importe });
+      if (res.success) {
+        await cargarAdminGastos();
+        setState({ screen: 'admin-gastos-detalle' });
+      } else {
+        alert(res.error || 'Error al guardar.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+      }
+    } catch(e) {
+      alert('Error de conexión.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    }
+  });
 }
 
 // ============================================================
