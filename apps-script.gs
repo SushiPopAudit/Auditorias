@@ -271,10 +271,11 @@ function doPost(e) {
         var calData = shCal.getRange(2, 1, shCal.getLastRow() - 1, 7).getValues();
         var fechaAudit = String(data.fecha || '').substring(0, 10);
         calData.forEach(function(row, i) {
-          if (String(row[3]) === String(data.local || '') &&
-              String(row[1]).substring(0, 10) === fechaAudit &&
-              String(row[4]).toLowerCase() === String(data.auditorEmail || '').toLowerCase() &&
-              String(row[6]) === 'Pendiente') {
+          var calFecha = row[1] instanceof Date ? formatFechaISO(row[1]) : String(row[1]||'').substring(0, 10);
+          if (String(row[3]).trim() === String(data.local || '').trim() &&
+              calFecha === fechaAudit &&
+              String(row[4]).toLowerCase().trim() === String(data.auditorEmail || '').toLowerCase().trim() &&
+              String(row[6]).trim() === 'Pendiente') {
             shCal.getRange(i + 2, 7).setValue('Realizada');
           }
         });
