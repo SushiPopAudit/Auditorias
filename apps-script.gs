@@ -1167,7 +1167,7 @@ function doGet(e) {
         rol:        dLog[2],
         locales:    dLog[3],
         primerLogin: dLog[5] === true || String(dLog[5]).toLowerCase() === 'true',
-        viaticos: dLog[9] === 'SÃ­' || String(dLog[9]||'').toLowerCase() === 'sÃ­',
+        viaticos: String(dLog[9]||'').trim() !== '' && String(dLog[9]||'').trim() !== 'No',
       }});
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -1287,7 +1287,7 @@ function doGet(e) {
           primerLogin: r[5] === true || String(r[5]).toLowerCase() === 'true',
           estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '',
           ultimoLogin: r[8] ? formatFechaHora(r[8]) : '',
-          viaticos: r[9] === 'SÃ­' };
+          viaticos: String(r[9]||'').trim() !== '' && String(r[9]||'').trim() !== 'No' };
       });
       var resGU = { success: true, usuarios: usuarios };
       cachePutObj('usuarios', resGU, 300);
