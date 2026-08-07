@@ -45,6 +45,7 @@ const state = {
   adminLocalesSearch:      '',
   adminShowCreateUser:     false,
   adminShowCreateLocal:    false,
+  adminEditingUserViaticos: false,
   adminExpandedUserEmail:  null,
   adminExpandedLocalIdx:   null,
   adminAddEmailLocalIdx:   null,
@@ -113,6 +114,9 @@ const state = {
   adminGastoModal:        null,
   adminViatModal:         null,
   gastosSolicitarModal:   false,
+
+  adminConfig:            null,
+  adminConfigLoading:     false,
 
   // Cachés de performance
   historialDetalleCache:  {},   // { auditId: res }
@@ -582,7 +586,7 @@ function renderWelcome() {
       ${u ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${rolBadge}<span style="font-size:0.9rem;color:#64748b">${escHtml(u.nombre)}</span><button id="btn-logout" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;padding:2px 4px;color:#94a3b8;font-size:0.78rem;text-decoration:underline">Salir</button></div>` : ''}
       <p class="welcome-sub" style="margin-bottom:20px">${u && u.rol === 'Franquiciado' ? 'Auditoría interna' : 'Auditoría oficial'}</p>
       ${draftBanner}
-      ${u && u.rol === 'Auditor' ? `<button id="btn-welcome-gastos" style="width:100%;max-width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;margin-top:4px;text-align:left"><span style="font-size:1.5rem">💰</span><div><div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">Gastos</div><div style="font-size:0.78rem;color:#6b7280">Registrar y ver viáticos</div></div><span style="margin-left:auto;color:#9ca3af;font-size:1.1rem">›</span></button>` : ''}
+      ${u && u.rol === 'Auditor' && u.viaticos ? `<button id="btn-welcome-gastos" style="width:100%;max-width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;margin-top:4px;text-align:left"><span style="font-size:1.5rem">💰</span><div><div style="font-size:0.9rem;font-weight:700;color:#1a1a1a">Gastos</div><div style="font-size:0.78rem;color:#6b7280">Registrar y ver viáticos</div></div><span style="margin-left:auto;color:#9ca3af;font-size:1.1rem">›</span></button>` : ''}
     </div>
   `;
 }
@@ -1672,6 +1676,23 @@ function renderAdminPreguntas() {
   }
 
   // ── LISTA ──
+  const cfg = state.adminConfig;
+  const umbral = cfg ? cfg.umbral_criticos_pct : '';
+  const cfgHtml = `
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin:12px 16px 4px">
+      <div style="font-size:0.85rem;font-weight:700;color:#1a1a1a;margin-bottom:10px">Configuración de auditoría</div>
+      <div style="font-size:0.82rem;color:#374151;margin-bottom:6px">
+        Umbral de críticos reprobados para nota de oro
+        <span style="font-size:0.72rem;color:#9ca3af;display:block;margin-top:2px">Si el % de puntos críticos con "No cumple" supera este valor, la auditoría queda reprobada.</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="inp-config-umbral" type="text" inputmode="decimal" value="${escHtml(String(umbral))}" placeholder="10" style="width:70px;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem;text-align:center">
+        <span style="font-size:0.9rem;color:#374151">%</span>
+        <button id="btn-config-umbral-save" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.83rem;cursor:pointer;font-weight:600">Guardar</button>
+        ${state.adminConfigLoading ? `<span style="font-size:0.78rem;color:#9ca3af">Guardando...</span>` : ''}
+      </div>
+    </div>`;
+
   const cats = Array.from(new Set(preguntas.map(function(p) { return p.categoria; }))).sort();
   const filtered = preguntas.filter(function(p) {
     if (filMarca && p.marca !== filMarca) return false;
@@ -1716,6 +1737,7 @@ function renderAdminPreguntas() {
   return '<div style="display:flex;flex-direction:column;min-height:100vh;' + pb + '">' + header
     + (err ? '<div style="background:#fff1f2;border-bottom:1px solid #fca5a5;padding:10px 16px;font-size:0.85rem;color:#e4001b">' + escHtml(err) + '</div>' : '')
     + (msg ? '<div style="background:#f0fdf4;border-bottom:1px solid #86efac;padding:10px 16px;font-size:0.85rem;color:#16a34a">' + escHtml(msg) + '</div>' : '')
+    + cfgHtml
     + filtersHtml
     + countLabel
     + '<div style="flex:1;overflow-y:auto">' + listHtml + '</div>'
@@ -2611,6 +2633,12 @@ function renderAdminUsuarios() {
           ${localesCheckboxes(usr.locales)}
         </div>
         <div id="edit-usr-error" style="color:#ef4444;font-size:0.8rem;min-height:16px;margin-bottom:6px"></div>
+          <div class="form-group" style="margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="edit-usr-viaticos" ${usr.viaticos ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer">
+              <span class="form-label" style="font-size:0.78rem;margin:0">Puede gestionar viáticos</span>
+            </label>
+          </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" data-admin-action="edit-save" data-email="${escHtml(usr.email)}" style="flex:1;font-size:0.8rem;padding:7px">Guardar</button>
           <button class="btn btn-outline" data-admin-action="edit-cancel" style="flex:1;font-size:0.8rem;padding:7px">Cancelar</button>
@@ -2629,6 +2657,7 @@ function renderAdminUsuarios() {
         </div>
         <div style="font-size:0.78rem;color:#6b7280;margin-bottom:4px">Locales</div>
         <div style="font-size:0.85rem;color:#1a1a1a;margin-bottom:10px">${escHtml(usr.locales||'Todos')}</div>
+        <div style="font-size:0.78rem;color:#6b7280;margin-top:4px">Viáticos: <strong>${usr.viaticos ? 'Sí' : 'No'}</strong></div>
         ${isMe ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline" data-admin-action="edit-open" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Editar</button>
           <button class="btn btn-outline" data-admin-action="reset" data-email="${escHtml(usr.email)}" style="font-size:0.8rem;padding:5px 12px">Reset contraseña</button>
@@ -2672,6 +2701,12 @@ function renderAdminUsuarios() {
         ${localesCheckboxes('todos')}
       </div>
       <div id="admin-create-error" style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;min-height:18px"></div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="chk-admin-viaticos" style="width:18px;height:18px;cursor:pointer">
+            <span class="form-label" style="margin:0">Puede gestionar viáticos</span>
+          </label>
+        </div>
       <button class="btn btn-primary" id="btn-admin-create" style="width:100%">Crear y enviar email</button>
     </div>` : '';
 
@@ -3720,6 +3755,14 @@ function attachListeners() {
   // ── goToPreguntas ──
   async function goToPreguntas() {
     setState({ screen: 'admin', adminTab: 'preguntas', adminEditingPregunta: null, adminPreguntasMsg: '' });
+    if (!state.adminConfig) {
+      (async () => {
+        try {
+          const cfgRes = await callAPI({ action: 'getConfig', adminEmail: state.user.email, adminToken: state.user.token });
+          if (cfgRes.success) setState({ adminConfig: cfgRes });
+        } catch(e) {}
+      })();
+    }
     if (!state.adminPreguntas) {
       state.adminPreguntasLoading = true; render();
       try {
@@ -3741,6 +3784,25 @@ function attachListeners() {
     } else {
       setState({ screen: 'admin', adminTab: 'menu' });
     }
+  });
+
+  on('btn-config-umbral-save', 'click', async () => {
+    const val = parseFloat(document.getElementById('inp-config-umbral')?.value || '');
+    if (isNaN(val) || val < 0 || val > 100) { alert('Ingresá un valor entre 0 y 100.'); return; }
+    const btn = document.getElementById('btn-config-umbral-save');
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const res = await callAPI({ action: 'saveConfig', adminEmail: state.user.email, adminToken: state.user.token,
+        clave: 'umbral_criticos_pct', valor: String(val) });
+      if (res.success) {
+        state.adminConfig = { ...state.adminConfig, umbral_criticos_pct: val };
+        setState({ adminConfigLoading: false });
+        alert('Configuración guardada.');
+      } else {
+        alert(res.error || 'Error al guardar.');
+      }
+    } catch(e) { alert('Error de conexión.'); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
   });
 
   on('btn-pregunta-nueva', 'click', function() {
@@ -4144,17 +4206,20 @@ function attachListeners() {
     const email   = (document.getElementById('inp-admin-email')?.value   || '').trim().toLowerCase();
     const rol     =  document.getElementById('sel-admin-rol')?.value     || 'Auditor';
     const locales = getSelectedLocalesFromDOM();
+    const viaticos = document.getElementById('chk-admin-viaticos')?.checked ? 'true' : 'false';
     const errEl   =  document.getElementById('admin-create-error');
     if (!nombre || !email) { if (errEl) { errEl.style.color='#ef4444'; errEl.textContent = 'Completá nombre y email.'; } return; }
     const btn = document.getElementById('btn-admin-create');
     if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
     try {
-      const res = await callAPI({ action: 'crearUsuario', adminEmail: state.user.email, adminToken: state.user.token, nombre, email, rol, locales });
+      const res = await callAPI({ action: 'crearUsuario', adminEmail: state.user.email, adminToken: state.user.token, nombre, email, rol, locales, viaticos });
       if (res.success) {
         if (errEl) { errEl.style.color = '#16a34a'; errEl.textContent = 'Usuario creado. Se envió un email con la contraseña temporal.'; }
         document.getElementById('inp-admin-nombre').value  = '';
         document.getElementById('inp-admin-email').value   = '';
         document.getElementById('inp-admin-locales').value = '';
+        const chkViat = document.getElementById('chk-admin-viaticos');
+        if (chkViat) chkViat.checked = false;
         await recargarUsuarios();
       } else {
         if (errEl) { errEl.style.color = '#ef4444'; errEl.textContent = res.error || 'Error al crear usuario.'; }
@@ -4186,11 +4251,12 @@ function attachListeners() {
         const nombre  = (document.getElementById('edit-usr-nombre')?.value || '').trim();
         const rol     =  document.getElementById('edit-usr-rol')?.value    || '';
         const locales = getSelectedLocalesFromDOM();
+        const viaticos = document.getElementById('edit-usr-viaticos')?.checked ? 'true' : 'false';
         const errEl   =  document.getElementById('edit-usr-error');
         if (!nombre) { if (errEl) errEl.textContent = 'El nombre no puede estar vacío.'; return; }
         btn.disabled = true;
         try {
-          const res = await callAPI({ action: 'editarUsuario', adminEmail: state.user.email, adminToken: state.user.token, targetEmail, nombre, rol, locales });
+          const res = await callAPI({ action: 'editarUsuario', adminEmail: state.user.email, adminToken: state.user.token, targetEmail, nombre, rol, locales, viaticos });
           if (res.success) { state.adminEditingUserEmail = null; await recargarUsuarios(); }
           else { if (errEl) errEl.textContent = res.error || 'Error.'; btn.disabled = false; }
         } catch(e) { if (errEl) errEl.textContent = 'Error de conexión.'; btn.disabled = false; }

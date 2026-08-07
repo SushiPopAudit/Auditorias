@@ -147,7 +147,8 @@ function doPost(e) {
       sheet.getRange(minShRow, 12, numRows, 2).setNumberFormat('@');
 
       var updRows = rangeRows.filter(function(r) { return String(r[0]).trim() === origId; });
-      var res = recalcularPuntaje(updRows);
+      var umbral = parseFloat(getConfigValue(ss, 'umbral_criticos_pct', 10)) || 10;
+      var res = recalcularPuntaje(updRows, umbral);
 
       Object.keys(idxMap).forEach(function(ctrl) {
         var rel = idxMap[ctrl] - minIdx;
@@ -966,10 +967,12 @@ function getMesStr(v) {
   return String(v||'').slice(0,7);
 }
 
-function recalcularPuntaje(rows) {
+function recalcularPuntaje(rows, umbralCriticosPct) {
+  if (umbralCriticosPct == null) umbralCriticosPct = 10;
   var maxPts     = { 'critico':4, 'alta':3, 'media':2, 'baja':1 };
   var parcialPts = { 'critico':2, 'alta':1, 'media':1, 'baja':0 };
-  var obtenido = 0, posible = 0, reprobado = false;
+  var obtenido = 0, posible = 0;
+  var criticosTotal = 0, criticosFallidos = 0;
 
   rows.forEach(function(r) {
     var imp = normImp(r[9]);
@@ -983,12 +986,16 @@ function recalcularPuntaje(rows) {
       obtenido += max;
     } else if (res.includes('parcial')) {
       obtenido += parcialPts[imp] || 0;
-    } else if (res.includes('no cumple') || res === 'nocumple') {
-      if (imp === 'critico') reprobado = true;
+    }
+    // contar críticos
+    if (imp === 'critico') {
+      criticosTotal++;
+      if (res.includes('no cumple') || res === 'nocumple') criticosFallidos++;
     }
   });
 
   var pct = posible > 0 ? Math.round(obtenido / posible * 100) : 0;
+  var reprobado = criticosTotal > 0 && (criticosFallidos / criticosTotal * 100) >= umbralCriticosPct;
   var nivel, nivelEmoji;
   if (reprobado)      { nivel = 'Reprobado';     nivelEmoji = 'â›”'; }
   else if (pct >= 90) { nivel = 'Excelente';     nivelEmoji = 'ðŸŸ¢'; }
@@ -1021,9 +1028,15 @@ function ensureUsuariosSheet(ss) {
   var sheet = ss.getSheetByName(USUARIOS_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(USUARIOS_SHEET);
-    sheet.appendRow(['Email','Nombre','Rol','Locales','PasswordHash','PrimerLogin','Estado','FechaAlta']);
-    sheet.getRange(1,1,1,8).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+    sheet.appendRow(['Email','Nombre','Rol','Locales','PasswordHash','PrimerLogin','Estado','FechaAlta','UltimoLogin','Viaticos']);
+    sheet.getRange(1,1,1,10).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
     sheet.setFrozenRows(1);
+  } else {
+    // Migración: agregar col Viaticos (col 10) si no existe
+    if (sheet.getLastColumn() < 10) {
+      sheet.getRange(1, 10).setValue('Viaticos');
+      sheet.getRange(1, 10).setFontWeight('bold');
+    }
   }
   return sheet;
 }
@@ -1092,6 +1105,46 @@ function ensureViaticosSheet(ss) {
 // ============================================================
 // REENVÃO DE EMAIL POR AUDIT ID
 // ============================================================
+function ensureConfigSheet(ss) {
+  var sh = ss.getSheetByName('Config');
+  if (!sh) {
+    sh = ss.insertSheet('Config');
+    sh.appendRow(['Clave', 'Valor', 'Descripcion']);
+    sh.getRange(1,1,1,3).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    sh.appendRow(['umbral_criticos_pct', '10', 'Porcentaje mínimo de críticos reprobados para reprobar por nota de oro']);
+  }
+  return sh;
+}
+
+function getConfigValue(ss, clave, defaultValue) {
+  try {
+    var sh = ensureConfigSheet(ss);
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return defaultValue;
+    var data = sh.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]).trim() === clave) return data[i][1];
+    }
+  } catch(e) {}
+  return defaultValue;
+}
+
+function setConfigValue(ss, clave, valor) {
+  var sh = ensureConfigSheet(ss);
+  var lastRow = sh.getLastRow();
+  if (lastRow >= 2) {
+    var data = sh.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]).trim() === clave) {
+        sh.getRange(i + 2, 2).setValue(valor);
+        return;
+      }
+    }
+  }
+  sh.appendRow([clave, valor, '']);
+}
+
 function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
 
@@ -1104,16 +1157,17 @@ function doGet(e) {
       var sheetLog = ensureUsuariosSheet(ssLog);
       var rowLog   = encontrarUsuarioRow(sheetLog, emailLog);
       if (rowLog < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
-      var dLog = sheetLog.getRange(rowLog, 1, 1, 8).getValues()[0];
+      var dLog = sheetLog.getRange(rowLog, 1, 1, 10).getValues()[0];
       if (dLog[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       if (dLog[4] !== hashLog)  return jsonResponse({ success: false, error: 'ContraseÃ±a incorrecta' });
-      sheetLog.getRange(rowLog, 9).setValue(new Date());
+      sheetLog.getRange(rowLog, 9).setValue(new Date()); // col 9 = UltimoLogin
       return jsonResponse({ success: true, user: {
         email:      dLog[0],
         nombre:     dLog[1],
         rol:        dLog[2],
         locales:    dLog[3],
         primerLogin: dLog[5] === true || String(dLog[5]).toLowerCase() === 'true',
+        viaticos: dLog[9] === 'SÃ­' || String(dLog[9]||'').toLowerCase() === 'sÃ­',
       }});
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -1143,6 +1197,7 @@ function doGet(e) {
     var newEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var rol      = e.parameter.rol || 'Auditor';
     var locales  = e.parameter.locales || 'todos';
+    var viaticos = e.parameter.viaticos === 'true' ? 'Sí' : 'No';
     if (!adminEm || !adminTok || !nombre || !newEmail) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
     try {
       var ssCU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
@@ -1151,7 +1206,7 @@ function doGet(e) {
       if (encontrarUsuarioRow(sheetCU, newEmail) > 0) return jsonResponse({ success: false, error: 'El email ya estÃ¡ registrado' });
       var tempPwd = generarPasswordTemp();
       var pwdHash = hashPassword(tempPwd);
-      sheetCU.appendRow([newEmail, nombre, rol, locales, pwdHash, 'true', 'Activo', new Date()]);
+      sheetCU.appendRow([newEmail, nombre, rol, locales, pwdHash, 'true', 'Activo', new Date(), '', viaticos]);
       cacheRemoveKey('usuarios');
       var bodyEmail = 'Hola ' + nombre + ',\n\nTu cuenta fue creada en el Sistema de AuditorÃ­as Sushi POP.\n\nUsuario: ' + newEmail + '\nContraseÃ±a temporal: ' + tempPwd + '\n\nAl ingresar por primera vez se te pedirÃ¡ que cambies tu contraseÃ±a.\n\nIngresÃ¡ en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
       GmailApp.sendEmail(newEmail, 'Acceso al Sistema de AuditorÃ­as Sushi POP', bodyEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP AuditorÃ­as' });
@@ -1226,12 +1281,13 @@ function doGet(e) {
       var sheetGU = ensureUsuariosSheet(ssGU);
       var lastGU  = sheetGU.getLastRow();
       if (lastGU < 2) return jsonResponse({ success: true, usuarios: [] });
-      var dataGU = sheetGU.getRange(2, 1, lastGU - 1, 9).getValues();
+      var dataGU = sheetGU.getRange(2, 1, lastGU - 1, 10).getValues();
       var usuarios = dataGU.filter(function(r){ return r[0]; }).map(function(r){
         return { email: r[0], nombre: r[1], rol: r[2], locales: r[3],
           primerLogin: r[5] === true || String(r[5]).toLowerCase() === 'true',
           estado: r[6], fechaAlta: r[7] ? formatFecha(r[7]) : '',
-          ultimoLogin: r[8] ? formatFechaHora(r[8]) : '' };
+          ultimoLogin: r[8] ? formatFechaHora(r[8]) : '',
+          viaticos: r[9] === 'SÃ­' };
       });
       var resGU = { success: true, usuarios: usuarios };
       cachePutObj('usuarios', resGU, 300);
@@ -1247,6 +1303,7 @@ function doGet(e) {
     var newRol    = e.parameter.rol      || '';
     var newLocales= e.parameter.locales  || '';
     var newEstado = e.parameter.estado   || '';
+    var newViaticos = e.parameter.viaticos || '';
     if (!adminEmE || !adminTokE || !targetEmE) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
     try {
       var ssE = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
@@ -1258,6 +1315,7 @@ function doGet(e) {
       if (newRol)    shE.getRange(rowE, 3).setValue(newRol);
       if (newLocales !== undefined && newLocales !== '') shE.getRange(rowE, 4).setValue(newLocales);
       if (newEstado) shE.getRange(rowE, 7).setValue(newEstado);
+      if (newViaticos) shE.getRange(rowE, 10).setValue(newViaticos === 'true' ? 'Sí' : 'No');
       cacheRemoveKey('usuarios');
       return jsonResponse({ success: true });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
@@ -2784,6 +2842,34 @@ function doGet(e) {
       }
       return jsonResponse({ success: true });
     } catch(dgErr) { return jsonResponse({ success: false, error: dgErr.message }); }
+  }
+
+  if (action === 'getConfig') {
+    var gcAdmin = ((e.parameter.adminEmail)||'').toLowerCase().trim();
+    var gcToken = e.parameter.adminToken||'';
+    if (!gcAdmin || !gcToken) return jsonResponse({ success:false, error:'Faltan parámetros' });
+    try {
+      var ssGC = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssGCU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssGCU, gcAdmin, gcToken)) return jsonResponse({ success:false, error:'Sin permisos' });
+      var umbral = parseFloat(getConfigValue(ssGC, 'umbral_criticos_pct', 10)) || 10;
+      return jsonResponse({ success:true, umbral_criticos_pct: umbral });
+    } catch(gcErr) { return jsonResponse({ success:false, error:gcErr.message }); }
+  }
+
+  if (action === 'saveConfig') {
+    var scAdmin = ((e.parameter.adminEmail)||'').toLowerCase().trim();
+    var scToken = e.parameter.adminToken||'';
+    var scClave = (e.parameter.clave||'').trim();
+    var scValor = e.parameter.valor||'';
+    if (!scAdmin || !scToken || !scClave) return jsonResponse({ success:false, error:'Faltan parámetros' });
+    try {
+      var ssSC = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ssSCU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssSCU, scAdmin, scToken)) return jsonResponse({ success:false, error:'Sin permisos' });
+      setConfigValue(ssSC, scClave, scValor);
+      return jsonResponse({ success:true });
+    } catch(scErr) { return jsonResponse({ success:false, error:scErr.message }); }
   }
 
   return jsonResponse({ version: '2026-06-16-v1' });
