@@ -42,7 +42,7 @@ export interface LoginResult {
 export async function login(email: string, password: string): Promise<LoginResult> {
   try {
     const pwd = await hashPwd(password);
-    const data = await callAPI({ action: 'login', email: email.toLowerCase().trim(), password: pwd });
+    const data = await callAPI({ action: 'login', email: email.toLowerCase().trim(), hash: pwd });
 
     if (data.status === 'ok' || data.token) {
       return {

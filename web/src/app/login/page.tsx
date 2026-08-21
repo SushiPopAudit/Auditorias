@@ -32,11 +32,16 @@ export default function LoginPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6">
       {/* Logo */}
       <div className="mb-8 text-center">
-        <div className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
-          <span className="text-white text-3xl font-bold">A</span>
+        <div className="flex justify-center mb-4">
+          <img
+            src="/logo.png"
+            alt="SushiPop"
+            className="h-20 w-auto object-contain"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
         </div>
-        <h1 className="text-2xl font-bold text-gray-900">Ausitoria</h1>
-        <p className="text-gray-500 text-sm mt-1">Sistema de Auditorías SushiPop</p>
+        <h1 className="text-2xl font-bold text-gray-900">Sistema de Auditorías</h1>
+        <p className="text-gray-500 text-sm mt-1">SushiPop</p>
       </div>
 
       {/* Formulario */}

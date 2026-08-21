@@ -19,6 +19,12 @@ function WelcomeContent() {
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
       <div className="bg-red-600 text-white px-5 pt-12 pb-6">
+        <img
+          src="/logo.png"
+          alt="SushiPop"
+          className="h-10 w-auto object-contain mb-1"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
         <p className="text-red-200 text-sm mb-1">Bienvenido/a</p>
         <h1 className="text-2xl font-bold">{sesion?.nombre}</h1>
         <p className="text-red-200 text-xs mt-1 capitalize">{sesion?.rol}</p>

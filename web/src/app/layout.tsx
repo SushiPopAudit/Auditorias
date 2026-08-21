@@ -4,10 +4,10 @@ import { AppProvider } from '@/contexts/AppContext';
 import DataLoader from '@/components/DataLoader';
 
 export const metadata: Metadata = {
-  title: 'Ausitoria',
+  title: 'Sistema de Auditorías',
   description: 'Sistema de auditorías SushiPop',
   manifest: '/manifest.json',
-  appleWebApp: { capable: true, statusBarStyle: 'black', title: 'Ausitoria' },
+  appleWebApp: { capable: true, statusBarStyle: 'black', title: 'Sistema de Auditorías' },
 };
 
 export const viewport: Viewport = {
