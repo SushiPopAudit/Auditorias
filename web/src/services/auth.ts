@@ -1,7 +1,8 @@
 /**
  * auth.ts — Login y llamadas al Apps Script
- * Replica exacta del prototipo (hashPwd + callAPI)
  */
+import type { Sesion } from '@/types';
+import { saveSession } from '@/lib/session';
 
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL!;
 
@@ -28,13 +29,7 @@ export async function callAPI(params: Record<string, string>): Promise<Record<st
 
 export interface LoginResult {
   ok: boolean;
-  sesion?: {
-    email: string;
-    nombre: string;
-    rol: 'Admin' | 'Auditor';
-    locales: string;
-    token: string;
-  };
+  sesion?: Omit<Sesion, 'savedAt'>;
   error?: string;
 }
 
@@ -42,22 +37,26 @@ export interface LoginResult {
 export async function login(email: string, password: string): Promise<LoginResult> {
   try {
     const pwd = await hashPwd(password);
-    const data = await callAPI({ action: 'login', email: email.toLowerCase().trim(), hash: pwd });
+    const data = await callAPI({ action: 'login', email, hash: pwd });
 
-    if (data.status === 'ok' || data.token) {
-      return {
-        ok: true,
-        sesion: {
-          email:   String(data.email  ?? email),
-          nombre:  String(data.nombre ?? email),
-          rol:     (data.rol === 'Admin' ? 'Admin' : 'Auditor') as 'Admin' | 'Auditor',
-          locales: String(data.locales ?? ''),
-          token:   String(data.token  ?? ''),
-        },
-      };
+    // El Apps Script devuelve { success: true, user: { email, nombre, rol, locales, ... } }
+    if (!data.success) {
+      return { ok: false, error: String(data.message ?? 'Credenciales incorrectas') };
     }
-    return { ok: false, error: String(data.message ?? 'Credenciales incorrectas') };
+
+    const u = (data.user ?? data) as Record<string, unknown>;
+
+    const sesion: Omit<Sesion, 'savedAt'> = {
+      email:   String(u.email   ?? email),
+      nombre:  String(u.nombre  ?? ''),
+      rol:     (u.rol === 'Admin' ? 'Admin' : 'Auditor') as 'Admin' | 'Auditor',
+      locales: String(u.locales ?? ''),
+      token:   String(data.token ?? u.email ?? email),
+    };
+
+    saveSession(sesion);
+    return { ok: true, sesion };
   } catch (e) {
-    return { ok: false, error: `Error de conexión: ${String(e)}` };
+    return { ok: false, error: 'Error de conexión. Verificá tu internet.' };
   }
 }
