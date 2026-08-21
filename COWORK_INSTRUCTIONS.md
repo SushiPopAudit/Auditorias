@@ -1,555 +1,1310 @@
-# COWORK_INSTRUCTIONS.md — Ausitoria App · Fase 1
-**Fecha de generación:** 2026-08-21
-**Generado por:** CoWork (sesión Ausitoria APP)
-**Para ejecutar:** Claude Code en `C:\Users\marco\audit-app`
+# COWORK_INSTRUCTIONS.md — Ausitoria App · Fase 2
+**Fecha:** 2026-08-21
+**Generado por:** CoWork
+**Para ejecutar:** Claude Code en `C:\Users\marco\audit-app\web`
 
 ---
 
-## ⚠️ INSTRUCCIONES DE EJECUCIÓN PARA CLAUDE CODE
+## ⚠️ INSTRUCCIONES DE EJECUCIÓN
 
-Este archivo contiene tareas que **debes ejecutar completamente**, incluyendo todos los comandos de terminal. Al finalizar cada tarea, marca el checkbox. Al terminar TODAS las tareas, crea el archivo `REPORTE_FASE1.md` con los resultados reales (Tarea 6). **No leas este archivo sin ejecutar los comandos.**
-
----
-
-## Contexto: Qué es este proyecto
-
-Es una app de auditorías para una cadena de franquicias de sushi (31 locales). El prototipo actual (`app.js`, `apps-script.gs`) ya funciona. La misión es construir la versión profesional en Next.js sin romper el prototipo.
-
-### Datos clave ya identificados por CoWork
-
-**Fuentes de datos:**
-| Recurso | Detalle |
-|---|---|
-| Sheet Sistema (config + preguntas + usuarios) | ID: `1TeeKe1eYsKIZ6-8uEPOY0UT-wrtrwl0FW4hAgBoIkzY` |
-| Sheet Resultados (respuestas) | ID: `1zc1HGCNbS40D8c4cbaBcEtXiatg2-5r7JZiv8j5AMnI` |
-| Apps Script URL | `https://script.google.com/macros/s/AKfycbwtsRNwBylKb_Nis4hUXlhj5epPeF7VGgGWSZzzHNAQ7Py00nzPp6g_7D9DsyelOCLB/exec` |
-| CSV Preguntas | `https://docs.google.com/spreadsheets/d/e/2PACX-1vS8b_XMJhcD7LeVKvzOFSXm8pbWfsHCz26YCrH_AZFMVGsP5TYS8va8ianw_PM2qMLEolKonT771_XU/pub?output=csv` |
-| CSV Locales | `https://docs.google.com/spreadsheets/d/e/2PACX-1vS8b_XMJhcD7LeVKvzOFSXm8pbWfsHCz26YCrH_AZFMVGsP5TYS8va8ianw_PM2qMLEolKonT771_XU/pub?gid=233622265&single=true&output=csv` |
-| Drive Folder ID | `1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P` |
-
-**Arquitectura del prototipo (ya analizada por CoWork):**
-- **20 pantallas detectadas:** loading, login, change-password, welcome, setup, cat-select, audit, incumplimientos, summary, success, admin, historial, historial-detalle, historial-editar, dashboard, ranking, calendario, gastos, admin-gastos, admin-gastos-detalle, error
-- **Auth:** email + password hasheada SHA-256, token en localStorage, sesión 7 días, roles Admin/Auditor
-- **Schema CSV Preguntas (por índice de columna):** [0]=Marca, [1]=Categoría, [2]=Subcategoría, [3]=Control, [4]=Importancia, [5]=Explicación, [6]=Pregunta, [7]=Imagen, [8]=TipoRespuesta, [9]=ExplicaciónDetallada, [10]=Validación
-- **Schema CSV Locales:** [0]=Nombre, [1]=isCausa (TRUE/FALSE), [2]=Emails
-- **Tipos de respuesta:** radio (Cumple/Cumple parcialmente/No Cumple/No aplica), numero (con rangos), fecha, radio:opcion1/opcion2 (personalizadas), text, headcount
-- **Scoring:** Crítico=4pts, Alta=3, Media=2, Baja=1. Parcial=mitad. Un "No Cumple" en Crítico → REPROBADO. Niveles: Excelente≥90%, Satisfactorio≥75%, Requiere mejora≥60%, Deficiente<60%
-- **Columnas Sheet Resultados (21 cols):** AuditID, Fecha, Hora, Auditor, Local, Marca, Categoría, Subcategoría, Control, Importancia, Explicación, Respuesta, Observación, URL Foto, Email Auditor, Puntaje%, Nivel, Reprobado, Acompañante, Tipo, RawValor
-- **Marcas:** Multimarca y Causa (cada local es una u otra)
+Ejecutar todas las tareas en orden. Cada tarea crea archivos con código completo listo para usar. Al finalizar, crear `REPORTE_FASE2.md` (Tarea 10) con los resultados reales. **Todos los archivos van dentro de `C:\Users\marco\audit-app\web\`.**
 
 ---
 
-## TAREA 1 — Verificar entorno
+## Contexto: Qué se construye en esta fase
 
-**Ejecutar estos comandos uno por uno y anotar los resultados:**
+**Fase 1 completada (confirmado por reporte):**
+- Next.js 16.3 + TypeScript + Tailwind instalado
+- 32 locales cargados (25 SushiPop + 7 Causa)
+- 188 preguntas en 8 categorías cargadas desde Google Sheets
 
-```bash
-node --version
+**Fase 2 — Objetivo:** Construir el flujo completo de autenticación y auditoría:
 ```
-```bash
-npm --version
-```
-```bash
-git --version
+Login → Bienvenida → Setup (elegir local) → Categorías → Pregunta × N → [Fase 3: Resumen + Envío]
 ```
 
-- [ ] 1.1 — Si `node --version` no funciona: instalar desde https://nodejs.org/en/download (versión LTS). Luego repetir.
-- [ ] 1.2 — Si `npm` no funciona pero Node sí: ejecutar `npm install -g npm@latest`
-- [ ] 1.3 — Anotar las versiones obtenidas (las vas a necesitar para el REPORTE)
+**Arquitectura de estado:** Todo el estado de la sesión y la auditoría vive en un `AppContext` (React Context), igual que el `state` global del prototipo. No se usa ninguna librería de estado externa.
+
+**Auth:** Igual al prototipo — email + SHA-256 password → GET al Apps Script → token guardado en localStorage. Sin cookies, sin NextAuth.
 
 ---
 
-## TAREA 2 — Crear proyecto Next.js en subcarpeta `web/`
+## TAREA 1 — Instalar dependencias adicionales
 
-> ⚠️ Trabajar siempre desde `C:\Users\marco\audit-app`. NO tocar `app.js`, `apps-script.gs`, `index.html`, `config.js`, `style.css`.
+Ejecutar desde `C:\Users\marco\audit-app\web`:
 
-**Paso 2.1 — Ejecutar en terminal desde `C:\Users\marco\audit-app`:**
 ```bash
-npx create-next-app@latest web --typescript --tailwind --eslint --app --src-dir --import-alias "@/*" --no-git
-```
-Cuando pregunte por opciones interactivas que no estén en el comando, responder con el default (presionar Enter).
-
-- [ ] 2.1 — Ejecutado `create-next-app`. Si falló, anotar el error exacto en el REPORTE.
-
-**Paso 2.2 — Verificar que arranca:**
-```bash
-cd web && npm run dev
-```
-Esperar hasta ver la línea: `Local: http://localhost:3000`
-Luego detener con `Ctrl+C`.
-
-- [ ] 2.2 — El servidor arrancó correctamente en localhost:3000
-
-**Paso 2.3 — Crear `.env.local`:**
-
-Crear el archivo `C:\Users\marco\audit-app\web\.env.local` con este contenido exacto:
-```env
-NEXT_PUBLIC_SHEET_SISTEMA_ID=1TeeKe1eYsKIZ6-8uEPOY0UT-wrtrwl0FW4hAgBoIkzY
-NEXT_PUBLIC_SHEET_RESULTADOS_ID=1zc1HGCNbS40D8c4cbaBcEtXiatg2-5r7JZiv8j5AMnI
-NEXT_PUBLIC_APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycbwtsRNwBylKb_Nis4hUXlhj5epPeF7VGgGWSZzzHNAQ7Py00nzPp6g_7D9DsyelOCLB/exec
-NEXT_PUBLIC_DRIVE_FOLDER_ID=1SJe5kNlEXBpRlFPylSTbS4XedI0ZIC7P
-NEXT_PUBLIC_CSV_PREGUNTAS=https://docs.google.com/spreadsheets/d/e/2PACX-1vS8b_XMJhcD7LeVKvzOFSXm8pbWfsHCz26YCrH_AZFMVGsP5TYS8va8ianw_PM2qMLEolKonT771_XU/pub?output=csv
-NEXT_PUBLIC_CSV_LOCALES=https://docs.google.com/spreadsheets/d/e/2PACX-1vS8b_XMJhcD7LeVKvzOFSXm8pbWfsHCz26YCrH_AZFMVGsP5TYS8va8ianw_PM2qMLEolKonT771_XU/pub?gid=233622265&single=true&output=csv
+npm install clsx
 ```
 
-- [ ] 2.3 — Archivo `.env.local` creado
-
-**Paso 2.4 — Verificar que `.env.local` ya está en `.gitignore` del proyecto web:**
-```bash
-type web\.gitignore | findstr env
-```
-Debe mostrar una línea con `.env*.local`. Si no aparece, agregar `.env.local` al archivo `web\.gitignore`.
-
-- [ ] 2.4 — `.env.local` está excluido de git
+- [ ] 1.1 — `clsx` instalado (utilidad para clases CSS condicionales)
 
 ---
 
-## TAREA 3 — Crear estructura de carpetas y tipos TypeScript
+## TAREA 2 — Servicio de autenticación
 
-**Paso 3.1 — Crear carpetas:**
-```bash
-mkdir web\src\types
-mkdir web\src\services
-mkdir web\src\lib
-mkdir web\src\hooks
-mkdir web\src\components\ui
-```
-
-- [ ] 3.1 — Carpetas creadas
-
-**Paso 3.2 — Crear `web\src\types\index.ts`** con el siguiente contenido:
-
-```typescript
-// ============================================================
-// TIPOS BASE — Ausitoria App
-// Refleja el esquema real del prototipo analizado por CoWork
-// ============================================================
-
-export type Importancia = 'Crítico' | 'crítico' | 'Alta' | 'Media' | 'Baja';
-export type TipoRespuesta = 'radio' | 'numero' | 'fecha' | 'text' | 'headcount';
-export type Nivel = 'Excelente' | 'Satisfactorio' | 'Requiere mejora' | 'Deficiente' | 'Reprobado';
-export type RolUsuario = 'Admin' | 'Auditor';
-
-/** Local de la red de franquicias */
-export interface Local {
-  nombre: string;
-  isCausa: boolean;   // true = marca Causa, false = SushiPop
-  emails: string;     // emails de notificación separados por coma
-}
-
-/** Pregunta del checklist (basada en CSV cols [0..10]) */
-export interface Pregunta {
-  id: string;                    // generado: q_{index}
-  marca: string;                 // 'Multimarca' | 'Causa'
-  categoria: string;
-  subcategoria: string;
-  control: string;
-  importancia: string;
-  explicacion: string;
-  pregunta: string;
-  imagen: string;
-  tipoRespuesta: string;         // raw del CSV, parsear con parseTipoRespuesta()
-  explicacionDetallada: string;
-  validacion: string;            // reglas: 'numero|C:0:100' | 'fecha|NA' | 'headcount'
-}
-
-/** Categoría de preguntas agrupadas */
-export interface Categoria {
-  name: string;
-  questions: Pregunta[];
-}
-
-/** Respuesta del auditor a una pregunta */
-export interface RespuestaItem {
-  preguntaId: string;
-  control: string;
-  respuesta: string;             // 'Cumple' | 'Cumple parcialmente' | 'No Cumple' | 'No aplica'
-  observacion?: string;
-  fotoBase64?: string;           // imagen capturada en campo
-  fotoNombre?: string;
-  rawValor?: string;             // valor numérico o fecha raw antes de evaluar
-  headcount?: Record<string, string>;
-}
-
-/** Sesión de usuario autenticado */
-export interface Sesion {
-  email: string;
-  nombre: string;
-  rol: RolUsuario;
-  locales: string;               // locales asignados (separados por coma)
-  token: string;
-  savedAt: number;               // timestamp ms
-}
-
-/** Una auditoría completa lista para enviar */
-export interface Auditoria {
-  auditId: string;               // AUD_{Local}_{timestamp}
-  fecha: string;                 // YYYY-MM-DD
-  hora: string;
-  auditor: string;
-  auditorEmail: string;
-  local: string;
-  marca: string;                 // 'Multimarca' | 'Causa'
-  tipo: string;                  // 'Oficial' | 'Preliminar' | etc
-  acompanante?: string;
-  posicionAcompanante?: string;
-  respuestas: RespuestaItem[];
-}
-
-/** Resultado de scoring */
-export interface Puntaje {
-  obtenido: number;
-  posible: number;
-  pct: number;
-  reprobado: boolean;
-  nivel: Nivel;
-  nivelClass: string;
-  nivelEmoji: string;
-}
-
-/** Fila tal como se escribe en el Sheet Resultados */
-export interface FilaResultado {
-  AuditID: string;
-  Fecha: string;
-  Hora: string;
-  Auditor: string;
-  Local: string;
-  Marca: string;
-  Categoria: string;
-  Subcategoria: string;
-  Control: string;
-  Importancia: string;
-  Explicacion: string;
-  Respuesta: string;
-  Observacion: string;
-  URLFoto: string;
-  EmailAuditor: string;
-  PuntajePct: number;
-  Nivel: string;
-  Reprobado: string;
-  Acompanante: string;
-  Tipo: string;
-  RawValor: string;
-}
-```
-
-- [ ] 3.2 — `src/types/index.ts` creado
-
----
-
-## TAREA 4 — Capa de servicios (conexión a Google Sheets)
-
-**Paso 4.1 — Instalar dependencia:**
-```bash
-cd web && npm install papaparse && npm install --save-dev @types/papaparse
-```
-
-- [ ] 4.1 — papaparse instalado
-
-**Paso 4.2 — Crear `web\src\services\sheets.ts`:**
+### Crear `src\lib\session.ts`
 
 ```typescript
 /**
- * sheets.ts — Lee datos desde Google Sheets publicados como CSV
- * TODO Fase 3: reemplazar por fetch a nuestra propia API/BD
+ * session.ts — Manejo de sesión en localStorage
+ * Replica exacta del prototipo (loadSession / saveSession / clearSession)
  */
-import Papa from 'papaparse';
-import type { Local, Pregunta } from '@/types';
+import type { Sesion } from '@/types';
 
-async function fetchCSV(url: string): Promise<string[][]> {
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`No se pudo cargar CSV (HTTP ${res.status}): ${url}`);
-  const text = await res.text();
-  const result = Papa.parse<string[]>(text, { skipEmptyLines: true });
-  return result.data;
+const KEY = 'user_session';
+const TTL = 7 * 24 * 3600 * 1000; // 7 días en ms
+
+export function loadSession(): Sesion | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const s: Sesion = JSON.parse(raw);
+    if (!s?.email || !s?.token) return null;
+    if (Date.now() - (s.savedAt ?? 0) > TTL) { clearSession(); return null; }
+    return s;
+  } catch { return null; }
 }
 
-/**
- * Carga locales desde el CSV publicado.
- * Schema CSV: [0]=Nombre, [1]=isCausa (TRUE), [2]=Emails
- */
-export async function getLocales(): Promise<Local[]> {
-  const url = process.env.NEXT_PUBLIC_CSV_LOCALES!;
-  const rows = await fetchCSV(url);
-  // Saltear header (fila 0) y filtrar filas vacías
-  return rows.slice(1)
-    .map(r => ({
-      nombre:  (r[0] || '').trim(),
-      isCausa: (r[1] || '').trim().toUpperCase() === 'TRUE',
-      emails:  (r[2] || '').trim(),
-    }))
-    .filter(l => l.nombre);
+export function saveSession(user: Omit<Sesion, 'savedAt'>): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ ...user, savedAt: Date.now() }));
+  } catch { /* storage no disponible */ }
 }
 
-/**
- * Carga preguntas/checklist desde el CSV publicado.
- * Schema CSV: [0]=Marca, [1]=Cat, [2]=Subcat, [3]=Control,
- *             [4]=Importancia, [5]=Explicacion, [6]=Pregunta,
- *             [7]=Imagen, [8]=TipoRespuesta, [9]=ExpDetallada, [10]=Validacion
- */
-export async function getPreguntas(soloMarca?: 'Multimarca' | 'Causa'): Promise<Pregunta[]> {
-  const url = process.env.NEXT_PUBLIC_CSV_PREGUNTAS!;
-  const rows = await fetchCSV(url);
-  const preguntas: Pregunta[] = rows.slice(1)
-    .filter(r => r[0] && r[3]) // debe tener marca y control
-    .map((r, idx) => ({
-      id:                   `q_${idx}`,
-      marca:                (r[0] || '').trim(),
-      categoria:            (r[1] || '').trim(),
-      subcategoria:         (r[2] || '').trim(),
-      control:              (r[3] || '').trim(),
-      importancia:          (r[4] || '').trim(),
-      explicacion:          (r[5] || '').trim(),
-      pregunta:             (r[6] || '').trim(),
-      imagen:               (r[7] || '').trim().toLowerCase(),
-      tipoRespuesta:        (r[8] || '').trim().toLowerCase(),
-      explicacionDetallada: (r[9] || '').trim(),
-      validacion:           (r[10] || '').trim(),
-    }));
+export function clearSession(): void {
+  try { localStorage.removeItem(KEY); } catch { /* ignorar */ }
+}
+```
 
-  if (!soloMarca) return preguntas;
-  return preguntas.filter(p =>
-    p.marca === 'Multimarca' || p.marca === soloMarca
+- [ ] 2.1 — `src/lib/session.ts` creado
+
+### Crear `src\services\auth.ts`
+
+```typescript
+/**
+ * auth.ts — Login y llamadas al Apps Script
+ * Replica exacta del prototipo (hashPwd + callAPI)
+ */
+
+const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL!;
+
+/** Hash SHA-256 de la contraseña (mismo algoritmo que el prototipo) */
+export async function hashPwd(password: string): Promise<string> {
+  const buf = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(password)
   );
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
-/**
- * Agrupa preguntas en categorías (mismo orden que el prototipo)
- */
-export function agruparPorCategoria(preguntas: Pregunta[]) {
-  const map = new Map<string, Pregunta[]>();
-  preguntas.forEach(p => {
-    if (!map.has(p.categoria)) map.set(p.categoria, []);
-    map.get(p.categoria)!.push(p);
-  });
-  return Array.from(map.entries()).map(([name, questions]) => ({ name, questions }));
+/** Llamada GET al Apps Script con parámetros */
+export async function callAPI(params: Record<string, string>): Promise<Record<string, unknown>> {
+  const qs = Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  const res = await fetch(`${APPS_SCRIPT_URL}?${qs}`, { redirect: 'follow' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
-```
 
-- [ ] 4.2 — `src/services/sheets.ts` creado
+export interface LoginResult {
+  ok: boolean;
+  sesion?: {
+    email: string;
+    nombre: string;
+    rol: 'Admin' | 'Auditor';
+    locales: string;
+    token: string;
+  };
+  error?: string;
+}
 
-**Paso 4.3 — Crear `web\src\services\scoring.ts`:**
+/** Login de usuario contra el Apps Script */
+export async function login(email: string, password: string): Promise<LoginResult> {
+  try {
+    const pwd = await hashPwd(password);
+    const data = await callAPI({ action: 'login', email: email.toLowerCase().trim(), password: pwd });
 
-```typescript
-/**
- * scoring.ts — Sistema de puntuación (migrado exactamente del prototipo)
- */
-import type { Pregunta, RespuestaItem, Puntaje } from '@/types';
-
-const MAX_PTS:     Record<string, number> = { critico: 4, crítico: 4, alta: 3, media: 2, baja: 1 };
-const PARCIAL_PTS: Record<string, number> = { critico: 2, crítico: 2, alta: 1, media: 1, baja: 0 };
-
-export function calcularPuntaje(preguntas: Pregunta[], respuestas: Record<string, RespuestaItem>): Puntaje {
-  let obtenido = 0, posible = 0, reprobado = false;
-
-  preguntas.forEach(q => {
-    const imp = (q.importancia || '').toLowerCase().trim();
-    const ans = respuestas[q.id];
-    if (!ans) return;
-    const val = (ans.respuesta || '').toLowerCase().trim();
-    if (!val || val.includes('aplica')) return;
-
-    const max = MAX_PTS[imp];
-    if (!max) return;
-    posible += max;
-
-    if (val === 'cumple') {
-      obtenido += max;
-    } else if (val.includes('parcial')) {
-      obtenido += PARCIAL_PTS[imp] || 0;
-    } else if (val.includes('no cumple')) {
-      if (imp === 'critico' || imp === 'crítico') reprobado = true;
+    if (data.status === 'ok' || data.token) {
+      return {
+        ok: true,
+        sesion: {
+          email:   String(data.email  ?? email),
+          nombre:  String(data.nombre ?? email),
+          rol:     (data.rol === 'Admin' ? 'Admin' : 'Auditor') as 'Admin' | 'Auditor',
+          locales: String(data.locales ?? ''),
+          token:   String(data.token  ?? ''),
+        },
+      };
     }
-  });
-
-  const pct = posible > 0 ? Math.round((obtenido / posible) * 100) : 0;
-
-  let nivel: Puntaje['nivel'], nivelClass: string, nivelEmoji: string;
-  if (reprobado)      { nivel = 'Reprobado';        nivelClass = 'reprobado';     nivelEmoji = '⛔'; }
-  else if (pct >= 90) { nivel = 'Excelente';        nivelClass = 'excelente';     nivelEmoji = '🟢'; }
-  else if (pct >= 75) { nivel = 'Satisfactorio';    nivelClass = 'satisfactorio'; nivelEmoji = '🟡'; }
-  else if (pct >= 60) { nivel = 'Requiere mejora';  nivelClass = 'mejora';        nivelEmoji = '🟠'; }
-  else                { nivel = 'Deficiente';        nivelClass = 'deficiente';    nivelEmoji = '🔴'; }
-
-  return { obtenido, posible, pct, reprobado, nivel, nivelClass, nivelEmoji };
+    return { ok: false, error: String(data.message ?? 'Credenciales incorrectas') };
+  } catch (e) {
+    return { ok: false, error: `Error de conexión: ${String(e)}` };
+  }
 }
 ```
 
-- [ ] 4.3 — `src/services/scoring.ts` creado
+- [ ] 2.2 — `src/services/auth.ts` creado
 
-**Paso 4.4 — Crear `web\src\services\index.ts`:**
+Actualizar `src\services\index.ts` para incluir auth:
 ```typescript
 export * from './sheets';
 export * from './scoring';
+export * from './auth';
 ```
 
-- [ ] 4.4 — `src/services/index.ts` creado
+- [ ] 2.3 — `src/services/index.ts` actualizado
 
 ---
 
-## TAREA 5 — Página de diagnóstico
+## TAREA 3 — Contexto global de la app (AppContext)
 
-**Objetivo:** Verificar que la conexión a Google Sheets funciona correctamente.
+### Crear `src\contexts\AppContext.tsx`
 
-**Crear `web\src\app\diagnostico\page.tsx`:**
+```typescript
+'use client';
+/**
+ * AppContext — Estado global de la app
+ * Contiene: sesión de usuario + estado de la auditoría en curso
+ * Equivalente al objeto `state` del prototipo
+ */
 
-```tsx
-import { getLocales, getPreguntas, agruparPorCategoria } from '@/services';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import type { Sesion, Local, Pregunta, Categoria, RespuestaItem } from '@/types';
+import { loadSession, saveSession, clearSession } from '@/lib/session';
+import { agruparPorCategoria } from '@/services/sheets';
 
-export const dynamic = 'force-dynamic';
+// ── Estado ────────────────────────────────────────────────────
 
-export default async function DiagnosticoPage() {
-  let locales: Awaited<ReturnType<typeof getLocales>> = [];
-  let preguntas: Awaited<ReturnType<typeof getPreguntas>> = [];
-  let errorLocales: string | null = null;
-  let errorPreguntas: string | null = null;
+export interface AuditoriaState {
+  local:         Local | null;
+  fecha:         string;
+  tipo:          string;          // 'Oficial' | 'Preliminar'
+  acompanante:   string;
+  posicionAcomp: string;
+  auditId:       string;
+  categorias:    Categoria[];
+  catIndex:      number;
+  qIndex:        number;
+  answers:       Record<string, RespuestaItem>;
+}
 
-  try { locales = await getLocales(); }
-  catch (e) { errorLocales = String(e); }
+export interface AppState {
+  // Sesión
+  sesion:          Sesion | null;
+  sessionLoading:  boolean;
+  // Datos precargados
+  locales:         Local[];
+  preguntas:       Pregunta[];
+  dataLoading:     boolean;
+  dataError:       string;
+  // Auditoría en curso
+  auditoria:       AuditoriaState;
+}
 
-  try { preguntas = await getPreguntas(); }
-  catch (e) { errorPreguntas = String(e); }
+const HOY = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 
-  const categorias = agruparPorCategoria(preguntas);
-  const multimarca = preguntas.filter(p => p.marca === 'Multimarca').length;
-  const causa      = preguntas.filter(p => p.marca === 'Causa').length;
-  const localesCausa = locales.filter(l => l.isCausa).length;
-  const localesMulti = locales.filter(l => !l.isCausa).length;
+const auditInicial: AuditoriaState = {
+  local: null, fecha: HOY(), tipo: 'Oficial',
+  acompanante: '', posicionAcomp: '',
+  auditId: '', categorias: [],
+  catIndex: 0, qIndex: 0, answers: {},
+};
+
+const initialState: AppState = {
+  sesion: null, sessionLoading: true,
+  locales: [], preguntas: [], dataLoading: false, dataError: '',
+  auditoria: auditInicial,
+};
+
+// ── Acciones ──────────────────────────────────────────────────
+
+type Action =
+  | { type: 'SET_SESION';      payload: Sesion | null }
+  | { type: 'SESSION_LOADED' }
+  | { type: 'SET_LOCALES';     payload: Local[] }
+  | { type: 'SET_PREGUNTAS';   payload: Pregunta[] }
+  | { type: 'DATA_LOADING';    payload: boolean }
+  | { type: 'DATA_ERROR';      payload: string }
+  | { type: 'AUDIT_SET_LOCAL'; payload: Local }
+  | { type: 'AUDIT_SET_CAMPO'; payload: Partial<AuditoriaState> }
+  | { type: 'AUDIT_SET_CAT';   payload: number }
+  | { type: 'AUDIT_NEXT_Q' }
+  | { type: 'AUDIT_PREV_Q' }
+  | { type: 'AUDIT_SET_ANSWER';payload: { id: string; item: RespuestaItem } }
+  | { type: 'AUDIT_RESET' };
+
+function reducer(state: AppState, action: Action): AppState {
+  switch (action.type) {
+    case 'SET_SESION':
+      return { ...state, sesion: action.payload, sessionLoading: false };
+    case 'SESSION_LOADED':
+      return { ...state, sessionLoading: false };
+    case 'SET_LOCALES':
+      return { ...state, locales: action.payload };
+    case 'SET_PREGUNTAS':
+      return { ...state, preguntas: action.payload };
+    case 'DATA_LOADING':
+      return { ...state, dataLoading: action.payload };
+    case 'DATA_ERROR':
+      return { ...state, dataError: action.payload };
+    case 'AUDIT_SET_LOCAL': {
+      const local = action.payload;
+      const filtradas = state.preguntas.filter(p =>
+        p.marca === 'Multimarca' || (local.isCausa ? p.marca === 'Causa' : false)
+      );
+      const categorias = agruparPorCategoria(filtradas);
+      const auditId = `AUD_${local.nombre.replace(/\s+/g,'-').slice(0,20)}_${Date.now()}`;
+      return { ...state, auditoria: { ...auditInicial, local, categorias, auditId, fecha: HOY() } };
+    }
+    case 'AUDIT_SET_CAMPO':
+      return { ...state, auditoria: { ...state.auditoria, ...action.payload } };
+    case 'AUDIT_SET_CAT':
+      return { ...state, auditoria: { ...state.auditoria, catIndex: action.payload, qIndex: 0 } };
+    case 'AUDIT_NEXT_Q':
+      return { ...state, auditoria: { ...state.auditoria, qIndex: state.auditoria.qIndex + 1 } };
+    case 'AUDIT_PREV_Q':
+      return { ...state, auditoria: { ...state.auditoria, qIndex: Math.max(0, state.auditoria.qIndex - 1) } };
+    case 'AUDIT_SET_ANSWER': {
+      const answers = { ...state.auditoria.answers, [action.payload.id]: action.payload.item };
+      return { ...state, auditoria: { ...state.auditoria, answers } };
+    }
+    case 'AUDIT_RESET':
+      return { ...state, auditoria: auditInicial };
+    default:
+      return state;
+  }
+}
+
+// ── Context ───────────────────────────────────────────────────
+
+interface AppContextValue {
+  state:    AppState;
+  dispatch: React.Dispatch<Action>;
+}
+
+const AppContext = createContext<AppContextValue | null>(null);
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(reducer, initialState);
+
+  // Cargar sesión desde localStorage al iniciar
+  useEffect(() => {
+    const sesion = loadSession();
+    dispatch({ type: 'SET_SESION', payload: sesion });
+  }, []);
 
   return (
-    <main style={{ padding: 24, fontFamily: 'monospace', fontSize: 14, maxWidth: 800 }}>
-      <h1 style={{ fontSize: 22, marginBottom: 24 }}>🔍 Diagnóstico — Ausitoria App</h1>
+    <AppContext.Provider value={{ state, dispatch }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
 
-      <section style={{ border: '1px solid #ccc', padding: 16, marginBottom: 24, borderRadius: 8 }}>
-        <h2>Locales {errorLocales ? '❌' : `✅ ${locales.length} cargados`}</h2>
-        {errorLocales && <p style={{ color: 'red' }}>{errorLocales}</p>}
-        {!errorLocales && (
-          <>
-            <p>SushiPop: {localesMulti} | Causa: {localesCausa}</p>
-            <ul style={{ columns: 2, marginTop: 8 }}>
-              {locales.map(l => (
-                <li key={l.nombre}>{l.nombre} {l.isCausa ? '(Causa)' : ''}</li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error('useApp debe usarse dentro de AppProvider');
+  return ctx;
+}
 
-      <section style={{ border: '1px solid #ccc', padding: 16, marginBottom: 24, borderRadius: 8 }}>
-        <h2>Preguntas {errorPreguntas ? '❌' : `✅ ${preguntas.length} totales`}</h2>
-        {errorPreguntas && <p style={{ color: 'red' }}>{errorPreguntas}</p>}
-        {!errorPreguntas && (
-          <>
-            <p>Multimarca: {multimarca} | Causa: {causa}</p>
-            <table style={{ marginTop: 8, borderCollapse: 'collapse', width: '100%' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc', paddingRight: 16 }}>Categoría</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #ccc' }}>Preguntas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categorias.map(c => (
-                  <tr key={c.name}>
-                    <td style={{ paddingRight: 16, paddingTop: 4 }}>{c.name}</td>
-                    <td style={{ textAlign: 'right', paddingTop: 4 }}>{c.questions.length}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </section>
+// ── Helpers de sesión ─────────────────────────────────────────
 
-      <p style={{ color: '#888', fontSize: 12 }}>
-        Generado: {new Date().toLocaleString('es-AR')}
-      </p>
-    </main>
+export function useSesion() {
+  const { state, dispatch } = useApp();
+
+  const setSesion = (sesion: Sesion) => {
+    saveSession(sesion);
+    dispatch({ type: 'SET_SESION', payload: sesion });
+  };
+
+  const logout = () => {
+    clearSession();
+    dispatch({ type: 'SET_SESION', payload: null });
+  };
+
+  return { sesion: state.sesion, sessionLoading: state.sessionLoading, setSesion, logout };
+}
+```
+
+- [ ] 3.1 — `src/contexts/AppContext.tsx` creado
+
+---
+
+## TAREA 4 — Actualizar layout raíz y página de inicio
+
+### Reemplazar `src\app\layout.tsx` con:
+
+```typescript
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
+import { AppProvider } from '@/contexts/AppContext';
+import DataLoader from '@/components/DataLoader';
+
+export const metadata: Metadata = {
+  title: 'Ausitoria',
+  description: 'Sistema de auditorías SushiPop',
+  manifest: '/manifest.json',
+  appleWebApp: { capable: true, statusBarStyle: 'black', title: 'Ausitoria' },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#e4001b',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="es">
+      <body className="bg-gray-50 min-h-screen">
+        <AppProvider>
+          <DataLoader />
+          {children}
+        </AppProvider>
+      </body>
+    </html>
   );
 }
 ```
 
-- [ ] 5.1 — `src/app/diagnostico/page.tsx` creado
+- [ ] 4.1 — `src/app/layout.tsx` actualizado
 
-**Iniciar servidor y verificar:**
-```bash
-cd web && npm run dev
+### Reemplazar `src\app\page.tsx` con:
+
+```typescript
+'use client';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSesion } from '@/contexts/AppContext';
+
+export default function HomePage() {
+  const { sesion, sessionLoading } = useSesion();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (!sesion) { router.replace('/login'); return; }
+    if (sesion.rol === 'Admin') { router.replace('/admin'); return; }
+    router.replace('/welcome');
+  }, [sesion, sessionLoading, router]);
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 ```
-Abrir `http://localhost:3000/diagnostico` en el navegador.
 
-- [ ] 5.2 — Página abre sin errores y muestra datos de locales y preguntas
+- [ ] 4.2 — `src/app/page.tsx` actualizado
 
 ---
 
-## TAREA 6 — Escribir REPORTE_FASE1.md con resultados reales
+## TAREA 5 — DataLoader: carga silenciosa de datos
 
-**Esta es la tarea más importante.** Crear el archivo `C:\Users\marco\audit-app\REPORTE_FASE1.md` con los datos REALES obtenidos durante la ejecución. No dejar campos en blanco ni poner datos de ejemplo.
+### Crear `src\components\DataLoader.tsx`
+
+```typescript
+'use client';
+/**
+ * DataLoader — Carga locales y preguntas al iniciar la sesión.
+ * Es un componente invisible que corre en background.
+ */
+import { useEffect } from 'react';
+import { useApp, useSesion } from '@/contexts/AppContext';
+import { getLocales, getPreguntas } from '@/services';
+
+export default function DataLoader() {
+  const { dispatch } = useApp();
+  const { sesion } = useSesion();
+
+  useEffect(() => {
+    if (!sesion) return;
+
+    dispatch({ type: 'DATA_LOADING', payload: true });
+
+    Promise.all([getLocales(), getPreguntas()])
+      .then(([locales, preguntas]) => {
+        dispatch({ type: 'SET_LOCALES',   payload: locales });
+        dispatch({ type: 'SET_PREGUNTAS', payload: preguntas });
+        dispatch({ type: 'DATA_LOADING',  payload: false });
+      })
+      .catch(e => {
+        dispatch({ type: 'DATA_ERROR',   payload: String(e) });
+        dispatch({ type: 'DATA_LOADING', payload: false });
+      });
+  }, [sesion, dispatch]);
+
+  return null; // componente invisible
+}
+```
+
+- [ ] 5.1 — `src/components/DataLoader.tsx` creado
+
+---
+
+## TAREA 6 — Página de Login
+
+### Crear carpeta y archivo `src\app\login\page.tsx`
+
+```typescript
+'use client';
+import { useState, FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { login } from '@/services/auth';
+import { useSesion } from '@/contexts/AppContext';
+import Image from 'next/image';
+
+export default function LoginPage() {
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const { setSesion }           = useSesion();
+  const router                  = useRouter();
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const result = await login(email, password);
+    setLoading(false);
+
+    if (!result.ok || !result.sesion) {
+      setError(result.error ?? 'Error al iniciar sesión');
+      return;
+    }
+
+    setSesion({ ...result.sesion, savedAt: Date.now() });
+    router.replace(result.sesion.rol === 'Admin' ? '/admin' : '/welcome');
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6">
+      {/* Logo */}
+      <div className="mb-8 text-center">
+        <div className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
+          <span className="text-white text-3xl font-bold">A</span>
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Ausitoria</h1>
+        <p className="text-gray-500 text-sm mt-1">Sistema de Auditorías SushiPop</p>
+      </div>
+
+      {/* Formulario */}
+      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Email
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="tu@email.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Contraseña
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="••••••••"
+          />
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-red-600 text-white py-3 rounded-xl font-semibold text-base
+                     disabled:opacity-50 active:scale-95 transition-transform"
+        >
+          {loading ? 'Ingresando...' : 'Ingresar'}
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+- [ ] 6.1 — `src/app/login/page.tsx` creado
+
+---
+
+## TAREA 7 — Bottom Nav y componente AuthGuard
+
+### Crear `src\components\BottomNav.tsx`
+
+```typescript
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useSesion } from '@/contexts/AppContext';
+import clsx from 'clsx';
+
+const NAV_AUDITOR = [
+  { href: '/welcome',           icon: '🏠', label: 'Inicio' },
+  { href: '/auditoria/setup',   icon: '📋', label: 'Auditoría' },
+  { href: '/historial',         icon: '📜', label: 'Historial' },
+  { href: '/dashboard',         icon: '📊', label: 'Reportes' },
+  { href: '/calendario',        icon: '📅', label: 'Agenda' },
+];
+
+const NAV_ADMIN = [
+  { href: '/admin',             icon: '⚙️', label: 'Admin' },
+  { href: '/historial',         icon: '📜', label: 'Historial' },
+  { href: '/dashboard',         icon: '📊', label: 'Reportes' },
+];
+
+export default function BottomNav() {
+  const { sesion } = useSesion();
+  const pathname   = usePathname();
+  if (!sesion) return null;
+
+  const items = sesion.rol === 'Admin' ? NAV_ADMIN : NAV_AUDITOR;
+
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200
+                    flex items-stretch safe-area-bottom z-50">
+      {items.map(item => {
+        const active = pathname === item.href || pathname.startsWith(item.href + '/');
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={clsx(
+              'flex-1 flex flex-col items-center justify-center py-2 text-xs gap-0.5',
+              active ? 'text-red-600' : 'text-gray-500'
+            )}
+          >
+            <span className="text-xl leading-none">{item.icon}</span>
+            <span className={clsx('font-medium', active && 'font-semibold')}>{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+```
+
+- [ ] 7.1 — `src/components/BottomNav.tsx` creado
+
+### Crear `src\components\AuthGuard.tsx`
+
+```typescript
+'use client';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSesion } from '@/contexts/AppContext';
+
+interface Props {
+  children: React.ReactNode;
+  requiredRol?: 'Admin' | 'Auditor';
+}
+
+export default function AuthGuard({ children, requiredRol }: Props) {
+  const { sesion, sessionLoading } = useSesion();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (!sesion) { router.replace('/login'); return; }
+    if (requiredRol && sesion.rol !== requiredRol) router.replace('/welcome');
+  }, [sesion, sessionLoading, requiredRol, router]);
+
+  if (sessionLoading || !sesion) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+```
+
+- [ ] 7.2 — `src/components/AuthGuard.tsx` creado
+
+---
+
+## TAREA 8 — Pantalla de Bienvenida
+
+### Crear `src\app\welcome\page.tsx`
+
+```typescript
+'use client';
+import AuthGuard from '@/components/AuthGuard';
+import BottomNav from '@/components/BottomNav';
+import { useSesion } from '@/contexts/AppContext';
+import Link from 'next/link';
+
+function WelcomeContent() {
+  const { sesion, logout } = useSesion();
+
+  const acciones = [
+    { href: '/auditoria/setup', icon: '📋', label: 'Nueva Auditoría',  desc: 'Iniciar una inspección' },
+    { href: '/historial',       icon: '📜', label: 'Mis Auditorías',   desc: 'Ver historial propio' },
+    { href: '/dashboard',       icon: '📊', label: 'Reportes',         desc: 'Scores y tendencias' },
+    { href: '/calendario',      icon: '📅', label: 'Agenda',           desc: 'Próximas visitas' },
+    { href: '/gastos',          icon: '💳', label: 'Viáticos',         desc: 'Registrar gastos' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header */}
+      <div className="bg-red-600 text-white px-5 pt-12 pb-6">
+        <p className="text-red-200 text-sm mb-1">Bienvenido/a</p>
+        <h1 className="text-2xl font-bold">{sesion?.nombre}</h1>
+        <p className="text-red-200 text-xs mt-1 capitalize">{sesion?.rol}</p>
+      </div>
+
+      {/* Acciones */}
+      <div className="p-4 grid grid-cols-2 gap-3">
+        {acciones.map(a => (
+          <Link
+            key={a.href}
+            href={a.href}
+            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100
+                       active:scale-95 transition-transform flex flex-col gap-2"
+          >
+            <span className="text-3xl">{a.icon}</span>
+            <div>
+              <p className="font-semibold text-gray-900 text-sm">{a.label}</p>
+              <p className="text-gray-400 text-xs">{a.desc}</p>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {/* Cerrar sesión */}
+      <div className="px-4 mt-2">
+        <button
+          onClick={logout}
+          className="w-full text-center text-sm text-gray-400 py-3"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+
+      <BottomNav />
+    </div>
+  );
+}
+
+export default function WelcomePage() {
+  return <AuthGuard><WelcomeContent /></AuthGuard>;
+}
+```
+
+- [ ] 8.1 — `src/app/welcome/page.tsx` creado
+
+---
+
+## TAREA 9 — Flujo de Auditoría: Setup, Categorías y Pregunta
+
+### Crear carpetas:
+```bash
+mkdir src\app\auditoria
+mkdir src\app\auditoria\setup
+mkdir src\app\auditoria\categorias
+mkdir src\app\auditoria\pregunta
+mkdir src\components\auditoria
+```
+
+- [ ] 9.1 — Carpetas creadas
+
+### Crear `src\app\auditoria\setup\page.tsx`
+
+```typescript
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
+import BottomNav from '@/components/BottomNav';
+import { useApp } from '@/contexts/AppContext';
+
+function SetupContent() {
+  const { state, dispatch } = useApp();
+  const router = useRouter();
+  const [busqueda, setBusqueda] = useState('');
+
+  const localesFiltrados = state.locales.filter(l =>
+    l.nombre.toLowerCase().includes(busqueda.toLowerCase())
+  );
+
+  const elegirLocal = (local: typeof state.locales[0]) => {
+    dispatch({ type: 'AUDIT_SET_LOCAL', payload: local });
+    router.push('/auditoria/categorias');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-4 sticky top-0 z-10">
+        <h1 className="text-xl font-bold text-gray-900 mb-3">Elegir local</h1>
+        <input
+          type="search"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="Buscar local..."
+          className="w-full px-4 py-2.5 bg-gray-100 rounded-xl text-sm focus:outline-none"
+        />
+      </div>
+
+      {state.dataLoading && (
+        <div className="flex justify-center py-12">
+          <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {state.dataError && (
+        <div className="m-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+          {state.dataError}
+        </div>
+      )}
+
+      <ul className="divide-y divide-gray-100 bg-white mx-4 mt-4 rounded-2xl overflow-hidden shadow-sm">
+        {localesFiltrados.map(local => (
+          <li key={local.nombre}>
+            <button
+              onClick={() => elegirLocal(local)}
+              className="w-full text-left px-4 py-4 flex items-center justify-between
+                         active:bg-gray-50 transition-colors"
+            >
+              <div>
+                <p className="font-medium text-gray-900">{local.nombre}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {local.isCausa ? 'Causa' : 'SushiPop'}
+                </p>
+              </div>
+              <span className="text-gray-300 text-xl">›</span>
+            </button>
+          </li>
+        ))}
+        {localesFiltrados.length === 0 && !state.dataLoading && (
+          <li className="px-4 py-8 text-center text-gray-400 text-sm">
+            No se encontraron locales
+          </li>
+        )}
+      </ul>
+
+      <BottomNav />
+    </div>
+  );
+}
+
+export default function SetupPage() {
+  return <AuthGuard><SetupContent /></AuthGuard>;
+}
+```
+
+- [ ] 9.2 — `src/app/auditoria/setup/page.tsx` creado
+
+### Crear `src\app\auditoria\categorias\page.tsx`
+
+```typescript
+'use client';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
+import BottomNav from '@/components/BottomNav';
+import { useApp } from '@/contexts/AppContext';
+import { calcularPuntaje } from '@/services/scoring';
+import clsx from 'clsx';
+
+function CategoriasContent() {
+  const { state, dispatch } = useApp();
+  const router = useRouter();
+  const { auditoria } = state;
+
+  useEffect(() => {
+    if (!auditoria.local) router.replace('/auditoria/setup');
+  }, [auditoria.local, router]);
+
+  if (!auditoria.local) return null;
+
+  const elegirCategoria = (idx: number) => {
+    dispatch({ type: 'AUDIT_SET_CAT', payload: idx });
+    router.push('/auditoria/pregunta');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-4">
+        <button onClick={() => router.back()} className="text-red-600 text-sm mb-2">
+          ← Cambiar local
+        </button>
+        <h1 className="text-xl font-bold text-gray-900">{auditoria.local.nombre}</h1>
+        <p className="text-gray-400 text-sm">
+          {auditoria.local.isCausa ? 'Causa' : 'SushiPop'} · {auditoria.fecha}
+        </p>
+      </div>
+
+      <p className="px-4 pt-4 pb-2 text-sm font-semibold text-gray-500 uppercase tracking-wide">
+        Categorías
+      </p>
+
+      <ul className="divide-y divide-gray-100 bg-white mx-4 rounded-2xl overflow-hidden shadow-sm">
+        {auditoria.categorias.map((cat, idx) => {
+          const respondidas = cat.questions.filter(q => auditoria.answers[q.id]).length;
+          const total       = cat.questions.length;
+          const completa    = respondidas === total;
+
+          return (
+            <li key={cat.name}>
+              <button
+                onClick={() => elegirCategoria(idx)}
+                className="w-full text-left px-4 py-4 flex items-center justify-between active:bg-gray-50"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-900">{cat.name}</p>
+                    {completa && <span className="text-green-500 text-sm">✓</span>}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {respondidas}/{total} preguntas
+                  </p>
+                  {/* Barra de progreso */}
+                  <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden w-32">
+                    <div
+                      className={clsx('h-full rounded-full transition-all', completa ? 'bg-green-500' : 'bg-red-500')}
+                      style={{ width: `${total > 0 ? (respondidas/total)*100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-gray-300 text-xl ml-3">›</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* Total respondidas */}
+      {(() => {
+        const todasPreguntas = auditoria.categorias.flatMap(c => c.questions);
+        const totalResp = todasPreguntas.filter(q => auditoria.answers[q.id]).length;
+        if (totalResp === 0) return null;
+        const puntaje = calcularPuntaje(todasPreguntas, auditoria.answers);
+        return (
+          <div className="mx-4 mt-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Progreso general</p>
+                <p className="text-2xl font-bold text-gray-900">{puntaje.pct}%</p>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl">{puntaje.nivelEmoji}</span>
+                <p className={clsx('text-sm font-semibold mt-0.5',
+                  puntaje.reprobado ? 'text-red-600' : 'text-gray-700'
+                )}>{puntaje.nivel}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      <BottomNav />
+    </div>
+  );
+}
+
+export default function CategoriasPage() {
+  return <AuthGuard><CategoriasContent /></AuthGuard>;
+}
+```
+
+- [ ] 9.3 — `src/app/auditoria/categorias/page.tsx` creado
+
+### Crear `src\components\auditoria\RespuestaRadio.tsx`
+
+```typescript
+'use client';
+import clsx from 'clsx';
+
+interface Props {
+  opciones:  string[];
+  valor:     string;
+  onChange:  (v: string) => void;
+}
+
+const COLORES: Record<string, string> = {
+  'cumple':                'bg-green-500 text-white border-green-500',
+  'cumple parcialmente':   'bg-yellow-400 text-white border-yellow-400',
+  'no cumple':             'bg-red-600   text-white border-red-600',
+  'no aplica':             'bg-gray-400  text-white border-gray-400',
+};
+
+export default function RespuestaRadio({ opciones, valor, onChange }: Props) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {opciones.map(op => {
+        const key    = op.toLowerCase();
+        const active = valor.toLowerCase() === key;
+        const color  = COLORES[key] ?? 'bg-blue-500 text-white border-blue-500';
+        return (
+          <button
+            key={op}
+            onClick={() => onChange(op)}
+            className={clsx(
+              'py-3 px-2 rounded-xl border-2 text-sm font-semibold text-center transition-all active:scale-95',
+              active ? color : 'bg-white border-gray-200 text-gray-700'
+            )}
+          >
+            {op}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+- [ ] 9.4 — `src/components/auditoria/RespuestaRadio.tsx` creado
+
+### Crear `src\app\auditoria\pregunta\page.tsx`
+
+```typescript
+'use client';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
+import BottomNav from '@/components/BottomNav';
+import RespuestaRadio from '@/components/auditoria/RespuestaRadio';
+import { useApp } from '@/contexts/AppContext';
+import type { RespuestaItem } from '@/types';
+import clsx from 'clsx';
+
+const OPCIONES_DEFAULT = ['Cumple', 'Cumple parcialmente', 'No Cumple', 'No aplica'];
+
+function parseTipoRespuesta(tr: string, pregunta: string): { tipo: string; opciones: string[] } {
+  if (!tr) {
+    if (pregunta?.includes('/')) return { tipo: 'radio', opciones: pregunta.split('/').map(s => s.trim()) };
+    return { tipo: 'text', opciones: [] };
+  }
+  if (tr === 'numero') return { tipo: 'numero', opciones: [] };
+  if (tr === 'fecha')  return { tipo: 'fecha',  opciones: [] };
+  if (tr.startsWith('radio')) {
+    const idx = tr.indexOf(':');
+    if (idx > -1) {
+      const opciones = tr.slice(idx + 1).split('/').map(s => s.trim()).filter(Boolean);
+      return { tipo: 'radio', opciones };
+    }
+    return { tipo: 'radio', opciones: OPCIONES_DEFAULT };
+  }
+  return { tipo: 'text', opciones: [] };
+}
+
+function PreguntaContent() {
+  const { state, dispatch } = useApp();
+  const router = useRouter();
+  const { auditoria } = state;
+
+  const cat      = auditoria.categorias[auditoria.catIndex];
+  const pregunta = cat?.questions[auditoria.qIndex];
+
+  const [respuesta, setRespuesta] = useState('');
+  const [observacion, setObservacion] = useState('');
+  const [rawValor, setRawValor] = useState('');
+
+  useEffect(() => {
+    if (!auditoria.local) { router.replace('/auditoria/setup'); return; }
+    if (!cat)             { router.replace('/auditoria/categorias'); return; }
+  }, [auditoria.local, cat, router]);
+
+  // Cargar respuesta existente si ya fue respondida
+  useEffect(() => {
+    if (!pregunta) return;
+    const ans = auditoria.answers[pregunta.id];
+    setRespuesta(ans?.respuesta ?? '');
+    setObservacion(ans?.observacion ?? '');
+    setRawValor(ans?.rawValor ?? '');
+  }, [pregunta, auditoria.answers]);
+
+  if (!cat || !pregunta) return null;
+
+  const { tipo, opciones } = parseTipoRespuesta(pregunta.tipoRespuesta, pregunta.pregunta);
+  const esUltima = auditoria.qIndex === cat.questions.length - 1;
+  const totalCat = cat.questions.length;
+  const progreso = ((auditoria.qIndex + 1) / totalCat) * 100;
+
+  const IMP_COLOR: Record<string, string> = {
+    crítico: 'bg-red-100 text-red-700',
+    critico: 'bg-red-100 text-red-700',
+    alta:    'bg-orange-100 text-orange-700',
+    media:   'bg-yellow-100 text-yellow-700',
+    baja:    'bg-gray-100 text-gray-600',
+  };
+
+  const guardarYAvanzar = () => {
+    const item: RespuestaItem = {
+      preguntaId: pregunta.id,
+      control: pregunta.control,
+      respuesta,
+      observacion: observacion || undefined,
+      rawValor: rawValor || undefined,
+    };
+    dispatch({ type: 'AUDIT_SET_ANSWER', payload: { id: pregunta.id, item } });
+
+    if (!esUltima) {
+      dispatch({ type: 'AUDIT_NEXT_Q' });
+    } else {
+      router.push('/auditoria/categorias');
+    }
+  };
+
+  const saltar = () => {
+    if (!esUltima) dispatch({ type: 'AUDIT_NEXT_Q' });
+    else router.push('/auditoria/categorias');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col pb-24">
+      {/* Header con progreso */}
+      <div className="bg-white border-b border-gray-200 px-4 pt-10 pb-3 sticky top-0 z-10">
+        <div className="flex items-center justify-between mb-1">
+          <button
+            onClick={() => auditoria.qIndex > 0 ? dispatch({ type: 'AUDIT_PREV_Q' }) : router.back()}
+            className="text-red-600 text-sm"
+          >
+            ← Atrás
+          </button>
+          <span className="text-xs text-gray-400">
+            {auditoria.qIndex + 1}/{totalCat} · {cat.name}
+          </span>
+        </div>
+        <div className="h-1 bg-gray-100 rounded-full mt-2">
+          <div
+            className="h-full bg-red-500 rounded-full transition-all"
+            style={{ width: `${progreso}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Contenido */}
+      <div className="flex-1 px-4 py-4 space-y-4">
+        {/* Importancia */}
+        <span className={clsx(
+          'inline-block px-2 py-0.5 rounded-full text-xs font-semibold',
+          IMP_COLOR[(pregunta.importancia ?? '').toLowerCase()] ?? IMP_COLOR['media']
+        )}>
+          {pregunta.importancia}
+        </span>
+
+        {/* Control */}
+        <div>
+          <p className="text-xs text-gray-400 mb-1">{pregunta.subcategoria}</p>
+          <h2 className="text-base font-bold text-gray-900 leading-snug">
+            {pregunta.control}
+          </h2>
+          {pregunta.explicacion && (
+            <p className="text-sm text-gray-500 mt-1">{pregunta.explicacion}</p>
+          )}
+        </div>
+
+        {/* Respuesta según tipo */}
+        {tipo === 'radio' && (
+          <RespuestaRadio
+            opciones={opciones.length ? opciones : OPCIONES_DEFAULT}
+            valor={respuesta}
+            onChange={setRespuesta}
+          />
+        )}
+
+        {tipo === 'numero' && (
+          <div>
+            <label className="text-sm text-gray-600 mb-1 block">
+              {pregunta.pregunta || 'Valor medido'}
+            </label>
+            <input
+              type="number"
+              value={rawValor}
+              onChange={e => setRawValor(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+              placeholder="0"
+            />
+          </div>
+        )}
+
+        {tipo === 'fecha' && (
+          <div>
+            <label className="text-sm text-gray-600 mb-1 block">Fecha</label>
+            <input
+              type="date"
+              value={rawValor}
+              onChange={e => setRawValor(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+        )}
+
+        {tipo === 'text' && (
+          <textarea
+            value={respuesta}
+            onChange={e => setRespuesta(e.target.value)}
+            rows={4}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+            placeholder="Ingresá tu observación..."
+          />
+        )}
+
+        {/* Observación (siempre disponible excepto si el tipo ya es text) */}
+        {tipo !== 'text' && (
+          <textarea
+            value={observacion}
+            onChange={e => setObservacion(e.target.value)}
+            rows={2}
+            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none bg-gray-50"
+            placeholder="Observación (opcional)..."
+          />
+        )}
+      </div>
+
+      {/* Botones de acción */}
+      <div className="px-4 pb-4 pt-2 bg-white border-t border-gray-100 space-y-2">
+        <button
+          onClick={guardarYAvanzar}
+          disabled={!respuesta && tipo === 'radio'}
+          className="w-full bg-red-600 text-white py-3.5 rounded-xl font-semibold
+                     disabled:opacity-40 active:scale-95 transition-transform"
+        >
+          {esUltima ? 'Terminar categoría' : 'Siguiente →'}
+        </button>
+        <button
+          onClick={saltar}
+          className="w-full text-gray-400 py-2 text-sm"
+        >
+          Omitir esta pregunta
+        </button>
+      </div>
+
+      <BottomNav />
+    </div>
+  );
+}
+
+export default function PreguntaPage() {
+  return <AuthGuard><PreguntaContent /></AuthGuard>;
+}
+```
+
+- [ ] 9.5 — `src/app/auditoria/pregunta/page.tsx` creado
+
+---
+
+## TAREA 10 — Verificar build y flujo
+
+Ejecutar desde `C:\Users\marco\audit-app\web`:
+
+```bash
+npm run build
+```
+
+Si hay errores TypeScript, corregirlos antes de continuar.
+
+```bash
+npm run dev
+```
+
+Verificar manualmente el flujo completo:
+1. `http://localhost:3000` → debe redirigir a `/login`
+2. Login con credenciales reales → debe ir a `/welcome`
+3. Click en "Nueva Auditoría" → debe ir a `/auditoria/setup` con lista de locales
+4. Elegir un local → debe ir a `/auditoria/categorias` con 8 categorías
+5. Elegir una categoría → primera pregunta en `/auditoria/pregunta`
+6. Responder y avanzar por las preguntas
+
+- [ ] 10.1 — `npm run build` sin errores TypeScript
+- [ ] 10.2 — Flujo completo navegable en el navegador
+- [ ] 10.3 — Login funciona con credenciales reales
+
+---
+
+## TAREA 11 — Crear REPORTE_FASE2.md
+
+Crear `C:\Users\marco\audit-app\REPORTE_FASE2.md` con los resultados reales:
 
 ```markdown
-# REPORTE_FASE1.md — Resultados de Ejecución
-Fecha de ejecución: [COMPLETAR con la fecha real]
+# REPORTE_FASE2.md — Resultados de Ejecución
+Fecha: [COMPLETAR]
 
-## Estado general
-- [ ] Tarea 1: Verificar entorno
-- [ ] Tarea 2: Crear proyecto Next.js
-- [ ] Tarea 3: Crear tipos TypeScript
-- [ ] Tarea 4: Crear servicios
-- [ ] Tarea 5: Página de diagnóstico
+## Estado de tareas
+- [ ] Tarea 1: Instalar dependencias
+- [ ] Tarea 2: Auth service
+- [ ] Tarea 3: AppContext
+- [ ] Tarea 4: Layout + página raíz
+- [ ] Tarea 5: DataLoader
+- [ ] Tarea 6: Login page
+- [ ] Tarea 7: BottomNav + AuthGuard
+- [ ] Tarea 8: Welcome
+- [ ] Tarea 9: Flujo auditoría (setup + categorías + pregunta)
+- [ ] Tarea 10: Build + prueba manual
 
-## Versiones del entorno
-- Node.js: [COMPLETAR]
-- npm: [COMPLETAR]
-- Git: [COMPLETAR]
+## Build
+- `npm run build`: [exitoso / errores — listar errores si los hay]
 
-## Resultado del diagnóstico (http://localhost:3000/diagnostico)
+## Flujo manual probado
+- Login funciona: [sí/no — usuario de prueba usado]
+- Welcome muestra nombre de usuario: [sí/no]
+- Setup muestra lista de locales (32): [sí/no]
+- Categorías aparecen al elegir local: [sí/no — cuántas]
+- Preguntas cargan al elegir categoría: [sí/no]
+- Tipos de respuesta que funcionan: [radio / numero / fecha / text]
 
-### Locales
-- Total cargados: [COMPLETAR]
-- SushiPop: [COMPLETAR]
-- Causa: [COMPLETAR]
-- Lista completa: [COMPLETAR - pegar nombres]
-
-### Preguntas
-- Total: [COMPLETAR]
-- Multimarca: [COMPLETAR]
-- Causa: [COMPLETAR]
-- Categorías detectadas:
-  | Categoría | Cantidad |
-  |---|---|
-  | [COMPLETAR] | [COMPLETAR] |
+## Archivos creados
+[Ejecutar `dir /s /b src\` y pegar resultado]
 
 ## Errores o problemas encontrados
-[Si todo fue bien: "Ninguno". Si hubo errores, describirlos aquí con el mensaje exacto.]
-
-## Estructura de archivos creados
-[Ejecutar `dir /s /b web\src` y pegar el resultado aquí]
+[Ninguno / descripción detallada]
 
 ## Notas del agente
-[Cualquier observación relevante sobre el proceso]
+[Observaciones relevantes]
 ```
 
-- [ ] 6.1 — `REPORTE_FASE1.md` creado con todos los campos completados con datos reales
+- [ ] 11.1 — `REPORTE_FASE2.md` creado con campos reales completados
 
 ---
 
-## TAREA 7 — Commit
+## TAREA 12 — Commit
 
 ```bash
-git add web/
-git add REPORTE_FASE1.md
+git add web/src/
+git add REPORTE_FASE2.md
 git add COWORK_INSTRUCTIONS.md
-git commit -m "feat: fase 1 - next.js setup + capa de servicios google sheets"
+git commit -m "feat: fase 2 - auth + flujo completo de auditoria (login, setup, categorias, preguntas)"
 git push origin main
 ```
 
-- [ ] 7.1 — Commit y push realizados
+- [ ] 12.1 — Commit y push realizados
 
 ---
 
 ## Al terminar
 
-Cuando todas las tareas tengan `[x]` y `REPORTE_FASE1.md` esté completo, decirle a Marcos:
+Decirle a Marcos: **"Claude Code ya completó las tareas de COWORK_INSTRUCTIONS.md. El reporte está en REPORTE_FASE2.md"**
 
-> **"Claude Code ya completó las tareas de COWORK_INSTRUCTIONS.md. El reporte está en REPORTE_FASE1.md"**
-
-CoWork leerá ese archivo para diseñar la Fase 2.
+CoWork leerá ese archivo y diseñará la **Fase 3: Resumen de auditoría, scoring visual y envío al Apps Script.**
