@@ -75,26 +75,35 @@ function CategoriasContent() {
         })}
       </ul>
 
-      {/* Total respondidas */}
+      {/* Score parcial + acceso a resumen */}
       {(() => {
         const todasPreguntas = auditoria.categorias.flatMap(c => c.questions);
         const totalResp = todasPreguntas.filter(q => auditoria.answers[q.id]).length;
         if (totalResp === 0) return null;
         const puntaje = calcularPuntaje(todasPreguntas, auditoria.answers);
         return (
-          <div className="mx-4 mt-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Progreso general</p>
-                <p className="text-2xl font-bold text-gray-900">{puntaje.pct}%</p>
-              </div>
-              <div className="text-right">
-                <span className="text-2xl">{puntaje.nivelEmoji}</span>
-                <p className={clsx('text-sm font-semibold mt-0.5',
-                  puntaje.reprobado ? 'text-red-600' : 'text-gray-700'
-                )}>{puntaje.nivel}</p>
+          <div className="mx-4 mt-4 space-y-3">
+            <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Progreso general</p>
+                  <p className="text-2xl font-bold text-gray-900">{puntaje.pct}%</p>
+                  <p className="text-xs text-gray-400">{totalResp}/{todasPreguntas.length} preguntas</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl">{puntaje.nivelEmoji}</span>
+                  <p className={clsx('text-sm font-semibold mt-0.5',
+                    puntaje.reprobado ? 'text-red-600' : 'text-gray-700'
+                  )}>{puntaje.nivel}</p>
+                </div>
               </div>
             </div>
+            <button
+              onClick={() => router.push('/auditoria/resumen')}
+              className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold active:scale-95 transition-transform"
+            >
+              Ver Resumen y Enviar
+            </button>
           </div>
         );
       })()}

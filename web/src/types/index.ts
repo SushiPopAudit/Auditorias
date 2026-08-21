@@ -59,19 +59,17 @@ export interface Sesion {
   savedAt: number;               // timestamp ms
 }
 
-/** Una auditoría completa lista para enviar */
+/** Auditoría lista para enviar al Apps Script */
 export interface Auditoria {
-  auditId: string;               // AUD_{Local}_{timestamp}
-  fecha: string;                 // YYYY-MM-DD
-  hora: string;
-  auditor: string;
+  id:           string;     // auditId generado
+  fecha:        string;
+  auditor:      string;
   auditorEmail: string;
-  local: string;
-  marca: string;                 // 'Multimarca' | 'Causa'
-  tipo: string;                  // 'Oficial' | 'Preliminar' | etc
+  localNombre:  string;
+  marca:        string;
+  tipo:         string;
   acompanante?: string;
-  posicionAcompanante?: string;
-  respuestas: RespuestaItem[];
+  respuestas:   RespuestaItem[];
 }
 
 /** Resultado de scoring */
