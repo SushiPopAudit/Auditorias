@@ -79,13 +79,15 @@ export interface Auditoria {
 
 /** Resultado de scoring */
 export interface Puntaje {
-  obtenido: number;
-  posible: number;
-  pct: number;
-  reprobado: boolean;
-  nivel: Nivel;
-  nivelClass: string;
-  nivelEmoji: string;
+  obtenido:         number;
+  posible:          number;
+  pct:              number;
+  reprobado:        boolean;
+  nivel:            string;
+  nivelClass:       string;
+  nivelEmoji:       string;
+  criticosTotal:    number;
+  criticosFallidos: number;
 }
 
 /** Fila tal como se escribe en el Sheet Resultados */

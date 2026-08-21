@@ -1,11 +1,59 @@
 'use client';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
-import { useSesion } from '@/contexts/AppContext';
+import { useApp, useSesion } from '@/contexts/AppContext';
+import { cargarBorrador, borrarBorrador, exportarBorradorTexto } from '@/lib/borrador';
+import type { Borrador } from '@/lib/borrador';
 import Link from 'next/link';
 
 function WelcomeContent() {
   const { sesion, logout } = useSesion();
+  const { state, dispatch } = useApp();
+  const router = useRouter();
+  const [borrador, setBorrador] = useState<Borrador | null>(null);
+
+  useEffect(() => {
+    setBorrador(cargarBorrador());
+  }, []);
+
+  function continuarBorrador() {
+    if (!borrador) return;
+    dispatch({ type: 'AUDIT_RESTORE', payload: {
+      local:         borrador.local,
+      fecha:         borrador.fecha,
+      tipo:          borrador.tipo,
+      acompanante:   borrador.acompanante,
+      posicionAcomp: borrador.posicionAcomp,
+      auditId:       borrador.auditId,
+      catIndex:      borrador.catIndex,
+      qIndex:        borrador.qIndex,
+      answers:       borrador.answers,
+    }});
+    router.push('/auditoria/categorias');
+  }
+
+  function descartarBorrador() {
+    if (!confirm('¿Descartar la auditoría guardada? Se perderán todas las respuestas.')) return;
+    borrarBorrador();
+    setBorrador(null);
+  }
+
+  function exportar() {
+    if (!borrador) return;
+    const texto = exportarBorradorTexto(borrador);
+    if (navigator.share) {
+      navigator.share({ title: 'Auditoría', text: texto }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(texto)
+        .then(() => alert('Datos copiados al portapapeles'))
+        .catch(() => alert(texto));
+    }
+  }
+
+  // Supress unused variable warning
+  void state;
 
   const acciones = [
     { href: '/auditoria/setup', icon: '📋', label: 'Nueva Auditoría',  desc: 'Iniciar una inspección' },
@@ -30,30 +78,51 @@ function WelcomeContent() {
         <p className="text-red-200 text-xs mt-1 capitalize">{sesion?.rol}</p>
       </div>
 
-      {/* Acciones */}
-      <div className="p-4 grid grid-cols-2 gap-3">
-        {acciones.map(a => (
-          <Link
-            key={a.href}
-            href={a.href}
-            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100
-                       active:scale-95 transition-transform flex flex-col gap-2"
-          >
-            <span className="text-3xl">{a.icon}</span>
-            <div>
-              <p className="font-semibold text-gray-900 text-sm">{a.label}</p>
-              <p className="text-gray-400 text-xs">{a.desc}</p>
+      <div className="p-4 space-y-4">
+        {/* Banner de borrador */}
+        {borrador && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <p className="font-semibold text-amber-900 text-sm">📝 Tenés una auditoría sin terminar</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              {borrador.local.nombre} — {Object.values(borrador.answers).filter(a => a.respuesta).length} respuestas
+              {' · '}{new Date(borrador.ts).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </p>
+            {borrador.sinFotos && (
+              <p className="text-xs text-amber-600 mt-1">⚠️ Las fotos no se pudieron guardar</p>
+            )}
+            <div className="flex gap-2 mt-3">
+              <button onClick={continuarBorrador}
+                className="flex-1 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold">
+                Continuar
+              </button>
+              <button onClick={exportar}
+                className="px-3 py-2 border border-amber-300 text-amber-700 rounded-lg text-sm">
+                Exportar
+              </button>
+              <button onClick={descartarBorrador}
+                className="px-3 py-2 border border-amber-300 text-amber-700 rounded-lg text-sm">
+                Descartar
+              </button>
             </div>
-          </Link>
-        ))}
-      </div>
+          </div>
+        )}
 
-      {/* Cerrar sesión */}
-      <div className="px-4 mt-2">
-        <button
-          onClick={logout}
-          className="w-full text-center text-sm text-gray-400 py-3"
-        >
+        {/* Acciones */}
+        <div className="grid grid-cols-2 gap-3">
+          {acciones.map(a => (
+            <Link key={a.href} href={a.href}
+              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 active:scale-95 transition-transform flex flex-col gap-2">
+              <span className="text-3xl">{a.icon}</span>
+              <div>
+                <p className="font-semibold text-gray-900 text-sm">{a.label}</p>
+                <p className="text-gray-400 text-xs">{a.desc}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        {/* Cerrar sesión */}
+        <button onClick={logout} className="w-full text-center text-sm text-gray-400 py-3">
           Cerrar sesión
         </button>
       </div>

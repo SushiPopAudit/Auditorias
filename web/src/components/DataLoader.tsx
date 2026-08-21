@@ -1,11 +1,8 @@
 'use client';
-/**
- * DataLoader — Carga locales y preguntas al iniciar la sesión.
- * Es un componente invisible que corre en background.
- */
 import { useEffect } from 'react';
 import { useApp, useSesion } from '@/contexts/AppContext';
 import { getLocales, getPreguntas } from '@/services';
+import { getUmbralCriticos } from '@/services/config';
 
 export default function DataLoader() {
   const { dispatch } = useApp();
@@ -26,7 +23,9 @@ export default function DataLoader() {
         dispatch({ type: 'DATA_ERROR',   payload: String(e) });
         dispatch({ type: 'DATA_LOADING', payload: false });
       });
+
+    getUmbralCriticos().then(u => dispatch({ type: 'SET_UMBRAL', payload: u }));
   }, [sesion, dispatch]);
 
-  return null; // componente invisible
+  return null;
 }

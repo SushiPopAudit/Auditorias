@@ -136,3 +136,9 @@ export function fotoObligatoria(respuesta: string, imagen: string): boolean {
 export function fotoBloquea(respuesta: string): boolean {
   return esRespuestaNegativa(respuesta);
 }
+
+/** Extrae la unidad del texto de la pregunta: "Temperatura heladera (°C)" → "°C" */
+export function extraerUnidad(pregunta: string): string {
+  const m = (pregunta || '').match(/\(([^)]{1,8})\)/);
+  return m ? m[1] : '';
+}

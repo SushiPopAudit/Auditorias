@@ -1,758 +1,995 @@
-# COWORK_INSTRUCTIONS.md — Ausitoria App · Fase 3
+# COWORK_INSTRUCTIONS.md — Fase 6: Blindaje del flujo de auditoría
 **Fecha:** 2026-08-21
-**Generado por:** CoWork
-**Para ejecutar:** Claude Code en `C:\Users\marco\audit-app\web`
+**Generado por:** CoWork (auditoría completa de `app.js` vs `web/src`)
+**URL producción:** https://auditorias-eta.vercel.app/
 
 ---
 
 ## ⚠️ INSTRUCCIONES DE EJECUCIÓN
 
-Ejecutar todas las tareas en orden. Al finalizar, crear `REPORTE_FASE3.md` (Tarea 6). Esta fase cierra el ciclo completo de una auditoría y hace que toda la navegación funcione sin crashes.
+Debes ejecutar completamente todas las tareas, incluyendo todos los comandos de terminal.
+
+**Método:** varias tareas modifican archivos existentes. Para cada una: **leé el archivo completo primero**, después aplicá el cambio adaptándolo a lo que ya existe. No asumas nombres de acciones ni de campos — verificalos.
+
+Hay **una tarea manual de Marcos** (Tarea 0) que hay que hacer antes que el resto. Está marcada con 🙋.
 
 ---
 
-## Contexto: Qué se construye en Fase 3
+## Contexto: los 6 bugs críticos detectados
 
-**Fases anteriores completadas:**
-- Fase 1: Next.js + capa de datos (32 locales, 188 preguntas)
-- Fase 2: Auth, AppContext, Login, Welcome, Setup, Categorías, Preguntas (build limpio)
+Se auditó el prototipo (`app.js`, 5755 líneas) contra la implementación actual. Estos son los bugs que hacen que la app no sea usable en producción todavía:
 
-**Fase 3 — Objetivo:**
-```
-...Pregunta × N → Resumen (score + desglose) → Envío al Apps Script → Éxito
-```
-Además: páginas placeholder para Historial, Dashboard, Calendario, Gastos y Admin (evitar crashes en navegación).
-
-**Dato del reporte Fase 2:**
-- SushiPop: 5 categorías (solo Multimarca)
-- Causa: 8 categorías (Multimarca + Causa)
-- Tipos de respuesta: radio, numero, fecha, text — todos implementados
+| # | Bug | Consecuencia real |
+|---|---|---|
+| 1 | No hay borrador/autosave | Si el inspector cierra la app o recarga, **pierde las 188 respuestas y todas las fotos** |
+| 2 | Las respuestas solo se guardan al tocar "Siguiente" | Usar el menú inferior o el botón atrás del celular pierde la pregunta en curso |
+| 3 | Las preguntas `numero`/`fecha` legacy nunca setean `respuesta` | **`allComplete` nunca es true → el botón "Ver Resumen" nunca aparece → la auditoría no se puede cerrar** |
+| 4 | Input numérico usa `type="number"` | En Android con locale es-AR, tipear `36,5` **deja el campo vacío silenciosamente** |
+| 5 | `scoring.ts` no filtra por tipo de respuesta | El % que ve el inspector **difiere del que sale en el email** (headcount y texto libre contaminan el cálculo) |
+| 6 | No existe la pantalla de Incumplimientos | No hay vista para revisar los desvíos con el acompañante en el local |
+| 7 | No hay verificación de envío | Si el POST falla no hay reintento ni forma de rescatar los datos |
 
 ---
 
-## TAREA 1 — Servicio de envío al Apps Script
+# TAREA 0 — 🙋 MARCOS: agregar una acción al Apps Script
 
-El Apps Script `doPost` recibe un JSON con estas propiedades en el body:
-```json
-{
-  "auditId": "AUD_Palermo_1234567",
-  "local": "PALERMO",
-  "fecha": "2026-08-21",
-  "hora": "14:30",
-  "auditor": "Juan Pérez",
-  "auditorEmail": "juan@sushi.com",
-  "marca": "Multimarca",
-  "tipo": "Oficial",
-  "acompanante": "",
-  "respuestas": [
-    {
-      "control": "...",
-      "categoria": "...",
-      "subcategoria": "...",
-      "importancia": "Crítico",
-      "explicacion": "...",
-      "respuesta": "Cumple",
-      "observacion": "",
-      "fotoBase64": "",
-      "fotoNombre": "",
-      "rawValor": ""
+**Contexto:** el umbral de "% de críticos para reprobar" lo configura el Admin (hoy está en 10%). La app necesita leer ese valor, pero la acción `getConfig` existente requiere credenciales de Admin — un Auditor no puede llamarla.
+
+La solución es agregar una acción nueva de solo lectura. **Es aditiva: no modifica nada existente, no puede romper la app vieja.**
+
+## Pasos para Marcos:
+
+1. Abrir el Google Sheet de **Resultados Auditorías**
+2. Menú **Extensiones → Apps Script**
+3. Buscar en el código la línea que dice `if (action === 'getConfig') {`
+4. **Justo ANTES de esa línea**, pegar este bloque:
+
+```javascript
+  // Umbral de críticos SIN autenticación (solo lectura, valor no sensible)
+  // Lo necesita la app web para que el puntaje del cliente coincida con el del backend
+  if (action === 'getUmbral') {
+    try {
+      var ssUm = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var umbralPub = parseFloat(getConfigValue(ssUm, 'umbral_criticos_pct', 10)) || 10;
+      return jsonResponse({ success: true, umbral_criticos_pct: umbralPub });
+    } catch (umErr) {
+      return jsonResponse({ success: true, umbral_criticos_pct: 10 });
     }
-  ]
-}
-```
-
-### Crear `src\services\envio.ts`
-
-```typescript
-/**
- * envio.ts — Envío de auditoría completa al Apps Script
- * Replica el doPost del prototipo. Sin fotos en esta fase (Fase 4).
- */
-import type { Auditoria, Pregunta } from '@/types';
-
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL!;
-
-export interface EnvioResult {
-  ok:     boolean;
-  error?: string;
-  pct?:   number;
-  nivel?: string;
-}
-
-function horaActual(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-
-/**
- * Envía la auditoría al Apps Script y retorna el resultado.
- * El Apps Script escribe una fila por respuesta en el Sheet Resultados.
- */
-export async function enviarAuditoria(
-  auditoria: Auditoria,
-  preguntasMap: Record<string, Pregunta>,
-): Promise<EnvioResult> {
-  const hora = horaActual();
-
-  const respuestas = auditoria.respuestas.map(r => {
-    const p = preguntasMap[r.preguntaId] ?? {} as Pregunta;
-    return {
-      control:      p.control      ?? r.control ?? '',
-      categoria:    p.categoria    ?? '',
-      subcategoria: p.subcategoria ?? '',
-      importancia:  p.importancia  ?? '',
-      explicacion:  p.explicacion  ?? '',
-      respuesta:    r.respuesta    ?? '',
-      observacion:  r.observacion  ?? '',
-      fotoBase64:   '',            // Fase 4
-      fotoNombre:   '',
-      rawValor:     r.rawValor     ?? '',
-    };
-  });
-
-  const payload = {
-    auditId:      auditoria.id,
-    local:        auditoria.localNombre,
-    fecha:        auditoria.fecha,
-    hora,
-    auditor:      auditoria.auditor,
-    auditorEmail: auditoria.auditorEmail,
-    marca:        auditoria.marca,
-    tipo:         auditoria.tipo,
-    acompanante:  auditoria.acompanante ?? '',
-    respuestas,
-  };
-
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method:  'POST',
-      // Apps Script requiere text/plain para evitar preflight CORS
-      headers: { 'Content-Type': 'text/plain' },
-      body:    JSON.stringify(payload),
-      redirect: 'follow',
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      return { ok: false, error: `HTTP ${res.status}: ${txt}` };
-    }
-
-    const json = await res.json().catch(() => ({ status: 'ok' }));
-    if (json.status === 'error') return { ok: false, error: json.message ?? 'Error del servidor' };
-
-    return { ok: true, pct: json.pct, nivel: json.nivel };
-  } catch (e) {
-    return { ok: false, error: `Sin conexión: ${String(e)}` };
   }
-}
+
 ```
 
-Actualizar `src\services\index.ts`:
-```typescript
-export * from './sheets';
-export * from './scoring';
-export * from './auth';
-export * from './envio';
+5. Clic en **Guardar** (el ícono de diskette)
+6. Clic en **Implementar → Administrar implementaciones**
+7. Clic en el ícono de **lápiz** (editar) de la implementación activa
+8. En **Versión**, elegir **Nueva versión**
+9. Clic en **Implementar**
+
+**Importante:** la URL del Apps Script **no cambia** al hacer esto. No hay que actualizar nada en Vercel.
+
+10. Para verificar que funcionó, abrir esta URL en el navegador:
+
+```
+https://script.google.com/macros/s/AKfycbwtsRNwBylKb_Nis4hUXlhj5epPeF7VGgGWSZzzHNAQ7Py00nzPp6g_7D9DsyelOCLB/exec?action=getUmbral
 ```
 
-- [ ] 1.1 — `src/services/envio.ts` creado
-- [ ] 1.2 — `src/services/index.ts` actualizado
+Debe devolver: `{"success":true,"umbral_criticos_pct":10}`
+
+- [ ] 0.1 — 🙋 Marcos agregó la acción `getUmbral` y verificó que responde
+
+> **Claude Code:** si Marcos todavía no hizo esta tarea, **igual continuá con el resto**. El código de la Tarea 3 tiene un fallback a 10% si la llamada falla, así que no bloquea nada. Anotá en el reporte si quedó pendiente.
 
 ---
 
-## TAREA 2 — Actualizar tipos para el envío
+# TAREA 1 — Borrador / autosave (CRÍTICO)
 
-Agregar al final de `src\types\index.ts` (sin borrar lo existente, solo agregar):
+Sin esto, un inspector que cierre la app en medio de una auditoría de 188 preguntas pierde todo el trabajo.
+
+## 1.1 — Crear `web\src\lib\borrador.ts`
 
 ```typescript
-// ── Tipo para envío (forma aplanada que espera envio.ts) ──────
+/**
+ * borrador.ts — Persistencia de la auditoría en curso en localStorage
+ *
+ * Replica el comportamiento del prototipo:
+ *  - Se guarda en cada cambio
+ *  - Si supera 4MB, se guarda una versión sin fotos (las fotos son lo que revienta la cuota)
+ *  - Ventana de recuperación: 72 horas
+ *  - Solo se borra cuando el servidor confirma la recepción
+ */
+import type { Local, RespuestaItem } from '@/types';
 
-/** Auditoría lista para enviar al Apps Script */
-export interface Auditoria {
-  id:           string;     // auditId generado
-  fecha:        string;
-  auditor:      string;
-  auditorEmail: string;
-  localNombre:  string;
-  marca:        string;
-  tipo:         string;
-  acompanante?: string;
-  respuestas:   RespuestaItem[];
+const KEY          = 'audit_draft';
+const KEY_UNCONF   = 'audit_unconfirmed';
+const MAX_BYTES    = 4 * 1024 * 1024;      // 4MB
+const VENTANA_MS   = 72 * 60 * 60 * 1000;  // 72 horas
+
+export interface Borrador {
+  ts:            number;
+  local:         Local;
+  fecha:         string;
+  tipo:          string;
+  acompanante:   string;
+  posicionAcomp: string;
+  auditId:       string;
+  catIndex:      number;
+  qIndex:        number;
+  answers:       Record<string, RespuestaItem>;
+  sinFotos?:     boolean;   // true si se tuvo que descartar las fotos por tamaño
 }
-```
 
-- [ ] 2.1 — Tipo `Auditoria` agregado a `src/types/index.ts`
+export function guardarBorrador(b: Omit<Borrador, 'ts'>): void {
+  if (!b.local) return;
+  try {
+    const draft: Borrador = { ...b, ts: Date.now() };
+    const json = JSON.stringify(draft);
 
----
-
-## TAREA 3 — Pantalla de Resumen + Envío
-
-### Crear carpeta:
-```bash
-mkdir src\app\auditoria\resumen
-```
-
-### Crear `src\app\auditoria\resumen\page.tsx`
-
-```typescript
-'use client';
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import AuthGuard from '@/components/AuthGuard';
-import BottomNav from '@/components/BottomNav';
-import { useApp, useSesion } from '@/contexts/AppContext';
-import { calcularPuntaje } from '@/services/scoring';
-import { enviarAuditoria } from '@/services/envio';
-import type { Auditoria, Pregunta } from '@/types';
-import clsx from 'clsx';
-
-const NIVEL_BG: Record<string, string> = {
-  'Excelente':       'bg-green-500',
-  'Satisfactorio':   'bg-yellow-400',
-  'Requiere mejora': 'bg-orange-400',
-  'Deficiente':      'bg-red-500',
-  'Reprobado':       'bg-red-900',
-};
-
-function ResumenContent() {
-  const { state, dispatch } = useApp();
-  const { sesion } = useSesion();
-  const router = useRouter();
-  const { auditoria } = state;
-
-  const [enviando, setEnviando]   = useState(false);
-  const [enviado,  setEnviado]    = useState(false);
-  const [error,    setError]      = useState('');
-
-  // Todas las preguntas de la auditoría
-  const todasPreguntas = useMemo(
-    () => auditoria.categorias.flatMap(c => c.questions),
-    [auditoria.categorias]
-  );
-
-  // Mapa id → pregunta para acceso rápido
-  const preguntasMap = useMemo(
-    () => Object.fromEntries(todasPreguntas.map(p => [p.id, p])) as Record<string, Pregunta>,
-    [todasPreguntas]
-  );
-
-  // Puntaje global
-  const puntaje = useMemo(
-    () => calcularPuntaje(todasPreguntas, auditoria.answers),
-    [todasPreguntas, auditoria.answers]
-  );
-
-  // Puntaje por categoría
-  const puntajesPorCat = useMemo(() =>
-    auditoria.categorias.map(cat => ({
-      name:    cat.name,
-      puntaje: calcularPuntaje(cat.questions, auditoria.answers),
-      respondidas: cat.questions.filter(q => auditoria.answers[q.id]).length,
-      total: cat.questions.length,
-    })),
-    [auditoria.categorias, auditoria.answers]
-  );
-
-  // Incumplimientos críticos
-  const criticos = useMemo(() =>
-    todasPreguntas.filter(p => {
-      const imp = (p.importancia ?? '').toLowerCase();
-      const ans = auditoria.answers[p.id];
-      return (imp === 'crítico' || imp === 'critico') &&
-             ans?.respuesta?.toLowerCase().includes('no cumple');
-    }),
-    [todasPreguntas, auditoria.answers]
-  );
-
-  const totalRespondidas = todasPreguntas.filter(q => auditoria.answers[q.id]).length;
-
-  const handleEnviar = async () => {
-    if (!auditoria.local || !sesion) return;
-    setEnviando(true);
-    setError('');
-
-    const payload: Auditoria = {
-      id:           auditoria.auditId,
-      fecha:        auditoria.fecha,
-      auditor:      sesion.nombre,
-      auditorEmail: sesion.email,
-      localNombre:  auditoria.local.nombre,
-      marca:        auditoria.local.isCausa ? 'Causa' : 'Multimarca',
-      tipo:         auditoria.tipo,
-      acompanante:  auditoria.acompanante || undefined,
-      respuestas:   Object.values(auditoria.answers),
-    };
-
-    const result = await enviarAuditoria(payload, preguntasMap);
-    setEnviando(false);
-
-    if (!result.ok) {
-      setError(result.error ?? 'Error al enviar');
+    if (json.length <= MAX_BYTES) {
+      localStorage.setItem(KEY, json);
       return;
     }
 
-    setEnviado(true);
-    // Navegar a éxito tras 1 segundo
-    setTimeout(() => {
-      dispatch({ type: 'AUDIT_RESET' });
-      router.replace('/auditoria/exito');
-    }, 800);
-  };
+    // Demasiado grande: guardar sin fotos (el state en memoria las conserva)
+    const slim: Borrador = {
+      ...draft,
+      sinFotos: true,
+      answers: Object.fromEntries(
+        Object.entries(draft.answers).map(([k, v]) => [k, { ...v, fotos: [] }])
+      ),
+    };
+    localStorage.setItem(KEY, JSON.stringify(slim));
+  } catch {
+    // Cuota excedida o localStorage no disponible — no romper la app
+  }
+}
 
-  if (!auditoria.local) {
-    router.replace('/auditoria/setup');
+export function cargarBorrador(): Borrador | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const b = JSON.parse(raw) as Borrador;
+    if (!b.local || !b.auditId) return null;
+    if (Date.now() - b.ts > VENTANA_MS) { localStorage.removeItem(KEY); return null; }
+    return b;
+  } catch {
     return null;
   }
+}
+
+export function borrarBorrador(): void {
+  try {
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(KEY_UNCONF);
+  } catch {}
+}
+
+/** Marca una auditoría como enviada pero sin confirmación del servidor */
+export function marcarSinConfirmar(auditId: string): void {
+  try { localStorage.setItem(KEY_UNCONF, auditId); } catch {}
+}
+
+export function getSinConfirmar(): string | null {
+  try { return localStorage.getItem(KEY_UNCONF); } catch { return null; }
+}
+
+export function limpiarSinConfirmar(): void {
+  try { localStorage.removeItem(KEY_UNCONF); } catch {}
+}
+
+/** Texto plano de rescate, para que el inspector pueda copiar los datos si todo falla */
+export function exportarBorradorTexto(b: Borrador): string {
+  const lineas: string[] = [
+    `AUDITORÍA — ${b.local.nombre}`,
+    `Fecha: ${b.fecha}   Tipo: ${b.tipo}`,
+    `Acompañante: ${b.acompanante || '—'} (${b.posicionAcomp || '—'})`,
+    `ID: ${b.auditId}`,
+    `Guardado: ${new Date(b.ts).toLocaleString('es-AR')}`,
+    '',
+    '--- RESPUESTAS ---',
+  ];
+  Object.values(b.answers).forEach(a => {
+    if (!a.respuesta) return;
+    lineas.push(`${a.control}: ${a.respuesta}${a.observacion ? ` | Obs: ${a.observacion}` : ''}`);
+  });
+  return lineas.join('\n');
+}
+```
+
+## 1.2 — Persistir automáticamente en `AppContext.tsx`
+
+Agregar dos cosas al `AppProvider`:
+
+**A) Una acción `AUDIT_RESTORE` al reducer.** Agregar al type `Action`:
+
+```typescript
+| { type: 'AUDIT_RESTORE'; payload: Partial<AuditoriaState> & { local: Local } }
+```
+
+Y al switch:
+
+```typescript
+case 'AUDIT_RESTORE': {
+  const { local } = action.payload;
+  // Reconstruir las categorías filtrando por marca (igual que AUDIT_SET_LOCAL)
+  const filtradas = state.preguntas.filter(p =>
+    p.marca === 'Multimarca' || (local.isCausa ? p.marca === 'Causa' : false)
+  );
+  const categorias = agruparPorCategoria(filtradas);
+  return {
+    ...state,
+    auditoria: { ...auditInicial, ...action.payload, categorias },
+  };
+}
+```
+
+**B) Un `useEffect` que guarda en cada cambio.** Agregar dentro de `AppProvider`, después del useEffect de la sesión:
+
+```typescript
+// Autosave del borrador en cada cambio de la auditoría
+useEffect(() => {
+  const a = state.auditoria;
+  if (!a.local || !a.auditId) return;
+  guardarBorrador({
+    local:         a.local,
+    fecha:         a.fecha,
+    tipo:          a.tipo,
+    acompanante:   a.acompanante,
+    posicionAcomp: a.posicionAcomp,
+    auditId:       a.auditId,
+    catIndex:      a.catIndex,
+    qIndex:        a.qIndex,
+    answers:       a.answers,
+  });
+}, [state.auditoria]);
+```
+
+Importar `guardarBorrador` de `@/lib/borrador`.
+
+**Nota:** las `categorias` NO se guardan (son grandes y se reconstruyen desde `preguntas`). Por eso `AUDIT_RESTORE` las regenera.
+
+## 1.3 — Banner de recuperación en `/welcome`
+
+En `web\src\app\welcome\page.tsx`, agregar arriba de los cards:
+
+```typescript
+const [borrador, setBorrador] = useState<Borrador | null>(null);
+const { state, dispatch } = useApp();
+
+useEffect(() => {
+  setBorrador(cargarBorrador());
+}, []);
+
+function continuarBorrador() {
+  if (!borrador) return;
+  dispatch({ type: 'AUDIT_RESTORE', payload: {
+    local:         borrador.local,
+    fecha:         borrador.fecha,
+    tipo:          borrador.tipo,
+    acompanante:   borrador.acompanante,
+    posicionAcomp: borrador.posicionAcomp,
+    auditId:       borrador.auditId,
+    catIndex:      borrador.catIndex,
+    qIndex:        borrador.qIndex,
+    answers:       borrador.answers,
+  }});
+  router.push('/auditoria/categorias');
+}
+
+function descartarBorrador() {
+  if (!confirm('¿Descartar la auditoría guardada? Se perderán todas las respuestas.')) return;
+  borrarBorrador();
+  setBorrador(null);
+}
+
+function exportar() {
+  if (!borrador) return;
+  const texto = exportarBorradorTexto(borrador);
+  if (navigator.share) {
+    navigator.share({ title: 'Auditoría', text: texto }).catch(() => {});
+  } else {
+    navigator.clipboard?.writeText(texto)
+      .then(() => alert('Datos copiados al portapapeles'))
+      .catch(() => alert(texto));
+  }
+}
+```
+
+Y el banner (solo si `borrador` existe):
+
+```typescript
+{borrador && (
+  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
+    <p className="font-semibold text-amber-900 text-sm">
+      📝 Tenés una auditoría sin terminar
+    </p>
+    <p className="text-xs text-amber-700 mt-0.5">
+      {borrador.local.nombre} — {Object.values(borrador.answers).filter(a => a.respuesta).length} respuestas
+      {' · '}{new Date(borrador.ts).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+    </p>
+    {borrador.sinFotos && (
+      <p className="text-xs text-amber-600 mt-1">⚠️ Las fotos no se pudieron guardar</p>
+    )}
+    <div className="flex gap-2 mt-3">
+      <button onClick={continuarBorrador}
+        className="flex-1 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold">
+        Continuar
+      </button>
+      <button onClick={exportar}
+        className="px-3 py-2 border border-amber-300 text-amber-700 rounded-lg text-sm">
+        Exportar
+      </button>
+      <button onClick={descartarBorrador}
+        className="px-3 py-2 border border-amber-300 text-amber-700 rounded-lg text-sm">
+        Descartar
+      </button>
+    </div>
+  </div>
+)}
+```
+
+## 1.4 — Borrar el borrador solo al confirmar el envío
+
+En `resumen/page.tsx`, después de un envío exitoso, llamar `borrarBorrador()` **antes** del `AUDIT_RESET`.
+
+- [ ] 1.1 — `lib/borrador.ts` creado
+- [ ] 1.2 — `AUDIT_RESTORE` + autosave en AppContext
+- [ ] 1.3 — Banner de recuperación en welcome
+- [ ] 1.4 — `borrarBorrador()` al confirmar envío
+
+---
+
+# TAREA 2 — Guardado inmediato de la respuesta en curso (CRÍTICO)
+
+Hoy `guardarRespuesta()` solo se llama al navegar. Si el inspector toca el menú inferior o el botón atrás del celular, pierde lo que cargó en esa pregunta.
+
+En `web\src\app\auditoria\pregunta\page.tsx`, agregar un `useEffect` con debounce que despacha automáticamente:
+
+```typescript
+// Guardado automático: cada cambio se persiste al context (y de ahí al borrador)
+useEffect(() => {
+  const t = setTimeout(() => {
+    if (!pregunta) return;
+    // No guardar si no hay nada cargado todavía
+    const vacio = !respuesta && !observacion && !rawValor && !fechaRaw
+      && !fotos.length && !Object.keys(headcount).length;
+    if (vacio) return;
+    dispatch({ type: 'AUDIT_SET_ANSWER', payload: { id: pregunta.id, item: buildItem() } });
+  }, 400);
+  return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [respuesta, observacion, rawValor, fechaRaw, fotos, headcount, pregunta?.id]);
+```
+
+Adaptar los nombres de las variables de estado local a los que ya existen en el archivo.
+
+- [ ] 2.1 — Autosave con debounce en la pantalla de pregunta
+
+---
+
+# TAREA 3 — Alinear el puntaje con el backend (CRÍTICO)
+
+El puntaje que calcula la app **debe dar exactamente el mismo número** que el que recalcula el Apps Script, porque el email y el PDF los genera el backend.
+
+## 3.1 — Servicio de configuración
+
+Crear `web\src\services\config.ts`:
+
+```typescript
+/**
+ * config.ts — Lee el umbral de críticos que configura el Admin
+ * El valor vive en la hoja `Config` del Sheet de Resultados, clave `umbral_criticos_pct`
+ */
+const URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL ?? '';
+
+export const UMBRAL_DEFAULT = 10;
+
+let cache: number | null = null;
+
+export async function getUmbralCriticos(): Promise<number> {
+  if (cache !== null) return cache;
+  try {
+    const res = await fetch(`${URL}?action=getUmbral`, { redirect: 'follow' });
+    const data = await res.json();
+    const u = parseFloat(String(data.umbral_criticos_pct));
+    cache = (!isNaN(u) && u > 0) ? u : UMBRAL_DEFAULT;
+  } catch {
+    cache = UMBRAL_DEFAULT;
+  }
+  return cache;
+}
+```
+
+## 3.2 — Reemplazar `scoring.ts` con la lógica del backend
+
+Esta es una **réplica literal de `recalcularPuntaje`** del Apps Script (líneas 970-1008). Los cambios respecto de la versión actual están marcados:
+
+```typescript
+/**
+ * scoring.ts — Réplica EXACTA de `recalcularPuntaje` del Apps Script
+ * (apps-script.gs líneas 970-1008)
+ *
+ * Es crítico que coincida: el email y el PDF los genera el backend con esa función.
+ * Si el cliente calcula distinto, el inspector ve un número y el franquiciado otro.
+ */
+import type { Pregunta, RespuestaItem, Puntaje } from '@/types';
+import { UMBRAL_DEFAULT } from './config';
+
+const MAX_PTS:     Record<string, number> = { critico: 4, alta: 3, media: 2, baja: 1 };
+const PARCIAL_PTS: Record<string, number> = { critico: 2, alta: 1, media: 1, baja: 0 };
+
+/** Normaliza la importancia quitando acentos — igual que normImp() del backend */
+function normImp(s: string): string {
+  return String(s || '').toLowerCase().trim()
+    .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
+    .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u');
+}
+
+export function calcularPuntaje(
+  preguntas: Pregunta[],
+  respuestas: Record<string, RespuestaItem>,
+  umbralCriticosPct: number = UMBRAL_DEFAULT,
+): Puntaje {
+  let obtenido = 0, posible = 0;
+  let criticosTotal = 0, criticosFallidos = 0;
+
+  preguntas.forEach(q => {
+    const imp = normImp(q.importancia);
+    const ans = respuestas[q.id];
+    const res = (ans?.respuesta || '').toLowerCase().trim();
+
+    const max = MAX_PTS[imp];
+    if (!max) return;
+    if (!res || res.includes('aplica')) return;
+
+    // ── CAMBIO CLAVE: este filtro faltaba ──
+    // Excluye headcount ('N/A'), texto libre y cualquier respuesta que no sea
+    // Cumple / No Cumple / Parcial. Es lo que hace el backend.
+    if (!res.includes('cumple') && !res.includes('parcial')) return;
+
+    posible += max;
+
+    if (res === 'cumple') {
+      obtenido += max;
+    } else if (res.includes('parcial')) {
+      obtenido += PARCIAL_PTS[imp] || 0;
+    }
+
+    // ── CAMBIO CLAVE: reprobado por umbral, no por "cualquier crítico" ──
+    if (imp === 'critico') {
+      criticosTotal++;
+      if (res.includes('no cumple') || res === 'nocumple') criticosFallidos++;
+    }
+  });
+
+  const pct = posible > 0 ? Math.round((obtenido / posible) * 100) : 0;
+  const reprobado = criticosTotal > 0
+    && (criticosFallidos / criticosTotal * 100) >= umbralCriticosPct;
+
+  let nivel: string, nivelClass: string, nivelEmoji: string;
+  if (reprobado)      { nivel = 'Reprobado';     nivelClass = 'reprobado';     nivelEmoji = '⛔'; }
+  else if (pct >= 90) { nivel = 'Excelente';     nivelClass = 'excelente';     nivelEmoji = '🟢'; }
+  else if (pct >= 75) { nivel = 'Satisfactorio'; nivelClass = 'satisfactorio'; nivelEmoji = '🟡'; }
+  else if (pct >= 60) { nivel = 'A mejorar';     nivelClass = 'mejora';        nivelEmoji = '🟠'; }
+  else                { nivel = 'Deficiente';    nivelClass = 'deficiente';    nivelEmoji = '🔴'; }
+
+  return {
+    obtenido, posible, pct, reprobado,
+    nivel, nivelClass, nivelEmoji,
+    criticosTotal, criticosFallidos,
+  };
+}
+```
+
+**Ojo con dos detalles:**
+- El nivel del tramo 60-74 ahora es **`'A mejorar'`** (era `'Requiere mejora'`). Es el texto que usa el backend.
+- `MAX_PTS` ya no necesita la clave `crítico` con acento porque `normImp` lo normaliza.
+
+## 3.3 — Actualizar el tipo `Puntaje`
+
+En `types/index.ts`, agregar los dos campos nuevos y ampliar `nivel` a `string`:
+
+```typescript
+export interface Puntaje {
+  obtenido:         number;
+  posible:          number;
+  pct:              number;
+  reprobado:        boolean;
+  nivel:            string;
+  nivelClass:       string;
+  nivelEmoji:       string;
+  criticosTotal:    number;
+  criticosFallidos: number;
+}
+```
+
+## 3.4 — Cargar el umbral y pasarlo a `calcularPuntaje`
+
+En **cada** lugar donde se llama `calcularPuntaje` (categorías, resumen, incumplimientos), hay que pasar el umbral. La forma más limpia: cargarlo una vez en el `DataLoader` y guardarlo en el AppContext.
+
+En `AppContext.tsx`:
+- Agregar `umbralCriticos: number` a `AppState`, inicializado en `10`
+- Agregar la acción `{ type: 'SET_UMBRAL'; payload: number }`
+
+En `components\DataLoader.tsx`, junto a la carga de locales y preguntas:
+
+```typescript
+getUmbralCriticos().then(u => dispatch({ type: 'SET_UMBRAL', payload: u }));
+```
+
+Y en las pantallas: `calcularPuntaje(preguntas, answers, state.umbralCriticos)`.
+
+Actualizar también los mapas de color/nivel donde diga `'Requiere mejora'` → `'A mejorar'`.
+
+- [ ] 3.1 — `services/config.ts` creado
+- [ ] 3.2 — `scoring.ts` reemplazado (filtro + umbral)
+- [ ] 3.3 — Tipo `Puntaje` ampliado
+- [ ] 3.4 — Umbral cargado en el context y pasado a todas las llamadas
+
+---
+
+# TAREA 4 — Desbloquear las preguntas numero/fecha legacy (CRÍTICO)
+
+**Este es el bug que impide cerrar una auditoría.** Los inputs de los caminos `number` y `fecha` sin validación en la columna 10 nunca setean `respuesta`, así que `allComplete` nunca se cumple.
+
+En `web\src\app\auditoria\pregunta\page.tsx`:
+
+## 4.1 — Camino `number` legacy: el valor ES la respuesta
+
+```typescript
+// ANTES: solo seteaba rawValor
+onChange={e => setRawValor(e.target.value)}
+
+// DESPUÉS: normalizar coma → punto y usar el valor como respuesta
+onChange={e => {
+  const v = e.target.value;
+  setRawValor(v);
+  setRespuesta(v.replace(/,/g, '.'));   // el valor crudo ES la respuesta
+}}
+```
+
+## 4.2 — Camino `fecha` legacy
+
+```typescript
+onChange={e => {
+  const v = e.target.value;
+  setFechaRaw(v);
+  setRespuesta(v);   // la fecha cruda ES la respuesta
+}}
+```
+
+## 4.3 — Camino `numero_auto`: fallback cuando no se puede evaluar
+
+```typescript
+// ANTES: dejaba respuesta vacía si evaluarNumero devolvía null
+setRespuesta(verd ?? '');
+
+// DESPUÉS: si no se puede evaluar, guardar el valor crudo (igual que el prototipo)
+setRespuesta(verd ?? v);
+```
+
+## 4.4 — Camino `text`: el texto ES la respuesta
+
+Verificar que el textarea de tipo `text` también setee `respuesta` con el contenido. Si no, corregirlo.
+
+- [ ] 4.1 — `number` legacy setea respuesta
+- [ ] 4.2 — `fecha` legacy setea respuesta
+- [ ] 4.3 — `numero_auto` con fallback al valor crudo
+- [ ] 4.4 — `text` setea respuesta
+
+---
+
+# TAREA 5 — Input numérico usable en celular argentino (CRÍTICO)
+
+`type="number"` con locale es-AR: si el inspector tipea `36,5`, el browser devuelve `''` y el dato se pierde sin ningún aviso.
+
+## 5.1 — Cambiar ambos inputs numéricos
+
+```typescript
+<input
+  type="text"                     {/* era type="number" */}
+  inputMode="decimal"
+  pattern="[0-9.,-]*"
+  autoComplete="off"
+  spellCheck={false}
+  value={rawValor}
+  onChange={e => { /* ver Tarea 4 */ }}
+  placeholder={`Ej: ${placeholderEjemplo}`}
+  className="..."
+/>
+```
+
+Para el placeholder, usar un ejemplo realista: `Ej: 36,5` en el legacy y `Ej: -2,5` en el validado (son los del prototipo).
+
+## 5.2 — Normalizar la coma antes de evaluar
+
+En el camino `numero_auto`, antes de llamar `evaluarNumero`:
+
+```typescript
+const normalizado = v.replace(/,/g, '.');
+const verd = normalizado ? evaluarNumero(normalizado, regla) : null;
+```
+
+`evaluarNumero` ya reemplaza la primera coma internamente, pero conviene normalizar antes para valores con separador de miles.
+
+## 5.3 — Mostrar la unidad de medida
+
+Agregar a `validaciones.ts`:
+
+```typescript
+/** Extrae la unidad del texto de la pregunta: "Temperatura heladera (°C)" → "°C" */
+export function extraerUnidad(pregunta: string): string {
+  const m = (pregunta || '').match(/\(([^)]{1,8})\)/);
+  return m ? m[1] : '';
+}
+```
+
+Y renderizarla como sufijo del input:
+
+```typescript
+<div className="relative">
+  <input ... className="w-full pr-12 ..." />
+  {unidad && (
+    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">
+      {unidad}
+    </span>
+  )}
+</div>
+```
+
+Aplicar en **ambos** caminos numéricos.
+
+- [ ] 5.1 — Inputs numéricos aceptan coma decimal
+- [ ] 5.2 — Normalización de coma antes de evaluar
+- [ ] 5.3 — Unidad de medida visible
+
+---
+
+# TAREA 6 — Pantalla de Incumplimientos (CRÍTICO)
+
+Es la vista que el inspector usa para repasar los desvíos con el acompañante antes de irse del local. Muestra **todos** los incumplimientos (no solo los críticos) agrupados por categoría, con las fotos.
+
+## 6.1 — Crear `web\src\app\auditoria\incumplimientos\page.tsx`
+
+```typescript
+'use client';
+import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
+import { useApp } from '@/contexts/AppContext';
+import { esRespuestaNegativa } from '@/services/validaciones';
+import clsx from 'clsx';
+
+const IMP_STYLE: Record<string, string> = {
+  critico:  'bg-red-100 text-red-800',
+  crítico:  'bg-red-100 text-red-800',
+  alta:     'bg-orange-100 text-orange-800',
+  media:    'bg-yellow-100 text-yellow-800',
+  baja:     'bg-gray-100 text-gray-600',
+};
+
+function IncumplimientosContent() {
+  const { state } = useApp();
+  const router = useRouter();
+  const { categorias, answers } = state.auditoria;
+
+  // Agrupar incumplimientos por categoría
+  const grupos = useMemo(() => {
+    return categorias
+      .map(cat => ({
+        nombre: cat.name,
+        items: cat.questions
+          .map(q => ({ q, ans: answers[q.id] }))
+          .filter(({ ans }) => ans && esRespuestaNegativa(ans.respuesta)),
+      }))
+      .filter(g => g.items.length > 0);
+  }, [categorias, answers]);
+
+  const total = grupos.reduce((s, g) => s + g.items.length, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
+    <div className="min-h-screen bg-gray-50 pb-8">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-4">
+      <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-4 sticky top-0 z-10">
         <button onClick={() => router.back()} className="text-red-600 text-sm mb-2">
-          ← Volver a categorías
+          ← Volver
         </button>
-        <h1 className="text-xl font-bold text-gray-900">Resumen de Auditoría</h1>
-        <p className="text-sm text-gray-400">
-          {auditoria.local.nombre} · {auditoria.fecha}
+        <h1 className="text-xl font-bold text-gray-900">
+          Incumplimientos ({total})
+        </h1>
+        <p className="text-sm text-gray-400 mt-0.5">
+          Revisá estos puntos con el acompañante.
         </p>
       </div>
 
-      <div className="px-4 py-4 space-y-4">
-
-        {/* Score principal */}
-        <div className={clsx(
-          'rounded-2xl p-6 text-white text-center',
-          NIVEL_BG[puntaje.nivel] ?? 'bg-gray-500'
-        )}>
-          <p className="text-5xl font-bold mb-1">{puntaje.pct}%</p>
-          <p className="text-xl font-semibold mb-1">{puntaje.nivelEmoji} {puntaje.nivel}</p>
-          <p className="text-sm opacity-80">
-            {puntaje.obtenido} / {puntaje.posible} puntos · {totalRespondidas}/{todasPreguntas.length} preguntas
+      {total === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+          <span className="text-5xl mb-3">✅</span>
+          <p className="text-gray-600 font-medium">Sin incumplimientos</p>
+          <p className="text-gray-400 text-sm mt-1">
+            Todos los controles respondidos están en cumplimiento.
           </p>
         </div>
+      )}
 
-        {/* Advertencia reprobado */}
-        {puntaje.reprobado && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <p className="font-semibold text-red-700 mb-1">⛔ Auditoría Reprobada</p>
-            <p className="text-sm text-red-600">
-              {criticos.length} punto{criticos.length !== 1 ? 's' : ''} crítico{criticos.length !== 1 ? 's' : ''} con "No Cumple".
-            </p>
-          </div>
-        )}
-
-        {/* Incumplimientos críticos */}
-        {criticos.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <p className="font-semibold text-gray-900 text-sm">Incumplimientos Críticos</p>
+      <div className="px-4 py-4 space-y-4">
+        {grupos.map(g => (
+          <div key={g.nombre} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 bg-red-50 border-b border-red-100">
+              <p className="font-semibold text-sm text-red-900">
+                {g.nombre} <span className="font-normal text-red-600">({g.items.length})</span>
+              </p>
             </div>
             <ul className="divide-y divide-gray-50">
-              {criticos.map(p => (
-                <li key={p.id} className="px-4 py-3">
-                  <p className="text-sm font-medium text-red-700">{p.control}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{p.categoria} · {p.subcategoria}</p>
-                  {auditoria.answers[p.id]?.observacion && (
-                    <p className="text-xs text-gray-500 mt-1 italic">
-                      "{auditoria.answers[p.id].observacion}"
-                    </p>
-                  )}
-                </li>
-              ))}
+              {g.items.map(({ q, ans }) => {
+                const imp = (q.importancia || '').toLowerCase().trim();
+                const esParcial = (ans.respuesta || '').toLowerCase().includes('parcial');
+                return (
+                  <li
+                    key={q.id}
+                    className={clsx(
+                      'px-4 py-3 border-l-4',
+                      esParcial ? 'border-amber-400' : 'border-red-500',
+                    )}
+                  >
+                    {q.subcategoria && (
+                      <p className="text-xs text-gray-400">{q.subcategoria}</p>
+                    )}
+                    <p className="text-sm font-medium text-gray-900 mt-0.5">{q.control}</p>
+
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className={clsx(
+                        'text-xs font-semibold px-2 py-0.5 rounded-full',
+                        esParcial ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800',
+                      )}>
+                        {ans.respuesta}
+                      </span>
+                      {imp && (
+                        <span className={clsx(
+                          'text-xs font-medium px-2 py-0.5 rounded-full',
+                          IMP_STYLE[imp] ?? 'bg-gray-100 text-gray-600',
+                        )}>
+                          {q.importancia}
+                        </span>
+                      )}
+                      {ans.rawValor && (
+                        <span className="text-xs text-gray-400">({ans.rawValor})</span>
+                      )}
+                    </div>
+
+                    {ans.observacion && (
+                      <p className="text-xs text-gray-500 italic mt-1.5">
+                        &ldquo;{ans.observacion}&rdquo;
+                      </p>
+                    )}
+
+                    {!!ans.fotos?.length && (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        {ans.fotos.map((f, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={i}
+                            src={f.dataURL}
+                            alt={`foto ${i + 1}`}
+                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
-        )}
-
-        {/* Desglose por categoría */}
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <p className="font-semibold text-gray-900 text-sm">Por Categoría</p>
-          </div>
-          <ul className="divide-y divide-gray-50">
-            {puntajesPorCat.map(cat => (
-              <li key={cat.name} className="px-4 py-3">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-medium text-gray-900">{cat.name}</p>
-                  <span className={clsx('text-sm font-bold',
-                    cat.puntaje.reprobado ? 'text-red-600' :
-                    cat.puntaje.pct >= 75 ? 'text-green-600' : 'text-orange-500'
-                  )}>
-                    {cat.respondidas === 0 ? '—' : `${cat.puntaje.pct}%`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={clsx('h-full rounded-full',
-                        cat.puntaje.reprobado ? 'bg-red-500' :
-                        cat.puntaje.pct >= 75 ? 'bg-green-400' : 'bg-orange-400'
-                      )}
-                      style={{ width: `${cat.respondidas === 0 ? 0 : cat.puntaje.pct}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-400">
-                    {cat.respondidas}/{cat.total}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Info de auditoría */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 text-sm text-gray-600 space-y-1">
-          <p><span className="text-gray-400">Auditor:</span> {sesion?.nombre}</p>
-          <p><span className="text-gray-400">Fecha:</span> {auditoria.fecha}</p>
-          <p><span className="text-gray-400">Tipo:</span> {auditoria.tipo}</p>
-          <p><span className="text-gray-400">ID:</span> <span className="font-mono text-xs">{auditoria.auditId}</span></p>
-        </div>
-
-        {/* Error de envío */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-            {error}
-          </div>
-        )}
+        ))}
       </div>
-
-      {/* Botón de envío — fijo en el fondo */}
-      <div className="fixed bottom-16 left-0 right-0 px-4 pb-2 bg-gradient-to-t from-gray-50 pt-4">
-        <button
-          onClick={handleEnviar}
-          disabled={enviando || enviado || totalRespondidas === 0}
-          className={clsx(
-            'w-full py-4 rounded-2xl font-bold text-white text-base transition-all active:scale-95',
-            enviado                  ? 'bg-green-500' :
-            enviando                 ? 'bg-gray-400' :
-            totalRespondidas === 0   ? 'bg-gray-300' :
-                                       'bg-red-600'
-          )}
-        >
-          {enviado   ? '✓ Enviado correctamente' :
-           enviando  ? 'Enviando...' :
-                       `Enviar Auditoría (${totalRespondidas} respuestas)`}
-        </button>
-      </div>
-
-      <BottomNav />
     </div>
   );
 }
 
-export default function ResumenPage() {
-  return <AuthGuard><ResumenContent /></AuthGuard>;
+export default function IncumplimientosPage() {
+  return <AuthGuard><IncumplimientosContent /></AuthGuard>;
 }
 ```
 
-- [ ] 3.1 — `src/app/auditoria/resumen/page.tsx` creado
+## 6.2 — Botones de entrada
+
+En `categorias/page.tsx` y en `resumen/page.tsx`, agregar el botón cuando haya incumplimientos:
+
+```typescript
+const incumplCount = useMemo(() =>
+  Object.values(answers).filter(a => esRespuestaNegativa(a.respuesta)).length,
+  [answers]);
+
+{incumplCount > 0 && (
+  <button
+    onClick={() => router.push('/auditoria/incumplimientos')}
+    className="w-full py-3 rounded-xl border border-red-200 text-red-600 text-sm font-semibold mb-2"
+  >
+    ⚠ Ver incumplimientos ({incumplCount})
+  </button>
+)}
+```
+
+En el resumen, el texto del prototipo es: `⚠ Revisar incumplimientos con acompañante (N)`.
+
+- [ ] 6.1 — Pantalla de incumplimientos creada
+- [ ] 6.2 — Botones de entrada en categorías y resumen
 
 ---
 
-## TAREA 4 — Pantalla de Éxito
+# TAREA 7 — Verificación de envío y rescate (CRÍTICO)
 
-### Crear carpeta y archivo:
-```bash
-mkdir src\app\auditoria\exito
-```
+Si el POST falla o la respuesta no llega, hoy no hay red de seguridad.
 
-### Crear `src\app\auditoria\exito\page.tsx`
+## 7.1 — Agregar verificación a `envio.ts`
+
+El Apps Script tiene una acción `verificarAudit&auditId=...` que devuelve `{found: true|false}`. Agregar al final de `envio.ts`:
 
 ```typescript
-'use client';
-import { useRouter } from 'next/navigation';
-import BottomNav from '@/components/BottomNav';
-import AuthGuard from '@/components/AuthGuard';
+/** Verifica si una auditoría llegó al servidor. Reintenta hasta 4 veces cada 6s. */
+export async function verificarEnvio(auditId: string, intentos = 4): Promise<boolean> {
+  for (let i = 0; i < intentos; i++) {
+    try {
+      const res = await fetch(`${URL}?action=verificarAudit&auditId=${encodeURIComponent(auditId)}`, {
+        redirect: 'follow',
+      });
+      const data = await res.json();
+      if (data.found) return true;
+    } catch {
+      // seguir intentando
+    }
+    if (i < intentos - 1) await new Promise(r => setTimeout(r, 6000));
+  }
+  return false;
+}
+```
 
-function ExitoContent() {
-  const router = useRouter();
+## 7.2 — Usar la verificación en el resumen
 
-  return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 text-center pb-24">
-      <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6">
-        <span className="text-5xl">✅</span>
-      </div>
+En `resumen/page.tsx`, cambiar la lógica de envío:
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">
-        ¡Auditoría enviada!
-      </h1>
-      <p className="text-gray-500 mb-8 max-w-xs">
-        Los resultados fueron guardados correctamente en el sistema.
-      </p>
+```typescript
+async function handleEnviar() {
+  setEnviando(true);
+  setError('');
 
-      <div className="w-full max-w-xs space-y-3">
-        <button
-          onClick={() => router.replace('/welcome')}
-          className="w-full bg-red-600 text-white py-3.5 rounded-xl font-semibold active:scale-95 transition-transform"
-        >
-          Volver al inicio
-        </button>
-        <button
-          onClick={() => router.replace('/auditoria/setup')}
-          className="w-full bg-gray-100 text-gray-700 py-3.5 rounded-xl font-semibold active:scale-95 transition-transform"
-        >
-          Nueva Auditoría
-        </button>
-      </div>
+  const result = await enviarAuditoria({ /* ... */ });
 
-      <BottomNav />
+  if (result.ok) {
+    // Éxito confirmado por el servidor
+    borrarBorrador();
+    sessionStorage.setItem('emailStatus', result.emailStatus ?? '');
+    dispatch({ type: 'AUDIT_RESET' });
+    router.replace('/auditoria/exito');
+    return;
+  }
+
+  // El POST falló: verificar si llegó igual (puede ser un fallo de la respuesta, no del guardado)
+  setVerificando(true);
+  const llego = await verificarEnvio(auditId);
+  setVerificando(false);
+
+  if (llego) {
+    borrarBorrador();
+    sessionStorage.setItem('emailStatus', 'enviado (confirmado por verificación)');
+    dispatch({ type: 'AUDIT_RESET' });
+    router.replace('/auditoria/exito');
+    return;
+  }
+
+  // No llegó: marcar como sin confirmar y NO borrar el borrador
+  marcarSinConfirmar(auditId);
+  setError(result.error ?? 'No se pudo confirmar el envío.');
+  setEnviando(false);
+}
+```
+
+Mostrar un mensaje mientras verifica: `Verificando si la auditoría llegó...`
+
+## 7.3 — Bloque de rescate cuando el envío falla
+
+Si `error` está seteado, mostrar debajo:
+
+```typescript
+{error && (
+  <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mt-3">
+    <p className="text-sm font-semibold text-red-900">No se pudo confirmar el envío</p>
+    <p className="text-xs text-red-700 mt-1">{error}</p>
+    <p className="text-xs text-gray-600 mt-2">
+      Tus respuestas están guardadas. Podés reintentar cuando tengas señal,
+      o exportar los datos para no perderlos.
+    </p>
+    <div className="flex gap-2 mt-3">
+      <button onClick={handleEnviar}
+        className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold">
+        Reintentar
+      </button>
+      <button onClick={exportarDatos}
+        className="px-3 py-2 border border-red-300 text-red-700 rounded-lg text-sm">
+        Exportar datos
+      </button>
     </div>
-  );
-}
-
-export default function ExitoPage() {
-  return <AuthGuard><ExitoContent /></AuthGuard>;
-}
+  </div>
+)}
 ```
 
-- [ ] 4.1 — `src/app/auditoria/exito/page.tsx` creado
+`exportarDatos` usa `exportarBorradorTexto` + `navigator.share` con fallback a clipboard (igual que en welcome).
+
+- [ ] 7.1 — `verificarEnvio` en envio.ts
+- [ ] 7.2 — Verificación integrada en el flujo de envío
+- [ ] 7.3 — Bloque de rescate con Reintentar / Exportar
 
 ---
 
-## TAREA 5 — Agregar botón "Resumen" en página de Categorías
+# TAREA 8 — Build, commit y push
 
-Editar `src\app\auditoria\categorias\page.tsx`. Buscar el cierre del `<div className="mx-4 mt-4 ...">` que muestra el score parcial. Reemplazar ESE bloque completo (el `{(() => { ... })()}`) con esta versión que también incluye el botón de resumen:
-
-```typescript
-        {/* Score parcial + acceso a resumen */}
-        {(() => {
-          const todasPreguntas = auditoria.categorias.flatMap(c => c.questions);
-          const totalResp = todasPreguntas.filter(q => auditoria.answers[q.id]).length;
-          if (totalResp === 0) return null;
-          const puntaje = calcularPuntaje(todasPreguntas, auditoria.answers);
-          return (
-            <div className="mx-4 mt-4 space-y-3">
-              <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Progreso general</p>
-                    <p className="text-2xl font-bold text-gray-900">{puntaje.pct}%</p>
-                    <p className="text-xs text-gray-400">{totalResp}/{todasPreguntas.length} preguntas</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-2xl">{puntaje.nivelEmoji}</span>
-                    <p className={clsx('text-sm font-semibold mt-0.5',
-                      puntaje.reprobado ? 'text-red-600' : 'text-gray-700'
-                    )}>{puntaje.nivel}</p>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => router.push('/auditoria/resumen')}
-                className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold active:scale-95 transition-transform"
-              >
-                Ver Resumen y Enviar
-              </button>
-            </div>
-          );
-        })()}
-```
-
-- [ ] 5.1 — Botón "Ver Resumen y Enviar" agregado en `categorias/page.tsx`
-
----
-
-## TAREA 6 — Páginas placeholder (evitar crashes de navegación)
-
-Crear estos archivos para que el BottomNav no rompa al navegar. Cada uno es una página simple que dice "Próximamente".
-
-### Crear `src\app\historial\page.tsx`
-```typescript
-'use client';
-import AuthGuard from '@/components/AuthGuard';
-import BottomNav from '@/components/BottomNav';
-
-export default function HistorialPage() {
-  return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center pb-24 text-center px-6">
-        <span className="text-5xl mb-4">📜</span>
-        <h1 className="text-xl font-bold text-gray-900">Historial</h1>
-        <p className="text-gray-400 text-sm mt-2">Próximamente — Fase 4</p>
-        <BottomNav />
-      </div>
-    </AuthGuard>
-  );
-}
-```
-
-### Crear `src\app\dashboard\page.tsx`
-```typescript
-'use client';
-import AuthGuard from '@/components/AuthGuard';
-import BottomNav from '@/components/BottomNav';
-
-export default function DashboardPage() {
-  return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center pb-24 text-center px-6">
-        <span className="text-5xl mb-4">📊</span>
-        <h1 className="text-xl font-bold text-gray-900">Reportes</h1>
-        <p className="text-gray-400 text-sm mt-2">Próximamente — Fase 4</p>
-        <BottomNav />
-      </div>
-    </AuthGuard>
-  );
-}
-```
-
-### Crear `src\app\calendario\page.tsx`
-```typescript
-'use client';
-import AuthGuard from '@/components/AuthGuard';
-import BottomNav from '@/components/BottomNav';
-
-export default function CalendarioPage() {
-  return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center pb-24 text-center px-6">
-        <span className="text-5xl mb-4">📅</span>
-        <h1 className="text-xl font-bold text-gray-900">Agenda</h1>
-        <p className="text-gray-400 text-sm mt-2">Próximamente — Fase 4</p>
-        <BottomNav />
-      </div>
-    </AuthGuard>
-  );
-}
-```
-
-### Crear `src\app\gastos\page.tsx`
-```typescript
-'use client';
-import AuthGuard from '@/components/AuthGuard';
-import BottomNav from '@/components/BottomNav';
-
-export default function GastosPage() {
-  return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center pb-24 text-center px-6">
-        <span className="text-5xl mb-4">💳</span>
-        <h1 className="text-xl font-bold text-gray-900">Viáticos</h1>
-        <p className="text-gray-400 text-sm mt-2">Próximamente — Fase 4</p>
-        <BottomNav />
-      </div>
-    </AuthGuard>
-  );
-}
-```
-
-### Crear `src\app\admin\page.tsx`
-```typescript
-'use client';
-import AuthGuard from '@/components/AuthGuard';
-import BottomNav from '@/components/BottomNav';
-
-export default function AdminPage() {
-  return (
-    <AuthGuard requiredRol="Admin">
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center pb-24 text-center px-6">
-        <span className="text-5xl mb-4">⚙️</span>
-        <h1 className="text-xl font-bold text-gray-900">Administración</h1>
-        <p className="text-gray-400 text-sm mt-2">Próximamente — Fase 5</p>
-        <BottomNav />
-      </div>
-    </AuthGuard>
-  );
-}
-```
-
-- [ ] 6.1 — `src/app/historial/page.tsx` creado
-- [ ] 6.2 — `src/app/dashboard/page.tsx` creado
-- [ ] 6.3 — `src/app/calendario/page.tsx` creado
-- [ ] 6.4 — `src/app/gastos/page.tsx` creado
-- [ ] 6.5 — `src/app/admin/page.tsx` creado
-
----
-
-## TAREA 7 — Build y prueba del flujo completo
-
-### Build:
 ```bash
 npm run build
 ```
 
-Si hay errores TypeScript, corregirlos. Los más probables son:
-- Importación circular de tipos → verificar que `Auditoria` en `types/index.ts` no choque con el que ya existía en una versión anterior (si hay duplicado, borrar el que NO tiene `id`, `localNombre`, `auditorEmail`)
-- `clsx` no importado en `categorias/page.tsx` → agregar `import clsx from 'clsx';` si falta
+**Verificar especialmente que no queden referencias a `'Requiere mejora'`** — buscar en todo `src/`:
 
-### Servidor de desarrollo:
 ```bash
-npm run dev
+Get-ChildItem -Recurse -Include *.tsx,*.ts src | Select-String "Requiere mejora"
 ```
 
-Verificar el flujo completo:
-1. Login → Welcome → Auditoría → Setup → elegir local → Categorías
-2. Responder algunas preguntas en 1-2 categorías
-3. Click en "Ver Resumen y Enviar" → debe mostrar score, desglose y botón de envío
-4. Click en "Enviar Auditoría" → debe hacer POST al Apps Script
-5. Si el envío fue exitoso → pantalla de éxito
-6. Verificar navegación del BottomNav (Historial, Reportes, Agenda → "Próximamente" sin crash)
-
-- [ ] 7.1 — `npm run build` sin errores
-- [ ] 7.2 — Resumen muestra score correcto
-- [ ] 7.3 — Botón de envío hace la llamada al Apps Script (verificar en DevTools → Network)
-- [ ] 7.4 — Navegación completa sin crashes
-
----
-
-## TAREA 8 — Commit
+Todas deben pasar a `'A mejorar'`.
 
 ```bash
 git add web/src/
-git add COWORK_INSTRUCTIONS.md
-git commit -m "feat: fase 3 - resumen de auditoria, envio al apps script, placeholders navegacion"
+git commit -m "fix: fase 6 - borrador, autosave, scoring alineado con backend, incumplimientos, verificacion de envio"
 git push origin main
 ```
 
-- [ ] 8.1 — Commit y push realizados
+- [ ] 8.1 — Build exitoso
+- [ ] 8.2 — Sin referencias a 'Requiere mejora'
+- [ ] 8.3 — Commit y push realizados
 
 ---
 
-## TAREA 9 — Crear REPORTE_FASE3.md
-
-Crear `C:\Users\marco\audit-app\REPORTE_FASE3.md`:
+# TAREA 9 — Crear REPORTE_FASE6.md
 
 ```markdown
-# REPORTE_FASE3.md — Resultados de Ejecución
+# REPORTE_FASE6.md
 Fecha: [COMPLETAR]
 
 ## Estado de tareas
-- [ ] Tarea 1: Servicio de envío (envio.ts)
-- [ ] Tarea 2: Tipo Auditoria en types/index.ts
-- [ ] Tarea 3: Pantalla de Resumen
-- [ ] Tarea 4: Pantalla de Éxito
-- [ ] Tarea 5: Botón Resumen en Categorías
-- [ ] Tarea 6: Páginas placeholder (5 páginas)
-- [ ] Tarea 7: Build + prueba
-- [ ] Tarea 8: Commit
+- [ ] Tarea 0: 🙋 Marcos agregó `getUmbral` al Apps Script — [hecho / PENDIENTE]
+- [ ] Tarea 1: Borrador / autosave + banner de recuperación
+- [ ] Tarea 2: Guardado inmediato con debounce
+- [ ] Tarea 3: Scoring alineado con el backend + umbral configurable
+- [ ] Tarea 4: numero/fecha legacy setean respuesta (desbloquea el resumen)
+- [ ] Tarea 5: Input numérico con coma decimal + unidad
+- [ ] Tarea 6: Pantalla de incumplimientos
+- [ ] Tarea 7: Verificación de envío + rescate
+- [ ] Tarea 8: Build + commit + push
+
+## Verificaciones
+- ¿El borrador sobrevive a un recargar de página (F5)? [sí/no — probalo]
+- ¿Cuánto pesa el borrador con fotos? [aprox, si lo pudiste medir]
+- ¿`getUmbral` responde? [sí/no/no probado]
+- ¿Quedaron referencias a 'Requiere mejora'? [sí/no]
 
 ## Build
-- `npm run build`: [exitoso / errores — listar si los hay]
-- Rutas generadas: [listar todas las rutas que aparecen en el output]
+- npm run build: [exitoso / errores]
+- Rutas generadas: [número y lista]
 
-## Prueba del flujo completo
-- Resumen muestra score: [sí/no]
-- Puntaje calculado en la prueba: [XX% / Nivel]
-- Botón de envío: [funciona / error — describir]
-- Respuesta del Apps Script: [pegar JSON de respuesta si fue exitoso]
-- Pantalla de éxito: [aparece / no]
-- BottomNav sin crashes: [sí/no]
+## Decisiones que tuve que tomar
+[Cualquier punto donde las instrucciones eran ambiguas]
 
 ## Errores encontrados
-[Ninguno / descripción]
+[Descripción o "ninguno"]
 
-## Archivos creados en esta fase
-[Listar los nuevos archivos]
-
-## Notas del agente
-[Observaciones relevantes]
+## Commit
+[hash]
 ```
 
-- [ ] 9.1 — `REPORTE_FASE3.md` creado con todos los campos
+- [ ] 9.1 — `REPORTE_FASE6.md` creado
 
 ---
 
 ## Al terminar
 
-Decirle a Marcos: **"Claude Code ya completó las tareas de COWORK_INSTRUCTIONS.md. El reporte está en REPORTE_FASE3.md"**
+Decirle a Marcos: **"Claude Code ya completó las tareas de COWORK_INSTRUCTIONS.md. El reporte está en REPORTE_FASE6.md"**
 
-CoWork leerá ese archivo para diseñar la **Fase 4: Historial de auditorías y Dashboard de scores.**
+CoWork leerá ese archivo para diseñar la **Fase 7: mejoras de UX del flujo** (botón "?" con explicación detallada, saltear pregunta, borrar auditoría, avisos de críticos sin responder, "No aplica" que deshabilita el input) y después el **Historial y el Dashboard**.

@@ -1,13 +1,12 @@
 'use client';
 /**
  * AppContext — Estado global de la app
- * Contiene: sesión de usuario + estado de la auditoría en curso
- * Equivalente al objeto `state` del prototipo
  */
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import type { Sesion, Local, Pregunta, Categoria, RespuestaItem } from '@/types';
 import { loadSession, saveSession, clearSession } from '@/lib/session';
+import { guardarBorrador } from '@/lib/borrador';
 import { agruparPorCategoria } from '@/services/sheets';
 
 // ── Estado ────────────────────────────────────────────────────
@@ -15,7 +14,7 @@ import { agruparPorCategoria } from '@/services/sheets';
 export interface AuditoriaState {
   local:         Local | null;
   fecha:         string;
-  tipo:          string;          // 'Oficial' | 'Preliminar'
+  tipo:          string;
   acompanante:   string;
   posicionAcomp: string;
   auditId:       string;
@@ -26,15 +25,13 @@ export interface AuditoriaState {
 }
 
 export interface AppState {
-  // Sesión
   sesion:          Sesion | null;
   sessionLoading:  boolean;
-  // Datos precargados
   locales:         Local[];
   preguntas:       Pregunta[];
   dataLoading:     boolean;
   dataError:       string;
-  // Auditoría en curso
+  umbralCriticos:  number;
   auditoria:       AuditoriaState;
 }
 
@@ -53,6 +50,7 @@ const auditInicial: AuditoriaState = {
 const initialState: AppState = {
   sesion: null, sessionLoading: true,
   locales: [], preguntas: [], dataLoading: false, dataError: '',
+  umbralCriticos: 10,
   auditoria: auditInicial,
 };
 
@@ -65,13 +63,15 @@ type Action =
   | { type: 'SET_PREGUNTAS';   payload: Pregunta[] }
   | { type: 'DATA_LOADING';    payload: boolean }
   | { type: 'DATA_ERROR';      payload: string }
+  | { type: 'SET_UMBRAL';      payload: number }
   | { type: 'AUDIT_SET_LOCAL'; payload: Local }
   | { type: 'AUDIT_SET_CAMPO'; payload: Partial<AuditoriaState> }
   | { type: 'AUDIT_SET_CAT';   payload: number }
   | { type: 'AUDIT_NEXT_Q' }
   | { type: 'AUDIT_PREV_Q' }
   | { type: 'AUDIT_SET_ANSWER';payload: { id: string; item: RespuestaItem } }
-  | { type: 'AUDIT_RESET' };
+  | { type: 'AUDIT_RESET' }
+  | { type: 'AUDIT_RESTORE';   payload: Partial<AuditoriaState> & { local: Local } };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -87,6 +87,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, dataLoading: action.payload };
     case 'DATA_ERROR':
       return { ...state, dataError: action.payload };
+    case 'SET_UMBRAL':
+      return { ...state, umbralCriticos: action.payload };
     case 'AUDIT_SET_LOCAL': {
       const local = action.payload;
       const filtradas = state.preguntas.filter(p =>
@@ -110,6 +112,14 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'AUDIT_RESET':
       return { ...state, auditoria: auditInicial };
+    case 'AUDIT_RESTORE': {
+      const { local } = action.payload;
+      const filtradas = state.preguntas.filter(p =>
+        p.marca === 'Multimarca' || (local.isCausa ? p.marca === 'Causa' : false)
+      );
+      const categorias = agruparPorCategoria(filtradas);
+      return { ...state, auditoria: { ...auditInicial, ...action.payload, categorias } };
+    }
     default:
       return state;
   }
@@ -127,11 +137,27 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Cargar sesión desde localStorage al iniciar
   useEffect(() => {
     const sesion = loadSession();
     dispatch({ type: 'SET_SESION', payload: sesion });
   }, []);
+
+  // Autosave del borrador en cada cambio de la auditoría
+  useEffect(() => {
+    const a = state.auditoria;
+    if (!a.local || !a.auditId) return;
+    guardarBorrador({
+      local:         a.local,
+      fecha:         a.fecha,
+      tipo:          a.tipo,
+      acompanante:   a.acompanante,
+      posicionAcomp: a.posicionAcomp,
+      auditId:       a.auditId,
+      catIndex:      a.catIndex,
+      qIndex:        a.qIndex,
+      answers:       a.answers,
+    });
+  }, [state.auditoria]);
 
   return (
     <AppContext.Provider value={{ state, dispatch }}>
@@ -145,8 +171,6 @@ export function useApp() {
   if (!ctx) throw new Error('useApp debe usarse dentro de AppProvider');
   return ctx;
 }
-
-// ── Helpers de sesión ─────────────────────────────────────────
 
 export function useSesion() {
   const { state, dispatch } = useApp();

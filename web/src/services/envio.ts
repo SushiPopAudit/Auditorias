@@ -37,6 +37,21 @@ export interface EnvioParams {
   preguntasMap:        Record<string, Pregunta>;
 }
 
+/** Verifica si una auditoría llegó al servidor. Reintenta hasta 4 veces cada 6s. */
+export async function verificarEnvio(auditId: string, intentos = 4): Promise<boolean> {
+  for (let i = 0; i < intentos; i++) {
+    try {
+      const res = await fetch(`${URL}?action=verificarAudit&auditId=${encodeURIComponent(auditId)}`, { redirect: 'follow' });
+      const data = await res.json();
+      if (data.found) return true;
+    } catch {
+      // seguir intentando
+    }
+    if (i < intentos - 1) await new Promise(r => setTimeout(r, 6000));
+  }
+  return false;
+}
+
 export async function enviarAuditoria(p: EnvioParams): Promise<EnvioResult> {
   try {
     const ahora = new Date();
