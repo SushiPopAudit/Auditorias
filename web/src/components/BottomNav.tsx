@@ -13,9 +13,11 @@ const NAV_AUDITOR = [
 ];
 
 const NAV_ADMIN = [
-  { href: '/admin',             icon: '⚙️', label: 'Admin' },
-  { href: '/historial',         icon: '📜', label: 'Historial' },
-  { href: '/dashboard',         icon: '📊', label: 'Reportes' },
+  { href: '/welcome',          icon: '🏠', label: 'Inicio' },
+  { href: '/auditoria/setup',  icon: '📋', label: 'Auditoría' },
+  { href: '/historial',        icon: '📜', label: 'Historial' },
+  { href: '/dashboard',        icon: '📊', label: 'Reportes' },
+  { href: '/admin',            icon: '⚙️', label: 'Admin' },
 ];
 
 export default function BottomNav() {

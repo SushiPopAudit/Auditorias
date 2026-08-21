@@ -10,7 +10,7 @@ export default function HomePage() {
   useEffect(() => {
     if (sessionLoading) return;
     if (!sesion) { router.replace('/login'); return; }
-    if (sesion.rol === 'Admin') { router.replace('/admin'); return; }
+    // Admin y Auditor van a welcome — desde ahí pueden navegar a todo
     router.replace('/welcome');
   }, [sesion, sessionLoading, router]);
 
