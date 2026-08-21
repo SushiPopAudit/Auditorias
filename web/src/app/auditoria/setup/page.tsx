@@ -4,24 +4,122 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
 import { useApp } from '@/contexts/AppContext';
+import type { Local } from '@/types';
+import clsx from 'clsx';
 
 function SetupContent() {
   const { state, dispatch } = useApp();
   const router = useRouter();
-  const [busqueda, setBusqueda] = useState('');
+
+  const [busqueda,      setBusqueda]      = useState('');
+  const [localSel,      setLocalSel]      = useState<Local | null>(null);
+  const [acompanante,   setAcompanante]   = useState('');
+  const [posicionAcomp, setPosicionAcomp] = useState('');
+  const [tipo,          setTipo]          = useState('Oficial');
 
   const localesFiltrados = state.locales.filter(l =>
     l.nombre.toLowerCase().includes(busqueda.toLowerCase())
   );
 
-  const elegirLocal = (local: typeof state.locales[0]) => {
-    dispatch({ type: 'AUDIT_SET_LOCAL', payload: local });
+  const elegirLocal = (local: Local) => {
+    setLocalSel(local);
+    setAcompanante('');
+    setPosicionAcomp('');
+    setTipo('Oficial');
+  };
+
+  const iniciarAuditoria = () => {
+    if (!localSel) return;
+    dispatch({ type: 'AUDIT_SET_LOCAL', payload: localSel });
+    dispatch({ type: 'AUDIT_SET_CAMPO', payload: { acompanante, posicionAcomp, tipo } });
     router.push('/auditoria/categorias');
   };
 
+  // ── Vista: detalle del local seleccionado ──
+  if (localSel) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-24">
+        <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-4">
+          <button onClick={() => setLocalSel(null)} className="text-red-600 text-sm mb-2">
+            ← Cambiar local
+          </button>
+          <h1 className="text-xl font-bold text-gray-900">{localSel.nombre}</h1>
+          <p className="text-sm text-gray-400">{localSel.isCausa ? 'Causa' : 'SushiPop'}</p>
+        </div>
+
+        <div className="px-4 py-6 space-y-4">
+          {/* Acompañante */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Acompañante <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={acompanante}
+              onChange={e => setAcompanante(e.target.value)}
+              placeholder="Nombre del acompañante"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500"
+            />
+          </div>
+
+          {/* Posición del acompañante */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Posición del acompañante
+            </label>
+            <select
+              value={posicionAcomp}
+              onChange={e => setPosicionAcomp(e.target.value)}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500"
+            >
+              <option value="">— Sin especificar —</option>
+              <option value="Franquiciado">Franquiciado</option>
+              <option value="Gerente">Gerente</option>
+              <option value="Jefe de cocina">Jefe de cocina</option>
+              <option value="Supervisor">Supervisor</option>
+              <option value="Encargado">Encargado</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+
+          {/* Tipo de auditoría */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Tipo de auditoría
+            </label>
+            <div className="flex gap-2">
+              {['Oficial', 'Informal'].map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTipo(t)}
+                  className={clsx(
+                    'flex-1 py-3 rounded-xl text-sm font-semibold border-2',
+                    tipo === t ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200',
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={iniciarAuditoria}
+            className="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-base mt-4 active:scale-95 transition-transform"
+          >
+            Iniciar Auditoría →
+          </button>
+        </div>
+
+        <BottomNav />
+      </div>
+    );
+  }
+
+  // ── Vista: lista de locales ──
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-4 sticky top-0 z-10">
         <h1 className="text-xl font-bold text-gray-900 mb-3">Elegir local</h1>
         <input
@@ -50,23 +148,18 @@ function SetupContent() {
           <li key={local.nombre}>
             <button
               onClick={() => elegirLocal(local)}
-              className="w-full text-left px-4 py-4 flex items-center justify-between
-                         active:bg-gray-50 transition-colors"
+              className="w-full text-left px-4 py-4 flex items-center justify-between active:bg-gray-50 transition-colors"
             >
               <div>
                 <p className="font-medium text-gray-900">{local.nombre}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {local.isCausa ? 'Causa' : 'SushiPop'}
-                </p>
+                <p className="text-xs text-gray-400 mt-0.5">{local.isCausa ? 'Causa' : 'SushiPop'}</p>
               </div>
               <span className="text-gray-300 text-xl">›</span>
             </button>
           </li>
         ))}
         {localesFiltrados.length === 0 && !state.dataLoading && (
-          <li className="px-4 py-8 text-center text-gray-400 text-sm">
-            No se encontraron locales
-          </li>
+          <li className="px-4 py-8 text-center text-gray-400 text-sm">No se encontraron locales</li>
         )}
       </ul>
 

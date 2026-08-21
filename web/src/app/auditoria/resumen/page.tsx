@@ -6,7 +6,7 @@ import BottomNav from '@/components/BottomNav';
 import { useApp, useSesion } from '@/contexts/AppContext';
 import { calcularPuntaje } from '@/services/scoring';
 import { enviarAuditoria } from '@/services/envio';
-import type { Auditoria, Pregunta } from '@/types';
+import type { Pregunta } from '@/types';
 import clsx from 'clsx';
 
 const NIVEL_BG: Record<string, string> = {
@@ -69,24 +69,30 @@ function ResumenContent() {
     setEnviando(true);
     setError('');
 
-    const payload: Auditoria = {
-      id:           auditoria.auditId,
-      fecha:        auditoria.fecha,
-      auditor:      sesion.nombre,
-      auditorEmail: sesion.email,
-      localNombre:  auditoria.local.nombre,
-      marca:        auditoria.local.isCausa ? 'Causa' : 'Multimarca',
-      tipo:         auditoria.tipo,
-      acompanante:  auditoria.acompanante || undefined,
-      respuestas:   Object.values(auditoria.answers),
-    };
-
-    const result = await enviarAuditoria(payload, preguntasMap);
+    const result = await enviarAuditoria({
+      auditId:             auditoria.auditId,
+      fecha:               auditoria.fecha,
+      auditor:             sesion.nombre,
+      auditorEmail:        sesion.email,
+      local:               auditoria.local.nombre,
+      emailsLocal:         auditoria.local.emails ?? '',
+      marca:               auditoria.local.isCausa ? 'Causa' : 'Multimarca',
+      tipoAuditoria:       auditoria.tipo || 'Oficial',
+      acompanante:         auditoria.acompanante || '',
+      posicionAcompanante: auditoria.posicionAcomp || '',
+      puntaje,
+      respuestas:          Object.values(auditoria.answers),
+      preguntasMap,
+    });
     setEnviando(false);
 
     if (!result.ok) {
       setError(result.error ?? 'Error al enviar');
       return;
+    }
+
+    if (result.emailStatus) {
+      sessionStorage.setItem('audit_emailStatus', result.emailStatus);
     }
 
     setEnviado(true);

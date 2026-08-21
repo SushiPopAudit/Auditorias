@@ -18,10 +18,19 @@ function CategoriasContent() {
 
   if (!auditoria.local) return null;
 
-  const elegirCategoria = (idx: number) => {
-    dispatch({ type: 'AUDIT_SET_CAT', payload: idx });
+  const elegirCategoria = (ci: number) => {
+    const cat = auditoria.categorias[ci];
+    const firstPending = cat.questions.findIndex(q => !auditoria.answers[q.id]?.respuesta);
+    const startQ = firstPending !== -1 ? firstPending : 0;
+    dispatch({ type: 'AUDIT_SET_CAMPO', payload: { catIndex: ci, qIndex: startQ } });
     router.push('/auditoria/pregunta');
   };
+
+  const todasPreguntas  = auditoria.categorias.flatMap(c => c.questions);
+  const totalPreguntas  = todasPreguntas.length;
+  const respondidas     = todasPreguntas.filter(q => auditoria.answers[q.id]?.respuesta).length;
+  const pendientes      = totalPreguntas - respondidas;
+  const allComplete     = pendientes === 0 && totalPreguntas > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -36,15 +45,20 @@ function CategoriasContent() {
         </p>
       </div>
 
-      <p className="px-4 pt-4 pb-2 text-sm font-semibold text-gray-500 uppercase tracking-wide">
-        Categorías
-      </p>
+      {/* Contador de pendientes */}
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Categorías</p>
+        <p className={clsx('text-xs font-medium', allComplete ? 'text-green-600' : 'text-gray-400')}>
+          {respondidas}/{totalPreguntas} preguntas
+          {pendientes > 0 && ` · ${pendientes} pendiente${pendientes !== 1 ? 's' : ''}`}
+        </p>
+      </div>
 
       <ul className="divide-y divide-gray-100 bg-white mx-4 rounded-2xl overflow-hidden shadow-sm">
         {auditoria.categorias.map((cat, idx) => {
-          const respondidas = cat.questions.filter(q => auditoria.answers[q.id]).length;
-          const total       = cat.questions.length;
-          const completa    = respondidas === total;
+          const resp    = cat.questions.filter(q => auditoria.answers[q.id]?.respuesta).length;
+          const total   = cat.questions.length;
+          const completa = resp === total;
 
           return (
             <li key={cat.name}>
@@ -57,14 +71,11 @@ function CategoriasContent() {
                     <p className="font-medium text-gray-900">{cat.name}</p>
                     {completa && <span className="text-green-500 text-sm">✓</span>}
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {respondidas}/{total} preguntas
-                  </p>
-                  {/* Barra de progreso */}
+                  <p className="text-xs text-gray-400 mt-0.5">{resp}/{total} preguntas</p>
                   <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden w-32">
                     <div
                       className={clsx('h-full rounded-full transition-all', completa ? 'bg-green-500' : 'bg-red-500')}
-                      style={{ width: `${total > 0 ? (respondidas/total)*100 : 0}%` }}
+                      style={{ width: `${total > 0 ? (resp / total) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
@@ -75,11 +86,9 @@ function CategoriasContent() {
         })}
       </ul>
 
-      {/* Score parcial + acceso a resumen */}
+      {/* Score parcial + gate de acceso al resumen */}
       {(() => {
-        const todasPreguntas = auditoria.categorias.flatMap(c => c.questions);
-        const totalResp = todasPreguntas.filter(q => auditoria.answers[q.id]).length;
-        if (totalResp === 0) return null;
+        if (respondidas === 0) return null;
         const puntaje = calcularPuntaje(todasPreguntas, auditoria.answers);
         return (
           <div className="mx-4 mt-4 space-y-3">
@@ -88,7 +97,7 @@ function CategoriasContent() {
                 <div>
                   <p className="text-sm text-gray-500">Progreso general</p>
                   <p className="text-2xl font-bold text-gray-900">{puntaje.pct}%</p>
-                  <p className="text-xs text-gray-400">{totalResp}/{todasPreguntas.length} preguntas</p>
+                  <p className="text-xs text-gray-400">{respondidas}/{totalPreguntas} preguntas</p>
                 </div>
                 <div className="text-right">
                   <span className="text-2xl">{puntaje.nivelEmoji}</span>
@@ -98,12 +107,19 @@ function CategoriasContent() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => router.push('/auditoria/resumen')}
-              className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold active:scale-95 transition-transform"
-            >
-              Ver Resumen y Enviar
-            </button>
+
+            {allComplete ? (
+              <button
+                onClick={() => router.push('/auditoria/resumen')}
+                className="w-full py-3.5 bg-green-600 text-white rounded-xl font-semibold"
+              >
+                Ver Resumen →
+              </button>
+            ) : (
+              <div className="w-full py-3.5 bg-gray-100 text-gray-400 rounded-xl text-center text-sm font-medium">
+                Completá todas las categorías para continuar
+              </div>
+            )}
           </div>
         );
       })()}

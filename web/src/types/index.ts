@@ -37,16 +37,21 @@ export interface Categoria {
   questions: Pregunta[];
 }
 
+export interface FotoItem {
+  dataURL: string;   // data:image/jpeg;base64,...
+  nombre:  string;
+}
+
 /** Respuesta del auditor a una pregunta */
 export interface RespuestaItem {
-  preguntaId: string;
-  control: string;
-  respuesta: string;             // 'Cumple' | 'Cumple parcialmente' | 'No Cumple' | 'No aplica'
+  preguntaId:  string;
+  control:     string;
+  respuesta:   string;
   observacion?: string;
-  fotoBase64?: string;           // imagen capturada en campo
-  fotoNombre?: string;
-  rawValor?: string;             // valor numérico o fecha raw antes de evaluar
-  headcount?: Record<string, string>;
+  rawValor?:   string;
+  fechaRaw?:   string;
+  headcount?:  Record<string, string>;
+  fotos?:      FotoItem[];
 }
 
 /** Sesión de usuario autenticado */

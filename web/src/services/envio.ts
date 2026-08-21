@@ -1,81 +1,109 @@
 /**
- * envio.ts — Envío de auditoría completa al Apps Script
- * Replica el doPost del prototipo. Sin fotos en esta fase (Fase 4).
+ * envio.ts — POST de la auditoría al Apps Script
+ *
+ * PAYLOAD EXACTO que espera el backend (apps-script.gs doPost, sin `action`):
+ *   auditId, fecha, hora, auditor, local, marca, auditorEmail,
+ *   puntaje: { pct, nivel, reprobado },
+ *   acompanante, posicionAcompanante, tipoAuditoria,
+ *   emailsLocal  <-- SIN ESTE CAMPO NO SE ENVÍA EL EMAIL
+ *   respuestas: [{ marca, categoria, subcategoria, control, importancia,
+ *                  explicacion, respuesta, observacion, rawValor, fechaRaw,
+ *                  headcount?, fotosBase64? }]
  */
-import type { Auditoria, Pregunta } from '@/types';
+import type { Pregunta, Puntaje, RespuestaItem } from '@/types';
 
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL!;
+const URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL ?? '';
 
 export interface EnvioResult {
-  ok:     boolean;
-  error?: string;
-  pct?:   number;
-  nivel?: string;
+  ok:           boolean;
+  auditId?:     string;
+  emailStatus?: string;
+  error?:       string;
 }
 
-function horaActual(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+export interface EnvioParams {
+  auditId:             string;
+  fecha:               string;
+  auditor:             string;
+  auditorEmail:        string;
+  local:               string;
+  emailsLocal:         string;
+  marca:               string;
+  tipoAuditoria:       string;
+  acompanante:         string;
+  posicionAcompanante: string;
+  puntaje:             Puntaje;
+  respuestas:          RespuestaItem[];
+  preguntasMap:        Record<string, Pregunta>;
 }
 
-/**
- * Envía la auditoría al Apps Script y retorna el resultado.
- * El Apps Script escribe una fila por respuesta en el Sheet Resultados.
- */
-export async function enviarAuditoria(
-  auditoria: Auditoria,
-  preguntasMap: Record<string, Pregunta>,
-): Promise<EnvioResult> {
-  const hora = horaActual();
-
-  const respuestas = auditoria.respuestas.map(r => {
-    const p = preguntasMap[r.preguntaId] ?? {} as Pregunta;
-    return {
-      control:      p.control      ?? r.control ?? '',
-      categoria:    p.categoria    ?? '',
-      subcategoria: p.subcategoria ?? '',
-      importancia:  p.importancia  ?? '',
-      explicacion:  p.explicacion  ?? '',
-      respuesta:    r.respuesta    ?? '',
-      observacion:  r.observacion  ?? '',
-      fotoBase64:   '',            // Fase 4
-      fotoNombre:   '',
-      rawValor:     r.rawValor     ?? '',
-    };
-  });
-
-  const payload = {
-    auditId:      auditoria.id,
-    local:        auditoria.localNombre,
-    fecha:        auditoria.fecha,
-    hora,
-    auditor:      auditoria.auditor,
-    auditorEmail: auditoria.auditorEmail,
-    marca:        auditoria.marca,
-    tipo:         auditoria.tipo,
-    acompanante:  auditoria.acompanante ?? '',
-    respuestas,
-  };
-
+export async function enviarAuditoria(p: EnvioParams): Promise<EnvioResult> {
   try {
-    const res = await fetch(APPS_SCRIPT_URL, {
+    const ahora = new Date();
+    const hora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+
+    const respuestas = p.respuestas.map(r => {
+      const q = p.preguntasMap[r.preguntaId];
+      const item: Record<string, unknown> = {
+        marca:        q?.marca        ?? p.marca,
+        categoria:    q?.categoria    ?? '',
+        subcategoria: q?.subcategoria ?? '',
+        control:      q?.control      ?? r.control ?? '',
+        importancia:  q?.importancia  ?? '',
+        explicacion:  q?.explicacion  ?? '',
+        respuesta:    r.respuesta     ?? '',
+        observacion:  r.observacion   ?? '',
+        rawValor:     r.rawValor      ?? '',
+        fechaRaw:     r.fechaRaw      ?? '',
+      };
+      if (r.headcount && Object.keys(r.headcount).length) {
+        item.headcount = r.headcount;
+      }
+      if (r.fotos && r.fotos.length) {
+        item.fotosBase64 = r.fotos.map(f => ({ base64: f.dataURL, nombre: f.nombre }));
+      }
+      return item;
+    });
+
+    const payload = {
+      auditId:             p.auditId,
+      fecha:               p.fecha,
+      hora,
+      auditor:             p.auditor,
+      auditorEmail:        p.auditorEmail,
+      local:               p.local,
+      emailsLocal:         p.emailsLocal,
+      marca:               p.marca,
+      tipoAuditoria:       p.tipoAuditoria || 'Oficial',
+      acompanante:         p.acompanante || '',
+      posicionAcompanante: p.posicionAcompanante || '',
+      puntaje: {
+        pct:       p.puntaje.pct,
+        nivel:     p.puntaje.nivel,
+        reprobado: p.puntaje.reprobado,
+      },
+      respuestas,
+    };
+
+    const res = await fetch(URL, {
       method:  'POST',
-      // Apps Script requiere text/plain para evitar preflight CORS
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body:    JSON.stringify(payload),
       redirect: 'follow',
     });
 
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      return { ok: false, error: `HTTP ${res.status}: ${txt}` };
+    const data = await res.json();
+
+    if (!data.success) {
+      return { ok: false, error: String(data.error ?? 'Error al guardar') };
     }
 
-    const json = await res.json().catch(() => ({ status: 'ok' }));
-    if (json.status === 'error') return { ok: false, error: json.message ?? 'Error del servidor' };
-
-    return { ok: true, pct: json.pct, nivel: json.nivel };
+    return {
+      ok:          true,
+      auditId:     String(data.auditId ?? p.auditId),
+      emailStatus: String(data.email ?? 'no configurado'),
+    };
   } catch (e) {
-    return { ok: false, error: `Sin conexión: ${String(e)}` };
+    return { ok: false, error: `Error de conexión: ${String(e)}` };
   }
 }
