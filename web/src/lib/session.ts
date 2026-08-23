@@ -4,12 +4,16 @@
  */
 import type { Sesion } from '@/types';
 
-const KEY = 'user_session';
+const KEY = 'user_session_v2';
+const KEY_VIEJA = 'user_session';
 const TTL = 7 * 24 * 3600 * 1000; // 7 días en ms
 
 export function loadSession(): Sesion | null {
   if (typeof window === 'undefined') return null;
   try {
+    // Migración: la sesión v1 tenía el token mal guardado — descartarla
+    localStorage.removeItem(KEY_VIEJA);
+
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s: Sesion = JSON.parse(raw);
@@ -26,5 +30,5 @@ export function saveSession(user: Omit<Sesion, 'savedAt'>): void {
 }
 
 export function clearSession(): void {
-  try { localStorage.removeItem(KEY); } catch { /* ignorar */ }
+  try { localStorage.removeItem(KEY); localStorage.removeItem(KEY_VIEJA); } catch { /* ignorar */ }
 }

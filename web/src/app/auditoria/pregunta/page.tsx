@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import RespuestaRadio from '@/components/auditoria/RespuestaRadio';
 import FotoCapture from '@/components/auditoria/FotoCapture';
+import InputNumerico from '@/components/auditoria/InputNumerico';
 import { useApp } from '@/contexts/AppContext';
 import type { RespuestaItem, FotoItem } from '@/types';
 import {
@@ -172,23 +173,18 @@ function PreguntaContent() {
           <div>
             <label className="text-sm text-gray-600 mb-1 block">{pregunta.pregunta || 'Valor medido'}</label>
             <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text" inputMode="decimal" pattern="[0-9.,-]*" autoComplete="off" spellCheck={false}
+              <div className="flex-1">
+                <InputNumerico
                   value={rawValor}
-                  onChange={e => {
-                    const v = e.target.value;
+                  unidad={unidad}
+                  placeholder="Ej: -18,5"
+                  onChange={v => {
                     setRawValor(v);
                     const norm = normalizeNum(v);
-                    const verd = norm ? evaluarNumero(norm, numRegla) : null;
+                    const verd = norm && norm !== '-' ? evaluarNumero(norm, numRegla) : null;
                     setRespuesta(verd ?? norm);
                   }}
-                  className={clsx('w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono focus:outline-none focus:ring-2 focus:ring-red-500', unidad && 'pr-12')}
-                  placeholder="Ej: -2,5"
                 />
-                {unidad && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">{unidad}</span>
-                )}
               </div>
               {veredictoNum && (
                 <span className={clsx('px-3 py-2 rounded-xl text-xs font-bold', VEREDICTO_STYLE[veredictoNum] ?? '')}>
@@ -245,17 +241,12 @@ function PreguntaContent() {
         {inputTipo === 'number' && (
           <div>
             <label className="text-sm text-gray-600 mb-1 block">{pregunta.pregunta || 'Valor medido'}</label>
-            <div className="relative">
-              <input
-                type="text" inputMode="decimal" pattern="[0-9.,-]*" autoComplete="off" spellCheck={false}
-                value={rawValor}
-                onChange={e => { const v = e.target.value; setRawValor(v); setRespuesta(v.replace(/,/g, '.')); }}
-                className={clsx('w-full px-4 py-3 border border-gray-300 rounded-xl text-lg font-mono focus:outline-none focus:ring-2 focus:ring-red-500', unidad && 'pr-12')}
-                placeholder="Ej: 36,5" />
-              {unidad && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">{unidad}</span>
-              )}
-            </div>
+            <InputNumerico
+              value={rawValor}
+              unidad={unidad}
+              placeholder="Ej: 36,5"
+              onChange={v => { setRawValor(v); setRespuesta(v.replace(/,/g, '.')); }}
+            />
           </div>
         )}
 

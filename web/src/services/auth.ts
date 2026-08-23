@@ -51,7 +51,7 @@ export async function login(email: string, password: string): Promise<LoginResul
       nombre:  String(u.nombre  ?? ''),
       rol:     (u.rol === 'Admin' ? 'Admin' : 'Auditor') as 'Admin' | 'Auditor',
       locales: String(u.locales ?? ''),
-      token:   String(data.token ?? u.email ?? email),
+      token:   pwd,          // El token es el hash SHA-256 de la contraseña
     };
 
     saveSession(sesion);
