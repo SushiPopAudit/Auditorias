@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import { useSesion } from '@/contexts/AppContext';
-import { getAuditoria, toDriveThumb, type AuditoriaDetalle } from '@/services/historial';
+import { getAuditoria, borrarAuditoria, toDriveThumb, type AuditoriaDetalle } from '@/services/historial';
 import clsx from 'clsx';
 
 const IMP_STYLE: Record<string, string> = {
@@ -35,6 +35,9 @@ function DetalleContent() {
   const [cargando, setCargando] = useState(true);
   const [error, setError]       = useState('');
   const [abiertas, setAbiertas] = useState<Record<string, boolean>>({});
+  const [borrando, setBorrando] = useState(false);
+
+  const esAdmin = sesion?.rol === 'Admin';
 
   useEffect(() => {
     if (!sesion || !auditId) return;
@@ -52,6 +55,20 @@ function DetalleContent() {
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCargando(false));
   }, [sesion, auditId]);
+
+  async function handleBorrar() {
+    if (!det) return;
+    const ok = confirm(
+      `¿Borrar la auditoría de ${det.local} del ${det.fecha}?\n\n` +
+      `Se eliminarán todas las respuestas y las fotos de Drive. Esta acción no se puede deshacer.`
+    );
+    if (!ok) return;
+    setBorrando(true);
+    const res = await borrarAuditoria(det.auditId);
+    setBorrando(false);
+    if (!res.ok) { alert(`No se pudo borrar: ${res.error}`); return; }
+    router.replace('/historial');
+  }
 
   const grupos = useMemo(() => {
     if (!det) return [];
@@ -132,6 +149,25 @@ function DetalleContent() {
             <p className="text-sm opacity-80 mt-0.5">
               {det.puntaje.obtenido} / {det.puntaje.posible} pts
             </p>
+          </div>
+
+          {/* Botones de acción */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => router.push(`/historial/${encodeURIComponent(det.auditId)}/editar`)}
+              className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-sm font-semibold"
+            >
+              ✏️ Editar
+            </button>
+            {esAdmin && (
+              <button
+                onClick={handleBorrar}
+                disabled={borrando}
+                className="px-4 py-3 rounded-xl border border-red-300 text-red-600 text-sm font-semibold disabled:opacity-50"
+              >
+                {borrando ? 'Borrando...' : '🗑 Borrar'}
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-4 gap-2">

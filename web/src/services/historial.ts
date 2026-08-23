@@ -132,3 +132,80 @@ export function toDriveThumb(url: string): string {
   const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w400` : url;
 }
+
+export interface RespuestaEdicion {
+  control:     string;
+  respuesta:   string;
+  observacion: string;
+  rawValor:    string;
+  fechaRaw:    string;
+}
+
+export interface EdicionResult {
+  ok:         boolean;
+  pct?:       number;
+  nivel?:     string;
+  reprobado?: boolean;
+  error?:     string;
+}
+
+/**
+ * Guarda cambios sobre una auditoría existente.
+ * El backend hace match por `control` y recalcula el puntaje.
+ * Hay que enviar TODAS las respuestas, no solo las modificadas.
+ */
+export async function editarAuditoria(
+  sesion: Sesion,
+  auditId: string,
+  respuestas: RespuestaEdicion[],
+): Promise<EdicionResult> {
+  try {
+    const hora = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+    const payload = {
+      action:          'editarAuditoria',
+      originalAuditId: auditId,
+      hora,
+      auditorEmail:    sesion.email,
+      token:           sesion.token,
+      respuestas,
+    };
+
+    const res = await fetch(URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body:    JSON.stringify(payload),
+      redirect: 'follow',
+    });
+
+    const data = await res.json();
+    if (!data.success) return { ok: false, error: String(data.error ?? 'Error al guardar') };
+
+    return {
+      ok:        true,
+      pct:       Number(data.pct ?? 0),
+      nivel:     String(data.nivel ?? ''),
+      reprobado: data.reprobado === true,
+    };
+  } catch (e) {
+    return { ok: false, error: `Error de conexión: ${String(e)}` };
+  }
+}
+
+/**
+ * Borra una auditoría: elimina las filas del Sheet y la carpeta de fotos de Drive.
+ * OJO: el backend no valida credenciales — restringir a Admin en la UI.
+ */
+export async function borrarAuditoria(auditId: string): Promise<{ ok: boolean; filas?: number; error?: string }> {
+  try {
+    const res = await fetch(
+      `${URL}?action=borrarAuditoria&auditId=${encodeURIComponent(auditId)}`,
+      { redirect: 'follow' },
+    );
+    const data = await res.json();
+    if (!data.success) return { ok: false, error: String(data.error ?? 'No se pudo borrar') };
+    return { ok: true, filas: Number(data.filasEliminadas ?? 0) };
+  } catch (e) {
+    return { ok: false, error: `Error de conexión: ${String(e)}` };
+  }
+}

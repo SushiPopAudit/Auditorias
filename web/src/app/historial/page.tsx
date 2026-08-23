@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
 import { useSesion } from '@/contexts/AppContext';
-import { getAuditorias, type AuditoriaResumen } from '@/services/historial';
+import { getAuditorias, borrarAuditoria, type AuditoriaResumen } from '@/services/historial';
 import clsx from 'clsx';
 
 function scoreStyle(pct: number, reprobado: boolean): string {
@@ -26,6 +26,9 @@ function HistorialContent() {
   const [error, setError]       = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro]     = useState<string>('Todos');
+  const [mensaje, setMensaje]   = useState('');
+
+  const esAdmin = sesion?.rol === 'Admin';
 
   async function cargar() {
     if (!sesion) return;
@@ -40,6 +43,19 @@ function HistorialContent() {
   }
 
   useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [sesion]);
+
+  async function handleBorrar(a: AuditoriaResumen) {
+    const ok = confirm(
+      `¿Borrar la auditoría de ${a.local} del ${a.fecha}?\n\n` +
+      `Se eliminarán todas las respuestas y las fotos de Drive. No se puede deshacer.`
+    );
+    if (!ok) return;
+    const res = await borrarAuditoria(a.auditId);
+    if (!res.ok) { alert(`No se pudo borrar: ${res.error}`); return; }
+    setLista(prev => prev.filter(x => x.auditId !== a.auditId));
+    setMensaje(`Auditoría de ${a.local} eliminada.`);
+    setTimeout(() => setMensaje(''), 3500);
+  }
 
   const filtradas = useMemo(() => {
     const q = busqueda.toLowerCase().trim();
@@ -78,6 +94,12 @@ function HistorialContent() {
         </div>
       </div>
 
+      {mensaje && (
+        <div className="mx-4 mt-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+          <p className="text-sm text-green-800 font-medium">{mensaje}</p>
+        </div>
+      )}
+
       {cargando && (
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
@@ -105,31 +127,59 @@ function HistorialContent() {
       {!cargando && !error && filtradas.length > 0 && (
         <div className="px-4 py-4 space-y-2">
           {filtradas.map(a => (
-            <button key={a.auditId}
-              onClick={() => router.push(`/historial/${encodeURIComponent(a.auditId)}`)}
-              className="w-full bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left active:bg-gray-50 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-gray-900 truncate">{a.local}</p>
-                  {a.tipo === 'Informal' && (
-                    <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded flex-shrink-0">
-                      Informal
-                    </span>
-                  )}
+            <div key={a.auditId} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              {/* Área principal: navega al detalle */}
+              <button
+                onClick={() => router.push(`/historial/${encodeURIComponent(a.auditId)}`)}
+                className="w-full p-4 text-left active:bg-gray-50 flex items-center gap-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900 truncate">{a.local}</p>
+                    {a.tipo === 'Informal' && (
+                      <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded flex-shrink-0">
+                        Informal
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">
+                    {a.fecha}{a.hora ? ` · ${a.hora}` : ''} · {a.auditor}
+                  </p>
                 </div>
-                <p className="text-xs text-gray-400 mt-0.5 truncate">
-                  {a.fecha}{a.hora ? ` · ${a.hora}` : ''} · {a.auditor}
-                </p>
+                <div className="text-right flex-shrink-0">
+                  <span className={clsx('inline-block px-2.5 py-1 rounded-full text-sm font-bold',
+                    scoreStyle(a.pct, a.reprobado))}>
+                    {a.reprobado ? '⛔' : `${a.pct}%`}
+                  </span>
+                  <p className="text-xs text-gray-400 mt-0.5">{a.nivel}</p>
+                </div>
+                <span className="text-gray-300 text-xl flex-shrink-0">›</span>
+              </button>
+
+              {/* Acciones */}
+              <div className="flex border-t border-gray-100 divide-x divide-gray-100">
+                <button
+                  onClick={() => router.push(`/historial/${encodeURIComponent(a.auditId)}`)}
+                  className="flex-1 py-2.5 text-xs font-medium text-gray-600"
+                >
+                  👁 Ver
+                </button>
+                <button
+                  onClick={() => router.push(`/historial/${encodeURIComponent(a.auditId)}/editar`)}
+                  className="flex-1 py-2.5 text-xs font-medium text-blue-600"
+                >
+                  ✏️ Editar
+                </button>
+                {esAdmin && (
+                  <button
+                    onClick={() => handleBorrar(a)}
+                    className="flex-1 py-2.5 text-xs font-medium text-red-600"
+                  >
+                    🗑 Borrar
+                  </button>
+                )}
               </div>
-              <div className="text-right flex-shrink-0">
-                <span className={clsx('inline-block px-2.5 py-1 rounded-full text-sm font-bold',
-                  scoreStyle(a.pct, a.reprobado))}>
-                  {a.reprobado ? '⛔' : `${a.pct}%`}
-                </span>
-                <p className="text-xs text-gray-400 mt-0.5">{a.nivel}</p>
-              </div>
-              <span className="text-gray-300 text-xl flex-shrink-0">›</span>
-            </button>
+            </div>
           ))}
         </div>
       )}
