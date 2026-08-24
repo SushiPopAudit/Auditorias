@@ -39,10 +39,12 @@ function CategoriasContent() {
   const totalPreguntas = todasPreguntas.length;
   const respondidas    = todasPreguntas.filter(q => auditoria.answers[q.id]?.respuesta).length;
   const saltadas       = todasPreguntas.filter(q => auditoria.skipped[q.id]).length;
-  const pendientes     = todasPreguntas.filter(q =>
-    !auditoria.answers[q.id]?.respuesta && !auditoria.skipped[q.id]
+  // porResolver: sin responder Y/O omitidas (ambos impiden el envío limpio)
+  const porResolver    = todasPreguntas.filter(q =>
+    !auditoria.answers[q.id]?.respuesta || auditoria.skipped[q.id]
   ).length;
-  const allComplete    = pendientes === 0 && totalPreguntas > 0;
+  const sinResponder   = todasPreguntas.filter(q => !auditoria.answers[q.id]?.respuesta).length;
+  const completa       = porResolver === 0 && totalPreguntas > 0;
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const incumplCount = useMemo(() =>
@@ -77,10 +79,10 @@ function CategoriasContent() {
 
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Categorías</p>
-        <p className={clsx('text-xs font-medium', allComplete ? 'text-green-600' : 'text-gray-400')}>
+        <p className={clsx('text-xs font-medium', completa ? 'text-green-600' : 'text-gray-400')}>
           {respondidas}/{totalPreguntas}
           {saltadas > 0 && ` · ${saltadas} omitida${saltadas !== 1 ? 's' : ''}`}
-          {pendientes > 0 && ` · ${pendientes} pendiente${pendientes !== 1 ? 's' : ''}`}
+          {porResolver > 0 && ` · ${porResolver} por resolver`}
         </p>
       </div>
 
@@ -151,15 +153,37 @@ function CategoriasContent() {
               </button>
             )}
 
-            {allComplete ? (
+            {completa ? (
               <button onClick={() => router.push('/auditoria/resumen')}
                 className="w-full py-3.5 bg-green-600 text-white rounded-xl font-semibold">
                 Ver Resumen →
               </button>
             ) : (
-              <div className="w-full py-3.5 bg-gray-100 text-gray-400 rounded-xl text-center text-sm font-medium">
-                Completá todas las categorías para continuar
-              </div>
+              <>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  <p className="text-sm text-amber-900 font-medium">
+                    Faltan {porResolver} punto{porResolver !== 1 ? 's' : ''} por resolver
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    {sinResponder > 0 && `${sinResponder} sin responder`}
+                    {sinResponder > 0 && saltadas > 0 && ' · '}
+                    {saltadas > 0 && `${saltadas} omitida${saltadas !== 1 ? 's' : ''}`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    const ok = confirm(
+                      `Faltan ${porResolver} puntos por resolver.\n\n` +
+                      `Podés enviar la auditoría incompleta, pero esos puntos no van a puntuar.\n\n` +
+                      `¿Continuar al resumen?`
+                    );
+                    if (ok) router.push('/auditoria/resumen');
+                  }}
+                  className="w-full py-3.5 border-2 border-amber-500 text-amber-700 rounded-xl font-semibold"
+                >
+                  Ver Resumen igual →
+                </button>
+              </>
             )}
           </div>
         );

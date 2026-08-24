@@ -4,3 +4,4 @@ export * from './scoring';
 export * from './envio';
 export * from './config';
 export * from './sheets';
+export * from './dashboard';
