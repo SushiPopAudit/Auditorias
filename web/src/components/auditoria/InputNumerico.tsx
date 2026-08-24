@@ -6,12 +6,13 @@ interface Props {
   onChange:         (v: string) => void;
   unidad?:          string;
   placeholder?:     string;
+  disabled?:        boolean;
   /** Muestra el botón +/− (para temperaturas de freezer, etc.) */
   permiteNegativo?: boolean;
 }
 
 export default function InputNumerico({
-  value, onChange, unidad = '', placeholder = 'Ej: 36,5', permiteNegativo = true,
+  value, onChange, unidad = '', placeholder = 'Ej: 36,5', disabled = false, permiteNegativo = true,
 }: Props) {
   const esNegativo = value.trim().startsWith('-');
 
@@ -27,12 +28,14 @@ export default function InputNumerico({
         <button
           type="button"
           onClick={toggleSigno}
+          disabled={disabled}
           aria-label={esNegativo ? 'Cambiar a positivo' : 'Cambiar a negativo'}
           className={clsx(
             'w-14 rounded-xl border-2 font-bold text-lg flex-shrink-0 transition-colors',
             esNegativo
               ? 'bg-blue-600 text-white border-blue-600'
               : 'bg-white text-gray-500 border-gray-200',
+            disabled && 'opacity-40 cursor-not-allowed',
           )}
         >
           {esNegativo ? '−' : '±'}
@@ -46,6 +49,7 @@ export default function InputNumerico({
           pattern="[0-9.,-]*"
           autoComplete="off"
           spellCheck={false}
+          disabled={disabled}
           value={value}
           onChange={e => {
             const limpio = e.target.value
@@ -58,6 +62,7 @@ export default function InputNumerico({
             'w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl',
             'text-lg font-medium focus:outline-none focus:border-red-500',
             unidad && 'pr-14',
+            disabled && 'opacity-40 cursor-not-allowed',
           )}
         />
         {unidad && (

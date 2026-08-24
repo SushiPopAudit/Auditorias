@@ -1,6 +1,6 @@
 'use client';
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useSesion } from '@/contexts/AppContext';
 
 interface Props {
@@ -11,12 +11,17 @@ interface Props {
 export default function AuthGuard({ children, requiredRol }: Props) {
   const { sesion, sessionLoading } = useSesion();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (sessionLoading) return;
     if (!sesion) { router.replace('/login'); return; }
+    if (sesion.primerLogin && pathname !== '/cambiar-password') {
+      router.replace('/cambiar-password?primer=1');
+      return;
+    }
     if (requiredRol && sesion.rol !== requiredRol) router.replace('/welcome');
-  }, [sesion, sessionLoading, requiredRol, router]);
+  }, [sesion, sessionLoading, requiredRol, router, pathname]);
 
   if (sessionLoading || !sesion) {
     return (

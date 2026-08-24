@@ -23,6 +23,7 @@ export interface Borrador {
   catIndex:      number;
   qIndex:        number;
   answers:       Record<string, RespuestaItem>;
+  skipped?:      Record<string, boolean>;
   sinFotos?:     boolean;
 }
 

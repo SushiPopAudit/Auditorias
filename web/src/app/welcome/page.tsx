@@ -30,6 +30,7 @@ function WelcomeContent() {
       catIndex:      borrador.catIndex,
       qIndex:        borrador.qIndex,
       answers:       borrador.answers,
+      skipped:       borrador.skipped ?? {},
     }});
     router.push('/auditoria/categorias');
   }
@@ -121,10 +122,16 @@ function WelcomeContent() {
           ))}
         </div>
 
-        {/* Cerrar sesión */}
-        <button onClick={logout} className="w-full text-center text-sm text-gray-400 py-3">
-          Cerrar sesión
-        </button>
+        {/* Acciones de cuenta */}
+        <div className="flex gap-3">
+          <Link href="/cambiar-password"
+            className="flex-1 text-center text-sm text-gray-400 py-3 border border-gray-200 rounded-xl">
+            🔑 Cambiar contraseña
+          </Link>
+          <button onClick={logout} className="flex-1 text-center text-sm text-gray-400 py-3 border border-gray-200 rounded-xl">
+            Cerrar sesión
+          </button>
+        </div>
       </div>
 
       <BottomNav />

@@ -22,6 +22,7 @@ export interface AuditoriaState {
   catIndex:      number;
   qIndex:        number;
   answers:       Record<string, RespuestaItem>;
+  skipped:       Record<string, boolean>;
 }
 
 export interface AppState {
@@ -44,7 +45,7 @@ const auditInicial: AuditoriaState = {
   local: null, fecha: HOY(), tipo: 'Oficial',
   acompanante: '', posicionAcomp: '',
   auditId: '', categorias: [],
-  catIndex: 0, qIndex: 0, answers: {},
+  catIndex: 0, qIndex: 0, answers: {}, skipped: {},
 };
 
 const initialState: AppState = {
@@ -70,6 +71,8 @@ type Action =
   | { type: 'AUDIT_NEXT_Q' }
   | { type: 'AUDIT_PREV_Q' }
   | { type: 'AUDIT_SET_ANSWER';payload: { id: string; item: RespuestaItem } }
+  | { type: 'AUDIT_SKIP';      payload: string }
+  | { type: 'AUDIT_UNSKIP';    payload: string }
   | { type: 'AUDIT_RESET' }
   | { type: 'AUDIT_RESTORE';   payload: Partial<AuditoriaState> & { local: Local } };
 
@@ -109,6 +112,15 @@ function reducer(state: AppState, action: Action): AppState {
     case 'AUDIT_SET_ANSWER': {
       const answers = { ...state.auditoria.answers, [action.payload.id]: action.payload.item };
       return { ...state, auditoria: { ...state.auditoria, answers } };
+    }
+    case 'AUDIT_SKIP': {
+      const skipped = { ...state.auditoria.skipped, [action.payload]: true };
+      return { ...state, auditoria: { ...state.auditoria, skipped } };
+    }
+    case 'AUDIT_UNSKIP': {
+      const skipped = { ...state.auditoria.skipped };
+      delete skipped[action.payload];
+      return { ...state, auditoria: { ...state.auditoria, skipped } };
     }
     case 'AUDIT_RESET':
       return { ...state, auditoria: auditInicial };
@@ -156,6 +168,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       catIndex:      a.catIndex,
       qIndex:        a.qIndex,
       answers:       a.answers,
+      skipped:       a.skipped,
     });
   }, [state.auditoria]);
 

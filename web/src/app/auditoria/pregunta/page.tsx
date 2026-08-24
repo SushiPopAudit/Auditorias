@@ -5,6 +5,7 @@ import AuthGuard from '@/components/AuthGuard';
 import RespuestaRadio from '@/components/auditoria/RespuestaRadio';
 import FotoCapture from '@/components/auditoria/FotoCapture';
 import InputNumerico from '@/components/auditoria/InputNumerico';
+import AyudaSheet from '@/components/auditoria/AyudaSheet';
 import { useApp } from '@/contexts/AppContext';
 import type { RespuestaItem, FotoItem } from '@/types';
 import {
@@ -30,6 +31,7 @@ function PreguntaContent() {
   const [fechaRaw,    setFechaRaw]    = useState('');
   const [headcount,   setHeadcount]   = useState<Record<string, string>>({});
   const [fotos,       setFotos]       = useState<FotoItem[]>([]);
+  const [mostrarAyuda, setMostrarAyuda] = useState(false);
 
   useEffect(() => {
     if (!auditoria.local) { router.replace('/auditoria/setup'); return; }
@@ -54,8 +56,14 @@ function PreguntaContent() {
 
   const regla    = parseValidacion(pregunta.validacion ?? '');
   const esUltima = auditoria.qIndex === cat.questions.length - 1;
-  const totalCat = cat.questions.length;
-  const progreso = ((auditoria.qIndex + 1) / totalCat) * 100;
+
+  // Progreso global (todas las categorías)
+  const todasPreguntas = auditoria.categorias.flatMap(c => c.questions);
+  const totalGlobal    = todasPreguntas.length;
+  const respondidas    = todasPreguntas.filter(q =>
+    auditoria.answers[q.id]?.respuesta || auditoria.skipped[q.id]
+  ).length;
+  const progresoGlobal = totalGlobal > 0 ? (respondidas / totalGlobal) * 100 : 0;
 
   let inputTipo: string;
   let inputOpciones: string[] = [];
@@ -68,17 +76,20 @@ function PreguntaContent() {
     inputOpciones = parsed.options;
   }
 
-  const numRegla   = regla?.tipo === 'numero' ? regla : null;
-  const fechaRegla = regla?.tipo === 'fecha'  ? regla : null;
+  const numRegla    = regla?.tipo === 'numero' ? regla : null;
+  const fechaRegla  = regla?.tipo === 'fecha'  ? regla : null;
+  const noAplicaNum = respuesta === 'No aplica';
 
   const normalizeNum = (v: string) => v.replace(/,/g, '.');
-  const veredictoNum = numRegla && rawValor
+  const veredictoNum   = numRegla && rawValor && !noAplicaNum
     ? evaluarNumero(normalizeNum(rawValor), numRegla) : null;
   const veredictoFecha = fechaRegla && fechaRaw ? evaluarFecha(fechaRaw) : null;
 
   const unidad        = extraerUnidad(pregunta.pregunta);
   const obsObligatoria = observacionObligatoria(respuesta, pregunta.validacion ?? '');
   const fotoObl        = fotoObligatoria(respuesta, pregunta.imagen ?? '');
+
+  const esSaltada = !!auditoria.skipped[pregunta.id];
 
   const IMP_COLOR: Record<string, string> = {
     crítico: 'bg-red-100 text-red-700', critico: 'bg-red-100 text-red-700',
@@ -106,7 +117,7 @@ function PreguntaContent() {
     dispatch({ type: 'AUDIT_SET_ANSWER', payload: { id: pregunta.id, item: buildItem() } });
   };
 
-  // Autosave con debounce — guarda al context (y de ahí al borrador via AppContext useEffect)
+  // Autosave con debounce
   useEffect(() => {
     const t = setTimeout(() => {
       if (!pregunta) return;
@@ -140,20 +151,50 @@ function PreguntaContent() {
     else           router.push('/auditoria/categorias');
   };
 
+  const handleOmitir = () => {
+    if (esSaltada) {
+      dispatch({ type: 'AUDIT_UNSKIP', payload: pregunta.id });
+    } else {
+      dispatch({ type: 'AUDIT_SKIP', payload: pregunta.id });
+      if (!esUltima) dispatch({ type: 'AUDIT_NEXT_Q' });
+      else           router.push('/auditoria/categorias');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col pb-36">
+    <div className="min-h-screen bg-gray-50 flex flex-col pb-40">
+      {/* Header con barra de progreso global */}
       <div className="bg-white border-b border-gray-200 px-4 pt-10 pb-3 sticky top-0 z-10">
-        <span className="text-xs text-gray-400">{auditoria.qIndex + 1}/{totalCat} · {cat.name}</span>
-        <div className="h-1 bg-gray-100 rounded-full mt-2">
-          <div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${progreso}%` }} />
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-400">{auditoria.qIndex + 1}/{cat.questions.length} · {cat.name}</span>
+          <span className="text-xs text-gray-400">{respondidas}/{totalGlobal} total</span>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full mt-2">
+          <div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${progresoGlobal}%` }} />
         </div>
       </div>
 
       <div className="flex-1 px-4 py-4 space-y-4">
-        <span className={clsx('inline-block px-2 py-0.5 rounded-full text-xs font-semibold',
-          IMP_COLOR[(pregunta.importancia ?? '').toLowerCase()] ?? IMP_COLOR['media'])}>
-          {pregunta.importancia}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={clsx('inline-block px-2 py-0.5 rounded-full text-xs font-semibold',
+            IMP_COLOR[(pregunta.importancia ?? '').toLowerCase()] ?? IMP_COLOR['media'])}>
+            {pregunta.importancia}
+          </span>
+          {pregunta.explicacionDetallada && (
+            <button
+              onClick={() => setMostrarAyuda(true)}
+              className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center"
+              aria-label="Ver criterios de evaluación"
+            >
+              ?
+            </button>
+          )}
+          {esSaltada && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+              Omitida
+            </span>
+          )}
+        </div>
 
         <div>
           <p className="text-xs text-gray-400 mb-1">{pregunta.subcategoria}</p>
@@ -178,6 +219,7 @@ function PreguntaContent() {
                   value={rawValor}
                   unidad={unidad}
                   placeholder="Ej: -18,5"
+                  disabled={noAplicaNum}
                   onChange={v => {
                     setRawValor(v);
                     const norm = normalizeNum(v);
@@ -194,8 +236,11 @@ function PreguntaContent() {
             </div>
             {numRegla?.allowNA && (
               <label className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                <input type="checkbox" checked={respuesta === 'No aplica'}
-                  onChange={e => { if (e.target.checked) { setRespuesta('No aplica'); setRawValor(''); } else setRespuesta(''); }} />
+                <input type="checkbox" checked={noAplicaNum}
+                  onChange={e => {
+                    if (e.target.checked) { setRespuesta('No aplica'); setRawValor(''); }
+                    else setRespuesta('');
+                  }} />
                 No aplica
               </label>
             )}
@@ -207,13 +252,32 @@ function PreguntaContent() {
           <div>
             <label className="text-sm text-gray-600 mb-1 block">Fecha de vencimiento</label>
             <input type="date" value={fechaRaw}
-              onChange={e => { const v = e.target.value; setFechaRaw(v); const verd = evaluarFecha(v); setRespuesta(verd ? verd.resultado : ''); }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500" />
-            {veredictoFecha?.advertencia && <p className="text-amber-600 text-sm mt-1">⚠️ {veredictoFecha.advertencia}</p>}
+              disabled={respuesta === 'No aplica'}
+              onChange={e => {
+                const v = e.target.value;
+                setFechaRaw(v);
+                const verd = evaluarFecha(v);
+                setRespuesta(verd ? verd.resultado : '');
+              }}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400" />
+            {veredictoFecha && (
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className={clsx('text-xs font-bold px-2.5 py-0.5 rounded-full',
+                  VEREDICTO_STYLE[veredictoFecha.resultado] ?? 'bg-gray-100 text-gray-600')}>
+                  {veredictoFecha.resultado}
+                </span>
+                {veredictoFecha.advertencia && (
+                  <span className="text-xs text-amber-600 font-semibold">⚠️ {veredictoFecha.advertencia}</span>
+                )}
+              </div>
+            )}
             {fechaRegla?.allowNA && (
               <label className="flex items-center gap-2 mt-2 text-sm text-gray-600">
                 <input type="checkbox" checked={respuesta === 'No aplica'}
-                  onChange={e => { if (e.target.checked) { setRespuesta('No aplica'); setFechaRaw(''); } else setRespuesta(''); }} />
+                  onChange={e => {
+                    if (e.target.checked) { setRespuesta('No aplica'); setFechaRaw(''); }
+                    else setRespuesta('');
+                  }} />
                 No aplica
               </label>
             )}
@@ -237,7 +301,7 @@ function PreguntaContent() {
           </div>
         )}
 
-        {/* Número legacy (sin auto-evaluación) */}
+        {/* Número legacy */}
         {inputTipo === 'number' && (
           <div>
             <label className="text-sm text-gray-600 mb-1 block">{pregunta.pregunta || 'Valor medido'}</label>
@@ -283,7 +347,7 @@ function PreguntaContent() {
         <FotoCapture fotos={fotos} obligatoria={fotoObl} onChange={setFotos} />
       </div>
 
-      {/* Footer — 3 botones */}
+      {/* Footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 space-y-2">
         <div className="flex gap-2">
           {auditoria.qIndex > 0 ? (
@@ -297,11 +361,28 @@ function PreguntaContent() {
             {esUltima ? 'Completar →' : 'Siguiente →'}
           </button>
         </div>
-        <button onClick={handleVolverCategorias}
-          className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm">
-          ‹ Volver a categorías
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleVolverCategorias}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm">
+            ‹ Categorías
+          </button>
+          <button onClick={handleOmitir}
+            className={clsx('flex-1 py-2.5 rounded-xl text-sm border',
+              esSaltada
+                ? 'border-amber-300 text-amber-700 bg-amber-50'
+                : 'border-gray-200 text-gray-500')}>
+            {esSaltada ? '↩ Quitar omisión' : 'Omitir pregunta'}
+          </button>
+        </div>
       </div>
+
+      {mostrarAyuda && pregunta.explicacionDetallada && (
+        <AyudaSheet
+          titulo={pregunta.control}
+          explicacion={pregunta.explicacionDetallada}
+          onClose={() => setMostrarAyuda(false)}
+        />
+      )}
     </div>
   );
 }

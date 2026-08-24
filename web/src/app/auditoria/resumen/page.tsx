@@ -47,6 +47,8 @@ function ResumenContent() {
     })),
     [auditoria.categorias, auditoria.answers, state.umbralCriticos]
   );
+
+  // Críticos con "No Cumple" o sin responder
   const criticos = useMemo(() =>
     todasPreguntas.filter(p => {
       const imp = (p.importancia ?? '').toLowerCase();
@@ -54,11 +56,31 @@ function ResumenContent() {
       return (imp === 'crítico' || imp === 'critico') && ans?.respuesta?.toLowerCase().includes('no cumple');
     }), [todasPreguntas, auditoria.answers]);
 
+  const criticosSinResponder = useMemo(() =>
+    todasPreguntas.filter(p => {
+      const imp = (p.importancia ?? '').toLowerCase();
+      return (imp === 'crítico' || imp === 'critico') && !auditoria.answers[p.id]?.respuesta;
+    }), [todasPreguntas, auditoria.answers]);
+
   const incumplCount = useMemo(() =>
     Object.values(auditoria.answers).filter(a => esRespuestaNegativa(a.respuesta)).length,
     [auditoria.answers]);
 
-  const totalRespondidas = todasPreguntas.filter(q => auditoria.answers[q.id]).length;
+  const totalRespondidas = todasPreguntas.filter(q => auditoria.answers[q.id]?.respuesta).length;
+  const sinResponder     = todasPreguntas.length - totalRespondidas;
+
+  // Distribución de respuestas
+  const dist = useMemo(() => {
+    let cumple = 0, parcial = 0, nc = 0, na = 0;
+    Object.values(auditoria.answers).forEach(a => {
+      const v = (a.respuesta || '').toLowerCase();
+      if (v === 'cumple')                            cumple++;
+      else if (v.includes('parcial'))                parcial++;
+      else if (v.includes('no cumple') || v === 'nocumple') nc++;
+      else if (v.includes('aplica'))                 na++;
+    });
+    return { cumple, parcial, nc, na };
+  }, [auditoria.answers]);
 
   function exportarDatos() {
     if (!auditoria.local) return;
@@ -102,12 +124,14 @@ function ResumenContent() {
     if (result.ok) {
       borrarBorrador();
       if (result.emailStatus) sessionStorage.setItem('audit_emailStatus', result.emailStatus);
+      if (result.desviosRepetidos?.length) {
+        sessionStorage.setItem('audit_desvios', JSON.stringify(result.desviosRepetidos));
+      }
       dispatch({ type: 'AUDIT_RESET' });
       router.replace('/auditoria/exito');
       return;
     }
 
-    // POST falló — verificar si llegó igual
     setVerificando(true);
     const llego = await verificarEnvio(auditoria.auditId);
     setVerificando(false);
@@ -143,6 +167,33 @@ function ResumenContent() {
           <p className="text-sm opacity-80">{puntaje.obtenido} / {puntaje.posible} puntos · {totalRespondidas}/{todasPreguntas.length} preguntas</p>
         </div>
 
+        {/* Distribución */}
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { l: 'Cumple',    v: dist.cumple,  c: 'text-green-700 bg-green-50' },
+            { l: 'Parcial',   v: dist.parcial, c: 'text-amber-700 bg-amber-50' },
+            { l: 'No cumple', v: dist.nc,      c: 'text-red-700   bg-red-50'   },
+            { l: 'No aplica', v: dist.na,      c: 'text-gray-600  bg-gray-100' },
+          ].map(s => (
+            <div key={s.l} className={clsx('rounded-xl py-3 text-center', s.c)}>
+              <p className="text-xl font-bold">{s.v}</p>
+              <p className="text-xs mt-0.5 leading-tight">{s.l}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Aviso preguntas sin responder */}
+        {sinResponder > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="text-sm font-semibold text-amber-800">
+              ⚠ {sinResponder} pregunta{sinResponder !== 1 ? 's' : ''} sin responder
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Las preguntas sin respuesta no suman puntos. Volvé a categorías para completarlas.
+            </p>
+          </div>
+        )}
+
         {puntaje.reprobado && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4">
             <p className="font-semibold text-red-700 mb-1">⛔ Auditoría Reprobada</p>
@@ -158,8 +209,8 @@ function ResumenContent() {
           </button>
         )}
 
-        {/* Críticos */}
-        {criticos.length > 0 && (
+        {/* Críticos con No Cumple o sin responder */}
+        {(criticos.length > 0 || criticosSinResponder.length > 0) && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100">
               <p className="font-semibold text-gray-900 text-sm">Incumplimientos Críticos</p>
@@ -172,6 +223,12 @@ function ResumenContent() {
                   {auditoria.answers[p.id]?.observacion && (
                     <p className="text-xs text-gray-500 mt-1 italic">&quot;{auditoria.answers[p.id].observacion}&quot;</p>
                   )}
+                </li>
+              ))}
+              {criticosSinResponder.map(p => (
+                <li key={p.id} className="px-4 py-3 bg-gray-50">
+                  <p className="text-sm font-medium text-gray-500">{p.control}</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Sin responder · {p.categoria}</p>
                 </li>
               ))}
             </ul>
@@ -211,6 +268,9 @@ function ResumenContent() {
           <p><span className="text-gray-400">Auditor:</span> {sesion?.nombre}</p>
           <p><span className="text-gray-400">Fecha:</span> {auditoria.fecha}</p>
           <p><span className="text-gray-400">Tipo:</span> {auditoria.tipo}</p>
+          {auditoria.local.emails && (
+            <p><span className="text-gray-400">Notificación:</span> <span className="text-xs break-all">{auditoria.local.emails}</span></p>
+          )}
           <p><span className="text-gray-400">ID:</span> <span className="font-mono text-xs">{auditoria.auditId}</span></p>
         </div>
 

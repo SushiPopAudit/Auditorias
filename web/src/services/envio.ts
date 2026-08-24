@@ -14,11 +14,18 @@ import type { Pregunta, Puntaje, RespuestaItem } from '@/types';
 
 const URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL ?? '';
 
+export interface DesvioRepetido {
+  control:    string;
+  veces:      number;
+  categoria?: string;
+}
+
 export interface EnvioResult {
-  ok:           boolean;
-  auditId?:     string;
-  emailStatus?: string;
-  error?:       string;
+  ok:                boolean;
+  auditId?:          string;
+  emailStatus?:      string;
+  error?:            string;
+  desviosRepetidos?: DesvioRepetido[];
 }
 
 export interface EnvioParams {
@@ -114,9 +121,10 @@ export async function enviarAuditoria(p: EnvioParams): Promise<EnvioResult> {
     }
 
     return {
-      ok:          true,
-      auditId:     String(data.auditId ?? p.auditId),
-      emailStatus: String(data.email ?? 'no configurado'),
+      ok:                true,
+      auditId:           String(data.auditId ?? p.auditId),
+      emailStatus:       String(data.email ?? 'no configurado'),
+      desviosRepetidos:  Array.isArray(data.desviosRepetidos) ? data.desviosRepetidos as DesvioRepetido[] : undefined,
     };
   } catch (e) {
     return { ok: false, error: `Error de conexión: ${String(e)}` };

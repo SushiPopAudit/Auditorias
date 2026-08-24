@@ -47,16 +47,41 @@ export async function login(email: string, password: string): Promise<LoginResul
     const u = (data.user ?? data) as Record<string, unknown>;
 
     const sesion: Omit<Sesion, 'savedAt'> = {
-      email:   String(u.email   ?? email),
-      nombre:  String(u.nombre  ?? ''),
-      rol:     (u.rol === 'Admin' ? 'Admin' : 'Auditor') as 'Admin' | 'Auditor',
-      locales: String(u.locales ?? ''),
-      token:   pwd,          // El token es el hash SHA-256 de la contraseña
+      email:      String(u.email   ?? email),
+      nombre:     String(u.nombre  ?? ''),
+      rol:        (u.rol === 'Admin' ? 'Admin' : 'Auditor') as 'Admin' | 'Auditor',
+      locales:    String(u.locales ?? ''),
+      token:      pwd,
+      primerLogin: u.primerLogin === true || u.primerLogin === 'true',
     };
 
     saveSession(sesion);
     return { ok: true, sesion };
-  } catch (e) {
+  } catch {
     return { ok: false, error: 'Error de conexión. Verificá tu internet.' };
+  }
+}
+
+export interface PasswordResult { ok: boolean; error?: string; nuevoToken?: string }
+
+export async function cambiarPassword(email: string, actual: string, nueva: string): Promise<PasswordResult> {
+  try {
+    const oldHash = await hashPwd(actual);
+    const newHash = await hashPwd(nueva);
+    const data = await callAPI({ action: 'changePassword', email, oldHash, newHash });
+    if (!data.success) return { ok: false, error: String(data.message ?? 'Error al cambiar contraseña') };
+    return { ok: true, nuevoToken: newHash };
+  } catch {
+    return { ok: false, error: 'Error de conexión.' };
+  }
+}
+
+export async function recuperarPassword(email: string): Promise<PasswordResult> {
+  try {
+    const data = await callAPI({ action: 'forgotPassword', email });
+    if (!data.success) return { ok: false, error: String(data.message ?? 'Error al recuperar contraseña') };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Error de conexión.' };
   }
 }

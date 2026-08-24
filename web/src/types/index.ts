@@ -62,6 +62,7 @@ export interface Sesion {
   locales: string;               // locales asignados (separados por coma)
   token: string;
   savedAt: number;               // timestamp ms
+  primerLogin?: boolean;
 }
 
 /** Auditoría lista para enviar al Apps Script */
