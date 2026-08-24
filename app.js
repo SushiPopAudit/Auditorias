@@ -785,10 +785,44 @@ function renderCalendario() {
   const hoy = new Date();
   const hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
 
-  // Colores por turno
-  const TURNO_COLOR = { 'Día': '#f97316', 'Noche': '#6366f1', 'Intermedio': '#14b8a6' };
-  const TURNO_BG    = { 'Día': '#fff7ed', 'Noche': '#eef2ff', 'Intermedio': '#f0fdfa' };
-  const TURNO_TEXT  = { 'Día': '#c2410c', 'Noche': '#4338ca', 'Intermedio': '#0f766e' };
+  // ── Motivos de visita (reemplaza a los turnos) ──
+  // El backend sigue recibiendo el parámetro `turno`: reusamos esa columna.
+  const MOTIVOS = [
+    { id: 'Auditoria',    label: 'Auditoría',    letra: 'A' },
+    { id: 'Franco',       label: 'Franco',       letra: 'F' },
+    { id: 'Capacitacion', label: 'Capacitación', letra: 'C' },
+  ];
+  const MOTIVO_LETRA = { 'Auditoria': 'A', 'Franco': 'F', 'Capacitacion': 'C' };
+  const MOTIVO_LABEL = { 'Auditoria': 'Auditoría', 'Franco': 'Franco', 'Capacitacion': 'Capacitación' };
+
+  // ── Colores por auditor ──
+  // Paleta de 7 hues validada para daltonismo (protanopía/deuteranopía/tritanopía)
+  // y contraste. NO agregar rojo: el rojo de marca marca "hoy" y "día seleccionado".
+  // A partir del 8º auditor se usa gris — las iniciales siempre acompañan al color,
+  // así que la identidad nunca depende solo del color.
+  const AUDITOR_COLORS = ['#2563eb','#ea580c','#16a34a','#9333ea','#a16207','#0891b2','#db2777'];
+  const AUDITOR_GRIS   = '#64748b';
+
+  // Mapa email → color, estable: se ordena por email para que el color de cada
+  // auditor no cambie al agregar o quitar otro.
+  const auditoresOrdenados = (state.adminUsers || [])
+    .filter(function(us) { return us.rol === 'Auditor'; })
+    .map(function(us) { return String(us.email || '').toLowerCase(); })
+    .sort();
+
+  function colorAuditor(email) {
+    const i = auditoresOrdenados.indexOf(String(email || '').toLowerCase());
+    if (i === -1 || i >= AUDITOR_COLORS.length) return AUDITOR_GRIS;
+    return AUDITOR_COLORS[i];
+  }
+
+  // "Hernán López" → "HL"; "Ana" → "AN"
+  function iniciales(nombre) {
+    const partes = String(nombre || '').trim().split(/\s+/).filter(Boolean);
+    if (!partes.length) return '??';
+    if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+  }
 
   function estadobadge(estado) {
     if (estado === 'Realizada') return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:#dcfce7;color:#166534">${escHtml(estado)}</span>`;
@@ -810,7 +844,7 @@ function renderCalendario() {
     const anio = state.calendarioAnio;
     const tab  = state.calendarioTab || 'calendario';
     const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    const DIAS_CABECERA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const DIAS_CABECERA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
     const mesStr = anio + '-' + String(mes + 1).padStart(2, '0');
 
     // Tabs pill buttons
@@ -838,8 +872,19 @@ function renderCalendario() {
         visitasPorDia[v.fecha].push(v);
       });
 
-      const primerDia = new Date(anio, mes, 1).getDay();
+      // getDay() devuelve 0=Domingo; lo convertimos a 0=Lunes … 6=Domingo
+      const primerDia = (new Date(anio, mes, 1).getDay() + 6) % 7;
       const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+      const estilosCal = '<style>'
+        + '.cal-v{display:block;font-size:0.62rem;line-height:1.25;padding:1px 3px;border-radius:3px;'
+        +   'color:#fff;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+        + '.cal-v .cal-det{display:none}'
+        + '@media(min-width:760px){'
+        +   '.cal-v{font-size:0.68rem;padding:2px 4px}'
+        +   '.cal-v .cal-det{display:inline}'
+        + '}'
+        + '</style>';
+
       let celdasHtml = '';
       for (let i = 0; i < primerDia; i++) {
         celdasHtml += '<div style="min-height:44px;padding:4px;background:#f9fafb;border:1px solid #e5e7eb"></div>';
@@ -849,29 +894,173 @@ function renderCalendario() {
         const vsDay = visitasPorDia[dStr] || [];
         const isHoy = dStr === hoyStr;
         const isSel = dStr === state.calendarioDiaSeleccionado;
-        const dots = vsDay.map(function(v) {
-          const color = TURNO_COLOR[v.turno] || '#94a3b8';
-          return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin:0 1px"></span>';
+
+        // Una línea por visita: iniciales sobre el color del auditor.
+        // En pantalla ancha se agrega " - Local - A".
+        const items = vsDay.map(function(v) {
+          const color = colorAuditor(v.auditorEmail);
+          const ini   = iniciales(v.auditorNombre || v.auditorEmail);
+          const esFranco = v.turno === 'Franco';
+          const letra = MOTIVO_LETRA[v.turno] || '';
+          // Franco no muestra local ni letra: el texto "Franco" ya lo dice todo
+          const detalle = esFranco
+            ? ' - Franco'
+            : ' - ' + escHtml(v.local) + (letra ? ' - ' + letra : '');
+          const titulo = ini + (esFranco ? ' - Franco' : ' - ' + v.local + (letra ? ' - ' + letra : ''));
+          return '<span class="cal-v" style="background:' + color + '" title="' + escHtml(titulo) + '">'
+            + escHtml(ini)
+            + '<span class="cal-det">' + detalle + '</span>'
+            + '</span>';
         }).join('');
+
         const borderStyle = isSel ? 'border:2px solid #e4001b' : (isHoy ? 'border:2px solid #16a34a' : 'border:1px solid #e5e7eb');
         const bgStyle     = isSel ? 'background:#fff1f2'      : (isHoy ? 'background:#f0fdf4'      : 'background:#fff');
         const numColor    = isHoy ? '#15803d' : (isSel ? '#e4001b' : '#1a1a1a');
-        celdasHtml += '<div data-cal-dia="' + escHtml(dStr) + '" style="min-height:44px;padding:4px;cursor:pointer;' + bgStyle + ';' + borderStyle + ';border-radius:4px">'
-          + '<div style="font-size:0.8rem;font-weight:' + (isHoy ? '700' : '500') + ';color:' + numColor + '">' + d + '</div>'
-          + (dots ? '<div style="display:flex;flex-wrap:wrap;gap:1px;margin-top:2px">' + dots + '</div>' : '')
+
+        celdasHtml += '<div data-cal-dia="' + escHtml(dStr) + '" style="min-height:56px;padding:3px;cursor:pointer;overflow:hidden;' + bgStyle + ';' + borderStyle + ';border-radius:4px">'
+          + '<div style="font-size:0.78rem;font-weight:' + (isHoy ? '700' : '500') + ';color:' + numColor + '">' + d + '</div>'
+          + items
           + '</div>';
       }
 
-      const leyenda = Object.entries(TURNO_COLOR).map(function(e) {
-        return '<div style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + e[1] + '"></span><span style="font-size:0.72rem;color:#6b7280">' + e[0] + '</span></div>';
+      // Leyenda: un chip por auditor con su color, y las letras de motivo
+      const leyendaAuditores = (state.adminUsers || [])
+        .filter(function(us) { return us.rol === 'Auditor' && us.estado === 'Activo'; })
+        .sort(function(a, b) { return String(a.email).toLowerCase() < String(b.email).toLowerCase() ? -1 : 1; })
+        .map(function(us) {
+          return '<div style="display:flex;align-items:center;gap:5px">'
+            + '<span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + colorAuditor(us.email) + '"></span>'
+            + '<span style="font-size:0.72rem;color:#6b7280">' + escHtml(iniciales(us.nombre)) + ' · ' + escHtml(us.nombre) + '</span>'
+            + '</div>';
+        }).join('');
+
+      const leyendaMotivos = '<div style="font-size:0.7rem;color:#9ca3af;margin-top:6px">'
+        + 'A = Auditoría · F = Franco · C = Capacitación</div>';
+
+      const leyenda = leyendaAuditores;
+
+      let resumenSemanalHtml = '';
+      let coberturaLocalesHtml = '';
+
+      // ── Resumen semanal por auditor ──
+      // Las semanas coinciden con las filas de la grilla (lunes a domingo)
+      const semanaDe = function(dia) {
+        return Math.floor((primerDia + dia - 1) / 7) + 1;   // 1, 2, 3...
+      };
+      const totalSemanas = semanaDe(diasEnMes);
+
+      // { emailAuditor: { nombre, semanas: { 1: {vis, fra}, ... }, totVis, totFra } }
+      const porAuditor = {};
+      visitas.forEach(function(v) {
+        if (!v.fecha.startsWith(mesStr)) return;
+        const dia = parseInt(v.fecha.slice(8, 10), 10);
+        if (isNaN(dia)) return;
+        const em = String(v.auditorEmail || '').toLowerCase();
+        if (!porAuditor[em]) {
+          porAuditor[em] = { nombre: v.auditorNombre || em, semanas: {}, totVis: 0, totFra: 0 };
+        }
+        const sem = semanaDe(dia);
+        if (!porAuditor[em].semanas[sem]) porAuditor[em].semanas[sem] = { vis: 0, fra: 0 };
+        if (v.turno === 'Franco') {
+          porAuditor[em].semanas[sem].fra++; porAuditor[em].totFra++;
+        } else {
+          // Auditorías y capacitaciones suman como visita
+          porAuditor[em].semanas[sem].vis++; porAuditor[em].totVis++;
+        }
+      });
+
+      const emailsAud = Object.keys(porAuditor).sort(function(a, b) {
+        return porAuditor[a].nombre.localeCompare(porAuditor[b].nombre);
+      });
+
+      let cabeceraSem = '<th style="text-align:left;padding:6px 8px;font-size:0.72rem;color:#6b7280;font-weight:700">Auditor</th>';
+      for (let s = 1; s <= totalSemanas; s++) {
+        cabeceraSem += '<th style="padding:6px 6px;font-size:0.72rem;color:#6b7280;font-weight:700;white-space:nowrap">Sem ' + s + '</th>';
+      }
+      cabeceraSem += '<th style="padding:6px 8px;font-size:0.72rem;color:#6b7280;font-weight:700">Total</th>';
+
+      const filasSem = emailsAud.map(function(em) {
+        const a = porAuditor[em];
+        let celdas = '<td style="padding:7px 8px;white-space:nowrap">'
+          + '<span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:' + colorAuditor(em) + ';margin-right:6px"></span>'
+          + '<span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">' + escHtml(a.nombre) + '</span></td>';
+
+        for (let s = 1; s <= totalSemanas; s++) {
+          const d = a.semanas[s] || { vis: 0, fra: 0 };
+          celdas += '<td style="padding:7px 6px;text-align:center;font-size:0.78rem;white-space:nowrap">'
+            + (d.vis ? '<span style="color:#1a1a1a;font-weight:700">' + d.vis + '</span><span style="color:#9ca3af"> vis</span>' : '<span style="color:#d1d5db">—</span>')
+            + (d.fra ? '<span style="color:#9ca3af"> · </span><span style="color:#b45309;font-weight:700">' + d.fra + '</span><span style="color:#9ca3af"> fr</span>' : '')
+            + '</td>';
+        }
+
+        celdas += '<td style="padding:7px 8px;text-align:center;font-size:0.78rem;white-space:nowrap;background:#f9fafb">'
+          + '<span style="color:#1a1a1a;font-weight:700">' + a.totVis + '</span><span style="color:#9ca3af"> vis</span>'
+          + (a.totFra ? '<span style="color:#9ca3af"> · </span><span style="color:#b45309;font-weight:700">' + a.totFra + '</span><span style="color:#9ca3af"> fr</span>' : '')
+          + '</td>';
+
+        return '<tr style="border-top:1px solid #f1f5f9">' + celdas + '</tr>';
       }).join('');
 
-      bodyHtml = navMesHtml
+      resumenSemanalHtml = emailsAud.length === 0 ? '' :
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Por auditor y semana</div>'
+        + '<div style="overflow-x:auto">'
+        + '<table style="width:100%;border-collapse:collapse;min-width:340px">'
+        + '<thead><tr>' + cabeceraSem + '</tr></thead>'
+        + '<tbody>' + filasSem + '</tbody>'
+        + '</table></div>'
+        + '<div style="font-size:0.7rem;color:#9ca3af;margin-top:8px">vis = auditorías + capacitaciones · fr = francos</div>'
+        + '</div>';
+
+      // ── Cobertura de locales del mes ──
+      // Blanco = sin visitas · Verde = 1 visita · Azul = 2 o más
+      // Los francos no cuentan (no tienen local real)
+      const visitasPorLocal = {};
+      visitas.forEach(function(v) {
+        if (!v.fecha.startsWith(mesStr)) return;
+        if (v.turno === 'Franco') return;
+        const ln = String(v.local || '').trim();
+        if (!ln) return;
+        visitasPorLocal[ln] = (visitasPorLocal[ln] || 0) + 1;
+      });
+
+      const localesTodos = (state.locales || []).map(function(l) { return l.nombre; }).sort();
+
+      let sinVisita = 0, conUna = 0, conVarias = 0;
+      const chipsLocales = localesTodos.map(function(ln) {
+        const n = visitasPorLocal[ln] || 0;
+        let bg, bd, tx;
+        if (n === 0)      { bg = '#fff';     bd = '#e5e7eb'; tx = '#9ca3af'; sinVisita++; }
+        else if (n === 1) { bg = '#f0fdf4';  bd = '#86efac'; tx = '#15803d'; conUna++;    }
+        else              { bg = '#eff6ff';  bd = '#93c5fd'; tx = '#1d4ed8'; conVarias++; }
+        return '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:8px;padding:6px 9px;display:flex;align-items:center;gap:6px">'
+          + '<span style="font-size:0.78rem;font-weight:600;color:' + tx + '">' + escHtml(ln) + '</span>'
+          + (n > 1 ? '<span style="font-size:0.7rem;font-weight:700;color:' + tx + ';background:#fff;border-radius:20px;padding:0 6px">' + n + '</span>' : '')
+          + '</div>';
+      }).join('');
+
+      coberturaLocalesHtml = localesTodos.length === 0 ? '' :
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:14px">'
+        + '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:10px">'
+        + '<span style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Cobertura de locales</span>'
+        + '<span style="font-size:0.78rem;color:#6b7280">' + (conUna + conVarias) + ' de ' + localesTodos.length + ' con visita</span>'
+        + '</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:6px">' + chipsLocales + '</div>'
+        + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">'
+        +   '<div style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#fff;border:1px solid #e5e7eb;display:inline-block"></span><span style="font-size:0.7rem;color:#6b7280">Sin visitas (' + sinVisita + ')</span></div>'
+        +   '<div style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#f0fdf4;border:1px solid #86efac;display:inline-block"></span><span style="font-size:0.7rem;color:#6b7280">1 visita (' + conUna + ')</span></div>'
+        +   '<div style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#eff6ff;border:1px solid #93c5fd;display:inline-block"></span><span style="font-size:0.7rem;color:#6b7280">2 o más (' + conVarias + ')</span></div>'
+        + '</div></div>';
+
+      bodyHtml = estilosCal + navMesHtml
         + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px">'
         + DIAS_CABECERA.map(function(d) { return '<div style="text-align:center;font-size:0.7rem;font-weight:600;color:#6b7280;padding:4px 0">' + d + '</div>'; }).join('')
         + '</div>'
-        + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:16px">' + celdasHtml + '</div>'
-        + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">' + leyenda + '</div>';
+        + '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px">' + celdasHtml + '</div>'
+        + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px">' + leyenda + '</div>'
+        + leyendaMotivos
+        + resumenSemanalHtml    // ← Tarea 6
+        + coberturaLocalesHtml; // ← Tarea 7
 
       // Modal
       if (state.calendarioDiaSeleccionado) {
@@ -881,7 +1070,7 @@ function renderCalendario() {
           ? '<p style="color:#6b7280;font-size:0.85rem;margin:0 0 4px">Sin visitas asignadas.</p>'
           : vsDia.map(function(v) {
               return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
-                + turnobage(v.turno) + '<span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">' + escHtml(v.local) + '</span>'
+                + motivobadge(v.turno) + '<span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">' + escHtml(v.local) + '</span>'
                 + '<span style="font-size:0.82rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span>'
                 + '<span style="margin-left:auto">' + estadobadge(v.estado) + '</span></div>';
             }).join('');
@@ -890,9 +1079,9 @@ function renderCalendario() {
           return '<option value="' + escHtml(l.nombre) + '">' + escHtml(l.nombre) + '</option>';
         }).join('');
         const auditoresOpts = (state.adminUsers||[])
-          .filter(function(u) { return u.rol === 'Auditor' || u.rol === 'Admin'; })
-          .filter(function(u) { return u.estado === 'Activo'; })
-          .map(function(u) { return '<option value="' + escHtml(u.email) + '">' + escHtml(u.nombre) + '</option>'; })
+          .filter(function(us) { return us.rol === 'Auditor'; })
+          .filter(function(us) { return us.estado === 'Activo'; })
+          .map(function(us) { return '<option value="' + escHtml(us.email) + '">' + escHtml(us.nombre) + '</option>'; })
           .join('');
 
         modalDia = '<div id="cal-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">'
@@ -905,13 +1094,13 @@ function renderCalendario() {
           + '<div style="border-top:1px solid #e5e7eb;padding-top:14px">'
           + '<div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>'
           + '<div style="display:flex;flex-direction:column;gap:10px">'
-          + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>'
+          + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Motivo</label>'
+          + '<select id="sel-cal-motivo" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
+          + MOTIVOS.map(function(m) { return '<option value="' + m.id + '">' + m.label + '</option>'; }).join('')
+          + '</select></div>'
+          + '<div id="cal-local-wrap"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>'
           + '<select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
           + '<option value="">— Seleccioná un local —</option>' + localesOpts + '</select></div>'
-          + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Turno</label>'
-          + '<select id="sel-cal-turno" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-          + '<option value="Día">Día</option><option value="Noche">Noche</option><option value="Intermedio">Intermedio</option>'
-          + '</select></div>'
           + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>'
           + '<select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
           + '<option value="">— Seleccioná un auditor —</option>' + auditoresOpts + '</select></div>'
@@ -950,8 +1139,8 @@ function renderCalendario() {
             return '<div style="display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
               + '<div style="flex:1;min-width:0">'
               + '<div style="font-size:0.75rem;color:#6b7280">' + formatFechaLarga(v.fecha) + '</div>'
-              + '<div style="font-size:0.9rem;font-weight:600;color:#1a1a1a;margin-top:1px">' + escHtml(v.local) + '</div>'
-              + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">' + turnobage(v.turno) + '<span style="font-size:0.78rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span></div>'
+              + (v.turno === 'Franco' ? '' : '<div style="font-size:0.9rem;font-weight:600;color:#1a1a1a;margin-top:1px">' + escHtml(v.local) + '</div>')
+              + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">' + motivobadge(v.turno) + '<span style="font-size:0.78rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span></div>'
               + '</div>'
               + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
               + estadobadge(v.estado)
@@ -980,6 +1169,7 @@ function renderCalendario() {
       // Por local
       const byLocal = {};
       visitasMes.forEach(function(v) {
+        if (v.turno === 'Franco') return;   // los francos no tienen local real
         if (!byLocal[v.local]) byLocal[v.local] = { total: 0, realizadas: 0 };
         byLocal[v.local].total++;
         if (v.estado === 'Realizada') byLocal[v.local].realizadas++;
@@ -1080,12 +1270,12 @@ function renderCalendario() {
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${expanded?'10':'0'}px">
               <div style="flex:1;min-width:0">
                 <div style="font-size:0.78rem;color:#6b7280">${formatFechaLarga(v.fecha)}</div>
-                <div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-top:2px">${escHtml(v.local)}</div>
-                <div style="display:flex;gap:6px;align-items:center;margin-top:4px">${turnobage(v.turno)}${estadobadge(v.estado)}</div>
+                ${v.turno !== 'Franco' ? `<div style="font-size:0.95rem;font-weight:700;color:#1a1a1a;margin-top:2px">${escHtml(v.local)}</div>` : ''}
+                <div style="display:flex;gap:6px;align-items:center;margin-top:4px">${motivobadge(v.turno)}${estadobadge(v.estado)}</div>
               </div>
-              <button data-cal-fallas-local="${escHtml(v.local)}" data-cal-fallas-visita="${escHtml(v.visitaId)}" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:0.78rem;color:#6b7280;white-space:nowrap">
+              ${v.turno !== 'Franco' ? `<button data-cal-fallas-local="${escHtml(v.local)}" data-cal-fallas-visita="${escHtml(v.visitaId)}" style="background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:0.78rem;color:#6b7280;white-space:nowrap">
                 ${expanded ? 'Ocultar' : 'Ver fallas anteriores'}
-              </button>
+              </button>` : ''}
             </div>
             ${expanded ? `<div style="margin-top:8px;padding-top:10px;border-top:1px solid #f1f5f9">${acordeonBody}</div>` : ''}
           </div>`;
@@ -1098,13 +1288,15 @@ function renderCalendario() {
     </div>`;
 }
 
-// Helper turno badge (con 'e' — la versión anterior tenía typo)
-function turnobage(turno) {
-  const TURNO_BG   = { 'Día': '#fff7ed', 'Noche': '#eef2ff', 'Intermedio': '#f0fdfa' };
-  const TURNO_TEXT = { 'Día': '#c2410c', 'Noche': '#4338ca', 'Intermedio': '#0f766e' };
-  const bg   = TURNO_BG[turno]   || '#f1f5f9';
-  const text = TURNO_TEXT[turno] || '#64748b';
-  return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:${bg};color:${text}">${escHtml(turno)}</span>`;
+// Chip de motivo de visita
+function motivobadge(motivo) {
+  const BG   = { 'Auditoria': '#eff6ff', 'Franco': '#f1f5f9', 'Capacitacion': '#f0fdf4' };
+  const TEXT = { 'Auditoria': '#1d4ed8', 'Franco': '#475569', 'Capacitacion': '#15803d' };
+  const LBL  = { 'Auditoria': 'Auditoría', 'Franco': 'Franco', 'Capacitacion': 'Capacitación' };
+  const bg    = BG[motivo]   || '#f1f5f9';
+  const text  = TEXT[motivo] || '#64748b';
+  const label = LBL[motivo]  || motivo;   // visitas viejas: muestra el valor tal cual
+  return `<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.72rem;font-weight:600;background:${bg};color:${text}">${escHtml(label)}</span>`;
 }
 
 // ============================================================
@@ -4009,6 +4201,18 @@ function attachListeners() {
   on('btn-ranking-refresh', 'click', async () => { state.dashboardTipoLoaded = null; await recargarDashboard(); });
   // Cerrar modal del día
   on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; render(); });
+
+  // Mostrar/ocultar el local según el motivo
+  const selMotivo = document.getElementById('sel-cal-motivo');
+  if (selMotivo) {
+    const aplicarVisibilidadLocal = function() {
+      const wrap = document.getElementById('cal-local-wrap');
+      if (wrap) wrap.style.display = selMotivo.value === 'Franco' ? 'none' : '';
+    };
+    selMotivo.addEventListener('change', aplicarVisibilidadLocal);
+    aplicarVisibilidadLocal();   // estado inicial
+  }
+
   const backdrop = document.getElementById('cal-modal-backdrop');
   if (backdrop) backdrop.addEventListener('click', function(e) { if (e.target === backdrop) { state.calendarioDiaSeleccionado = null; render(); } });
   on('nav-user-calendario',    'click', goToCalendario);
@@ -4046,19 +4250,36 @@ function attachListeners() {
 
   // Agregar visita
   on('btn-cal-agregar', 'click', async () => {
-    const local   = document.getElementById('sel-cal-local')?.value   || '';
-    const turno   = document.getElementById('sel-cal-turno')?.value   || 'Día';
+    const motivo  = document.getElementById('sel-cal-motivo')?.value  || 'Auditoria';
+    const esFranco = motivo === 'Franco';
+    // En Franco no se pide local; se guarda 'Franco' para que la hoja quede legible
+    const local   = esFranco ? 'Franco' : (document.getElementById('sel-cal-local')?.value || '');
     const auditor = document.getElementById('sel-cal-auditor')?.value || '';
     const errEl   = document.getElementById('cal-add-error');
-    if (!local)   { if (errEl) errEl.textContent = 'Seleccioná un local.';    return; }
-    if (!auditor) { if (errEl) errEl.textContent = 'Seleccioná un auditor.';  return; }
+
+    if (!esFranco && !local) { if (errEl) errEl.textContent = 'Seleccioná un local.';   return; }
+    if (!auditor)            { if (errEl) errEl.textContent = 'Seleccioná un auditor.'; return; }
     if (!state.calendarioDiaSeleccionado) { if (errEl) errEl.textContent = 'Seleccioná un día.'; return; }
-    const conflicto = (state.calendarioVisitas||[]).find(v =>
-      v.fecha === state.calendarioDiaSeleccionado &&
-      v.turno === turno &&
-      v.auditorEmail.toLowerCase() === auditor.toLowerCase()
-    );
-    if (conflicto) { if (errEl) errEl.textContent = 'Este auditor ya tiene una visita asignada en ese turno.'; return; }
+
+    // ── Validación de conflictos ──
+    const delDia = (state.calendarioVisitas || []).filter(function(v) {
+      return v.fecha === state.calendarioDiaSeleccionado
+        && String(v.auditorEmail || '').toLowerCase() === auditor.toLowerCase();
+    });
+
+    if (esFranco && delDia.length) {
+      if (errEl) errEl.textContent = 'Este auditor ya tiene algo asignado ese día.';
+      return;
+    }
+    if (!esFranco && delDia.some(function(v) { return v.turno === 'Franco'; })) {
+      if (errEl) errEl.textContent = 'Este auditor tiene franco ese día.';
+      return;
+    }
+    if (delDia.some(function(v) { return v.turno === motivo && v.local === local; })) {
+      if (errEl) errEl.textContent = 'Esa visita ya está cargada.';
+      return;
+    }
+
     if (errEl) errEl.textContent = '';
     const btn = document.getElementById('btn-cal-agregar');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
@@ -4068,7 +4289,7 @@ function attachListeners() {
         adminEmail:   state.user.email,
         adminToken:   state.user.token,
         fecha:        state.calendarioDiaSeleccionado,
-        turno,
+        turno:        motivo,          // ← el backend sigue llamándolo `turno`
         local,
         auditorEmail: auditor,
       });
