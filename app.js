@@ -3305,10 +3305,13 @@ function renderQuestionCard(q) {
     </div>` : '';
     const naChecked = ans.valor === 'No aplica';
     inputHtml = `
-    <div style="margin-top:8px;display:flex;gap:6px;align-items:center;${naChecked?'opacity:0.4;pointer-events:none':''}">
-      <input class="number-input-validated form-control" type="number" inputmode="decimal"
-        step="0.1" autocomplete="off" spellcheck="false"
-        id="num_${q.id}" placeholder="Ej: -2.5" value="${naChecked ? '' : escHtml(numVal)}"
+    <div style="margin-top:8px;display:flex;gap:6px;align-items:stretch;${naChecked?'opacity:0.4;pointer-events:none':''}">
+      <button type="button" class="sign-toggle" data-qid="${q.id}"
+        aria-label="Cambiar signo"
+        style="width:54px;flex-shrink:0;border:2px solid #e5e7eb;background:#fff;color:#6b7280;border-radius:8px;font-size:1.1rem;font-weight:700;cursor:pointer;touch-action:manipulation">±</button>
+      <input class="number-input-validated form-control" type="text" inputmode="decimal"
+        pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
+        id="num_${q.id}" placeholder="Ej: -2,5" value="${naChecked ? '' : escHtml(numVal)}"
         data-qid="${q.id}" style="flex:1;min-width:0">
     </div>
     <div id="badge_num_${q.id}" style="margin-top:6px;${resultado ? '' : 'display:none'}">
@@ -3334,12 +3337,17 @@ function renderQuestionCard(q) {
     const unitMatch = q.pregunta.match(/\(([^)]{1,8})\)/);
     const unit = unitMatch ? unitMatch[1] : '';
     inputHtml = `
-      <div class="number-input-wrap">
-        <input class="number-input" type="text" inputmode="decimal"
-          pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
-          id="num_${q.id}" placeholder="Ej: 36,5" value="${escHtml(ans.valor || '')}"
-          data-qid="${q.id}">
-        ${unit ? `<span class="number-unit">${escHtml(unit)}</span>` : ''}
+      <div style="display:flex;gap:6px;align-items:stretch;margin-top:8px">
+        <button type="button" class="sign-toggle" data-qid="${q.id}"
+          aria-label="Cambiar signo"
+          style="width:54px;flex-shrink:0;border:2px solid #e5e7eb;background:#fff;color:#6b7280;border-radius:8px;font-size:1.1rem;font-weight:700;cursor:pointer;touch-action:manipulation">±</button>
+        <div class="number-input-wrap" style="flex:1;min-width:0">
+          <input class="number-input" type="text" inputmode="decimal"
+            pattern="[0-9.,-]*" autocomplete="off" spellcheck="false"
+            id="num_${q.id}" placeholder="Ej: 36,5" value="${escHtml(ans.valor || '')}"
+            data-qid="${q.id}">
+          ${unit ? `<span class="number-unit">${escHtml(unit)}</span>` : ''}
+        </div>
       </div>`;
   } else {
     inputHtml = `
@@ -4770,6 +4778,37 @@ function attachListeners() {
     });
   });
 
+  // ── Botón de signo (±) para valores negativos ──
+  // El teclado numérico del celular no trae la tecla "-", así que el signo
+  // se cambia con este botón.
+  function pintarBotonSigno(btn, inp) {
+    const neg = String(inp.value || '').trim().startsWith('-');
+    btn.textContent       = neg ? '−' : '±';
+    btn.style.background  = neg ? '#2563eb' : '#fff';
+    btn.style.color       = neg ? '#fff'    : '#6b7280';
+    btn.style.borderColor = neg ? '#2563eb' : '#e5e7eb';
+  }
+
+  document.querySelectorAll('.sign-toggle').forEach(btn => {
+    const qid = btn.dataset.qid;
+    const inp = document.getElementById('num_' + qid);
+    if (!inp) return;
+
+    pintarBotonSigno(btn, inp);   // estado inicial
+
+    btn.addEventListener('click', () => {
+      const v = String(inp.value || '').trim();
+      inp.value = v.startsWith('-') ? v.slice(1) : (v ? '-' + v : '-');
+      // Reusar el handler de input que ya existe (guarda el valor y actualiza el badge)
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      pintarBotonSigno(btn, inp);
+      inp.focus();
+    });
+
+    // Si el inspector escribe el "-" a mano, el botón se actualiza igual
+    inp.addEventListener('input', () => pintarBotonSigno(btn, inp));
+  });
+
   // Inputs numéricos
   document.querySelectorAll('.number-input').forEach(inp => {
     inp.addEventListener('input', () => {
@@ -4778,6 +4817,7 @@ function attachListeners() {
       // Normalizar coma decimal → punto (Argentina usa coma, internamente usamos punto)
       const normalized = inp.value.replace(/,/g, '.');
       state.answers[qid].valor = normalized;
+      guardarBorrador();
     });
   });
 
@@ -4789,10 +4829,12 @@ function attachListeners() {
       const qid = inp.dataset.qid;
       const q = state.categories.flatMap(c => c.questions).find(q => q.id === qid);
       if (!state.answers[qid]) state.answers[qid] = {};
-      const raw = inp.value; // type="number" always gives period-separated decimals
+      // El campo es type="text": puede venir con coma decimal → normalizar a punto
+      const raw = String(inp.value || '').replace(/,/g, '.');
       state.answers[qid].rawValor = raw;
       const regla = parseValidacion(q?.validacion || '');
-      const resultado = raw ? evaluarNumero(raw, regla) : null;
+      // Un guion solo (recién tocado el ±) todavía no es un número
+      const resultado = (raw && raw !== '-') ? evaluarNumero(raw, regla) : null;
       state.answers[qid].valor = resultado || raw;
       guardarBorrador();
       // Actualizar badge sin re-renderizar
@@ -5698,7 +5740,7 @@ function saveCurrentAnswer() {
   document.querySelectorAll('.number-input').forEach(inp => {
     if (!inp.value) return;
     if (!state.answers[inp.dataset.qid]) state.answers[inp.dataset.qid] = {};
-    state.answers[inp.dataset.qid].valor = inp.value;
+    state.answers[inp.dataset.qid].valor = String(inp.value).replace(/,/g, '.');
   });
   document.querySelectorAll('.observacion-textarea').forEach(ta => {
     if (!ta.value) return;
