@@ -4391,9 +4391,17 @@ function attachListeners() {
     state.revisarComent = coment;
     setState({ revisarEnviando: true, revisarMsg: '' });
 
+    // Apps Script responde con un redirect a otro dominio que el navegador no
+    // puede leer, así que un fetch normal queda colgado. Con `no-cors` la
+    // promesa resuelve cuando la petición se completa. Es el mismo criterio
+    // que usa submitAudit para enviar las auditorías.
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(function() { ctrl.abort(); }, 25000);
+
     try {
-      const raw = await fetch(CONFIG.appsScriptURL, {
+      await fetch(CONFIG.appsScriptURL, {
         method: 'POST',
+        mode:   'no-cors',
         body: JSON.stringify({
           action:       'revisarPregunta',
           email:        state.user.email,
@@ -4408,15 +4416,26 @@ function attachListeners() {
           local:        state.local ? state.local.nombre : '',
           comentario:   coment,
         }),
-        redirect: 'follow',
+        signal: ctrl.signal,
       });
-      const res = await raw.json();
+      clearTimeout(timeoutId);
       setState({
         revisarEnviando: false,
-        revisarMsg: res.success ? '✓ ' + (res.message || 'Consulta enviada.') : '✕ ' + (res.error || 'No se pudo enviar.'),
+        revisarComent:   '',
+        revisarDest:     '',
+        revisarMsg:      '✓ Consulta enviada a ' + dest,
       });
+      setTimeout(function() {
+        if (state.revisarMsg && state.revisarMsg.indexOf('✓') === 0) {
+          setState({ revisarModalQid: null, revisarMsg: '' });
+        }
+      }, 2000);
     } catch (e) {
-      setState({ revisarEnviando: false, revisarMsg: '✕ Error de conexión.' });
+      clearTimeout(timeoutId);
+      const msg = (e && e.name === 'AbortError')
+        ? '✕ La consulta tardó demasiado. Revisá tu conexión y probá de nuevo.'
+        : '✕ No se pudo enviar. Revisá tu conexión.';
+      setState({ revisarEnviando: false, revisarMsg: msg });
     }
   });
 
