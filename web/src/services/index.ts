@@ -6,3 +6,4 @@ export * from './config';
 export * from './sheets';
 export * from './dashboard';
 export * from './calendario';
+export * from './admin';
