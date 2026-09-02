@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import clsx from 'clsx';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
-import { useApp, useSesion } from '@/contexts/AppContext';
+import { useApp, useSesion, useCache } from '@/contexts/AppContext';
 import {
   getCalendario, getUsuariosBasico, agregarVisita, editarVisita,
   borrarVisita, marcarRealizada, getLocalFallas,
@@ -23,11 +23,17 @@ type FiltroVisitas = 'proximas' | 'pasadas';
 function CalendarioContent() {
   const { state } = useApp();
   const { sesion } = useSesion();
+  const { leer, guardar, limpiar } = useCache();
   const esAdmin = sesion?.rol === 'Admin';
 
-  const [visitas, setVisitas]     = useState<Visita[]>([]);
-  const [auditores, setAuditores] = useState<UsuarioBasico[]>([]);
-  const [cargando, setCargando]   = useState(true);
+  const cvVisitas   = leer<Visita[]>('visitas');
+  const cvUsuarios  = leer<UsuarioBasico[]>('usuarios');
+
+  const [visitas, setVisitas]     = useState<Visita[]>(cvVisitas.data ?? []);
+  const [auditores, setAuditores] = useState<UsuarioBasico[]>(
+    cvUsuarios.data ? cvUsuarios.data.filter(u => u.rol === 'Auditor') : []
+  );
+  const [cargando, setCargando]   = useState(!cvVisitas.data);
   const [error, setError]         = useState('');
 
   const hoy = hoyISO();
@@ -42,24 +48,33 @@ function CalendarioContent() {
   const [fallasData, setFallasData]           = useState<Record<string, AuditoriaFallas[]>>({});
   const [fallasCargando, setFallasCargando]   = useState<Record<string, boolean>>({});
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (forzado = false) => {
     if (!sesion) return;
-    setCargando(true); setError('');
+    if (forzado || !visitas.length) setCargando(true);
+    setError('');
     try {
-      const vs = await getCalendario(sesion);
+      const [vs, us] = await Promise.all([
+        getCalendario(sesion),
+        esAdmin ? getUsuariosBasico(sesion) : Promise.resolve([] as UsuarioBasico[]),
+      ]);
       setVisitas(vs);
-      if (sesion.rol === 'Admin') {
-        const us = await getUsuariosBasico(sesion);
+      guardar('visitas', vs);
+      if (esAdmin) {
         setAuditores(us.filter(u => u.rol === 'Auditor'));
+        guardar('usuarios', us);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (!visitas.length) setError(e instanceof Error ? e.message : String(e));
     } finally {
       setCargando(false);
     }
-  }, [sesion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesion, esAdmin]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    if (!cvVisitas.fresco) cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesion]);
 
   const colores = useMemo(
     () => construirColores([...auditores.map(a => a.email), ...visitas.map(v => v.auditorEmail)]),
@@ -90,21 +105,21 @@ function CalendarioContent() {
   async function handleAgregar(v: Parameters<typeof agregarVisita>[1]) {
     if (!sesion) return { ok: false, error: 'Sin sesión' };
     const res = await agregarVisita(sesion, v);
-    if (res.ok) await cargar();
+    if (res.ok) { limpiar(['visitas']); await cargar(true); }
     return res;
   }
 
   async function handleEditar(id: string, v: Parameters<typeof editarVisita>[2]) {
     if (!sesion) return { ok: false, error: 'Sin sesión' };
     const res = await editarVisita(sesion, id, v);
-    if (res.ok) await cargar();
+    if (res.ok) { limpiar(['visitas']); await cargar(true); }
     return res;
   }
 
   async function handleBorrar(id: string) {
     if (!sesion) return { ok: false, error: 'Sin sesión' };
     const res = await borrarVisita(sesion, id);
-    if (res.ok) await cargar();
+    if (res.ok) { limpiar(['visitas']); await cargar(true); }
     return res;
   }
 
@@ -112,17 +127,28 @@ function CalendarioContent() {
     if (!sesion) return;
     const res = await marcarRealizada(sesion, id);
     if (!res.ok) { alert(res.error ?? 'No se pudo marcar.'); return; }
-    await cargar();
+    limpiar(['visitas']);
+    await cargar(true);
   }
 
   async function toggleFallas(visitaId: string, local: string) {
     const abierto = !!fallasAbiertas[visitaId];
     setFallasAbiertas(p => ({ ...p, [visitaId]: !abierto }));
-    if (abierto || fallasData[local] || !sesion) return;
+    if (abierto || !sesion) return;
+
+    const clave = `fallas:${local}`;
+    const c = leer<AuditoriaFallas[]>(clave);
+    if (c.data && c.fresco) {
+      setFallasData(p => ({ ...p, [local]: c.data! }));
+      return;
+    }
+    if (fallasData[local] && c.fresco) return;
+
     setFallasCargando(p => ({ ...p, [visitaId]: true }));
     try {
       const d = await getLocalFallas(sesion, local);
       setFallasData(p => ({ ...p, [local]: d }));
+      guardar(clave, d);
     } finally {
       setFallasCargando(p => ({ ...p, [visitaId]: false }));
     }
@@ -433,7 +459,7 @@ function CalendarioContent() {
       <div className="bg-white border-b border-gray-200 px-4 pt-12 pb-3">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-bold text-gray-900">Calendario</h1>
-          <button onClick={cargar} disabled={cargando}
+          <button onClick={() => cargar(true)} disabled={cargando}
             className="text-sm text-red-600 font-medium disabled:text-gray-300">
             ↻ Actualizar
           </button>
@@ -464,7 +490,7 @@ function CalendarioContent() {
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center">
             <p className="text-sm text-red-700 font-semibold mb-2">No se pudo cargar</p>
             <p className="text-xs text-red-500 mb-3">{error}</p>
-            <button onClick={cargar} className="text-xs text-red-600 font-semibold">↻ Reintentar</button>
+            <button onClick={() => cargar(true)} className="text-xs text-red-600 font-semibold">↻ Reintentar</button>
           </div>
         ) : esAdmin ? (
           tab === 'calendario' ? grilla : tab === 'visitas' ? listaVisitas : resumenTab

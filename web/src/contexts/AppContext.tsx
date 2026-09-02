@@ -34,6 +34,8 @@ export interface AppState {
   dataError:       string;
   umbralCriticos:  number;
   auditoria:       AuditoriaState;
+  /** Caché de datos remotos, por clave. Ver useCache() más abajo. */
+  cache:           Record<string, { data: unknown; ts: number }>;
 }
 
 const HOY = () => {
@@ -53,6 +55,7 @@ const initialState: AppState = {
   locales: [], preguntas: [], dataLoading: false, dataError: '',
   umbralCriticos: 10,
   auditoria: auditInicial,
+  cache: {},
 };
 
 // ── Acciones ──────────────────────────────────────────────────
@@ -60,6 +63,8 @@ const initialState: AppState = {
 type Action =
   | { type: 'SET_SESION';      payload: Sesion | null }
   | { type: 'SESSION_LOADED' }
+  | { type: 'CACHE_SET';       payload: { key: string; data: unknown } }
+  | { type: 'CACHE_CLEAR';     payload: string[] }
   | { type: 'SET_LOCALES';     payload: Local[] }
   | { type: 'SET_PREGUNTAS';   payload: Pregunta[] }
   | { type: 'DATA_LOADING';    payload: boolean }
@@ -124,6 +129,18 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'AUDIT_RESET':
       return { ...state, auditoria: auditInicial };
+    case 'CACHE_SET':
+      return {
+        ...state,
+        cache: { ...state.cache, [action.payload.key]: { data: action.payload.data, ts: Date.now() } },
+      };
+    case 'CACHE_CLEAR': {
+      const cache = { ...state.cache };
+      Object.keys(cache).forEach(k => {
+        if (action.payload.some(p => k.startsWith(p))) delete cache[k];
+      });
+      return { ...state, cache };
+    }
     case 'AUDIT_RESTORE': {
       const { local } = action.payload;
       const filtradas = state.preguntas.filter(p =>
@@ -183,6 +200,37 @@ export function useApp() {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useApp debe usarse dentro de AppProvider');
   return ctx;
+}
+
+/** Cuánto vale un dato cacheado antes de refrescarlo por detrás */
+const TTL_MS = 3 * 60 * 1000;
+
+/**
+ * Caché de datos remotos con patrón "mostrá lo que tenés, refrescá por detrás".
+ *
+ * `data` es lo último que se trajo (o null si nunca se trajo).
+ * `fresco` dice si vale menos de 3 minutos. Si es false, conviene refrescar
+ * en segundo plano — pero igual mostrás `data` mientras tanto.
+ */
+export function useCache() {
+  const { state, dispatch } = useApp();
+
+  function leer<T>(key: string): { data: T | null; fresco: boolean } {
+    const e = state.cache[key];
+    if (!e) return { data: null, fresco: false };
+    return { data: e.data as T, fresco: Date.now() - e.ts < TTL_MS };
+  }
+
+  function guardar(key: string, data: unknown) {
+    dispatch({ type: 'CACHE_SET', payload: { key, data } });
+  }
+
+  /** Invalida por prefijo: limpiar(['visitas', 'dashboard']) */
+  function limpiar(prefijos: string[]) {
+    dispatch({ type: 'CACHE_CLEAR', payload: prefijos });
+  }
+
+  return { leer, guardar, limpiar };
 }
 
 export function useSesion() {

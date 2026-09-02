@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
-import { useSesion } from '@/contexts/AppContext';
+import { useSesion, useCache } from '@/contexts/AppContext';
 import { getDashboard, type DashboardData } from '@/services/dashboard';
 import {
   Tile, Barra, Vacio, tramoScore, textoTendencia, IMP_CHIP, normImp,
@@ -23,23 +23,29 @@ const PERIODOS = [
 
 function DashboardContent() {
   const { sesion } = useSesion();
-
-  const [data,        setData]        = useState<DashboardData | null>(null);
-  const [cargando,    setCargando]    = useState(true);
-  const [refrescando, setRefrescando] = useState(false);
-  const [error,       setError]       = useState('');
+  const { leer, guardar } = useCache();
 
   const [tipo,    setTipo]    = useState('');
   const [vista,   setVista]   = useState<Vista>('general');
   const [local,   setLocal]   = useState('');
   const [periodo, setPeriodo] = useState<'mesActual' | 'mesAnterior' | 'ult3Meses'>('mesActual');
 
+  const claveCache = `dashboard:${tipo}`;
+  const cacheado = leer<DashboardData>(claveCache);
+
+  const [data,        setData]        = useState<DashboardData | null>(cacheado.data);
+  const [cargando,    setCargando]    = useState(!cacheado.data);
+  const [refrescando, setRefrescando] = useState(false);
+  const [error,       setError]       = useState('');
+
   async function cargar(esRefresh = false) {
     if (!sesion) return;
     if (esRefresh) setRefrescando(true); else setCargando(true);
     setError('');
     try {
-      setData(await getDashboard(sesion, tipo));
+      const datos = await getDashboard(sesion, tipo);
+      setData(datos);
+      guardar(claveCache, datos);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -47,7 +53,12 @@ function DashboardContent() {
     }
   }
 
-  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, [sesion, tipo]);
+  useEffect(() => {
+    const c = leer<DashboardData>(`dashboard:${tipo}`);
+    if (c.data) { setData(c.data); setCargando(false); }
+    if (!c.fresco) cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesion, tipo]);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -111,7 +122,7 @@ function DashboardContent() {
 
       {/* Aviso del caché */}
       <p className="px-4 pt-3 text-xs text-gray-400">
-        Los datos se actualizan cada 3 minutos. Si acabás de enviar una auditoría, tocá Actualizar.
+        Los datos se actualizan cada pocos minutos. Si acabás de enviar una auditoría, tocá Actualizar.
       </p>
 
       {/* Spinner inicial */}

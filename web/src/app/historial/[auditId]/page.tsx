@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
-import { useSesion } from '@/contexts/AppContext';
+import { useSesion, useCache } from '@/contexts/AppContext';
 import { getAuditoria, borrarAuditoria, toDriveThumb, type AuditoriaDetalle } from '@/services/historial';
 import clsx from 'clsx';
 
@@ -27,6 +27,7 @@ function respStyle(r: string): string {
 
 function DetalleContent() {
   const { sesion } = useSesion();
+  const { limpiar } = useCache();
   const router = useRouter();
   const params = useParams();
   const auditId = decodeURIComponent(String(params.auditId ?? ''));
@@ -67,6 +68,7 @@ function DetalleContent() {
     const res = await borrarAuditoria(det.auditId);
     setBorrando(false);
     if (!res.ok) { alert(`No se pudo borrar: ${res.error}`); return; }
+    limpiar(['historial', 'dashboard']);
     router.replace('/historial');
   }
 

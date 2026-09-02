@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
-import { useApp, useSesion } from '@/contexts/AppContext';
+import { useApp, useSesion, useCache } from '@/contexts/AppContext';
 import {
   getAuditoria, editarAuditoria,
   type AuditoriaDetalle, type RespuestaEdicion,
@@ -38,6 +38,7 @@ function normImp(s: string): string {
 function EditarContent() {
   const { state } = useApp();
   const { sesion } = useSesion();
+  const { limpiar } = useCache();
   const router = useRouter();
   const params = useParams();
   const auditId = decodeURIComponent(String(params.auditId ?? ''));
@@ -108,6 +109,7 @@ function EditarContent() {
 
     if (!res.ok) { alert(`No se pudo guardar: ${res.error}`); return; }
 
+    limpiar(['historial', 'dashboard']);
     alert(`Cambios guardados.\nNuevo puntaje: ${res.pct}% — ${res.nivel}`);
     router.replace(`/historial/${encodeURIComponent(det.auditId)}`);
   }

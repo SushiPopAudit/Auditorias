@@ -1,9 +1,9 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import { useSesion } from '@/contexts/AppContext';
-import { getCalendario } from '@/services/calendario';
+import { useMemo } from 'react';
+import { useSesion, useCache } from '@/contexts/AppContext';
+import type { Visita } from '@/services/calendario';
 import clsx from 'clsx';
 
 const NAV = [
@@ -17,20 +17,19 @@ const NAV = [
 export default function BottomNav() {
   const { sesion } = useSesion();
   const pathname   = usePathname();
-  const [pendientes, setPendientes] = useState(0);
+  const { leer }   = useCache();
 
-  useEffect(() => {
-    if (!sesion) return;
+  const { data: visitas } = leer<Visita[]>('visitas');
+
+  const pendientes = useMemo(() => {
+    if (!visitas || !sesion) return 0;
     const hoy = new Date().toISOString().slice(0, 10);
-    getCalendario(sesion).then(vs => {
-      const n = vs.filter(v =>
-        v.estado === 'Pendiente' &&
-        v.fecha >= hoy &&
-        v.auditorEmail.toLowerCase() === sesion.email.toLowerCase()
-      ).length;
-      setPendientes(n);
-    }).catch(() => {});
-  }, [sesion]);
+    return visitas.filter(v =>
+      v.estado === 'Pendiente'
+      && v.fecha >= hoy
+      && v.auditorEmail.toLowerCase() === sesion.email.toLowerCase()
+    ).length;
+  }, [visitas, sesion]);
 
   if (!sesion) return null;
 

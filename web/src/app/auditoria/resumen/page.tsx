@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
-import { useApp, useSesion } from '@/contexts/AppContext';
+import { useApp, useSesion, useCache } from '@/contexts/AppContext';
 import { calcularPuntaje } from '@/services/scoring';
 import { enviarAuditoria, verificarEnvio } from '@/services/envio';
 import { borrarBorrador, marcarSinConfirmar, exportarBorradorTexto } from '@/lib/borrador';
@@ -22,6 +22,7 @@ const NIVEL_BG: Record<string, string> = {
 function ResumenContent() {
   const { state, dispatch } = useApp();
   const { sesion } = useSesion();
+  const { limpiar } = useCache();
   const router = useRouter();
   const { auditoria } = state;
 
@@ -127,6 +128,7 @@ function ResumenContent() {
       if (result.desviosRepetidos?.length) {
         sessionStorage.setItem('audit_desvios', JSON.stringify(result.desviosRepetidos));
       }
+      limpiar(['historial', 'dashboard']);
       dispatch({ type: 'AUDIT_RESET' });
       router.replace('/auditoria/exito');
       return;
@@ -140,6 +142,7 @@ function ResumenContent() {
     if (llego) {
       borrarBorrador();
       sessionStorage.setItem('audit_emailStatus', 'enviado (confirmado por verificación)');
+      limpiar(['historial', 'dashboard']);
       dispatch({ type: 'AUDIT_RESET' });
       router.replace('/auditoria/exito');
       return;
