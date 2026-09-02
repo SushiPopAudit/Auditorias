@@ -510,8 +510,12 @@ function setState(patch) {
 const NO_NAV_SCREENS = new Set(['loading', 'login', 'change-password', 'error']);
 
 function render() {
-  const oldHelpModal = document.getElementById('help-modal-backdrop');
-  if (oldHelpModal) oldHelpModal.remove();
+  // Los modales cuelgan del body, así que no los limpia el innerHTML de #app.
+  // Hay que sacarlos en cada render o se apilan.
+  ['help-modal-backdrop', 'revisar-modal'].forEach(function(id) {
+    const viejo = document.getElementById(id);
+    if (viejo) viejo.remove();
+  });
   const app    = document.getElementById('app');
   const hasNav = !!state.user && !NO_NAV_SCREENS.has(state.screen);
   document.body.classList.toggle('admin-nav', hasNav);
@@ -568,7 +572,10 @@ function render() {
   if (state.revisarModalQid) {
     const rq = state.categories ? state.categories.flatMap(function(c) { return c.questions; }).find(function(q) { return q.id === state.revisarModalQid; }) : null;
     if (rq) {
-      const usuarios = (state.usuariosBasico || []).filter(function(u) { return u.email !== (state.user && state.user.email); });
+      // Las consultas van solo a Admins: son quienes definen el criterio de los controles
+      const usuarios = (state.usuariosBasico || []).filter(function(u) {
+        return u.rol === 'Admin' && u.email !== (state.user && state.user.email);
+      });
       const opts = usuarios.map(function(u) {
         return '<option value="' + escHtml(u.email) + '"' + (state.revisarDest === u.email ? ' selected' : '') + '>' + escHtml(u.nombre) + ' (' + escHtml(u.rol) + ')</option>';
       }).join('');
@@ -590,10 +597,14 @@ function render() {
         + (usuarios.length
             ? '<select id="sel-revisar-dest" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:0.88rem;background:#fff;margin-bottom:12px">'
               + '<option value="">— Elegí un destinatario —</option>' + opts + '</select>'
-            : '<div style="font-size:0.8rem;color:#9ca3af;margin-bottom:12px">Cargando usuarios...</div>')
+            : (state.usuariosBasico === null
+                ? '<div style="font-size:0.8rem;color:#9ca3af;margin-bottom:12px">Cargando usuarios...</div>'
+                : '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:0.8rem;color:#92400e;margin-bottom:12px">No hay administradores disponibles para recibir la consulta.</div>'))
         + '<label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Comentarios</label>'
         + '<textarea id="inp-revisar-coment" placeholder="Contá tu duda sobre este control..." style="width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:0.88rem;min-height:90px;margin-bottom:12px">' + escHtml(state.revisarComent || '') + '</textarea>'
-        + '<button id="btn-revisar-enviar" style="width:100%;background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:700;cursor:pointer">' + (state.revisarEnviando ? 'Enviando...' : 'Enviar consulta') + '</button>'
+        + (usuarios.length
+            ? '<button id="btn-revisar-enviar" style="width:100%;background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:700;cursor:pointer">' + (state.revisarEnviando ? 'Enviando...' : 'Enviar consulta') + '</button>'
+            : '')
         + (state.revisarMsg ? '<div style="margin-top:12px;font-size:0.82rem;color:' + (state.revisarMsg.indexOf('✓') === 0 ? '#16a34a' : '#e4001b') + '">' + escHtml(state.revisarMsg) + '</div>' : '')
         + '</div>';
       document.body.appendChild(modal);
@@ -3545,7 +3556,7 @@ function renderQuestionCard(q) {
       <div class="question-control" style="display:flex;align-items:flex-start;gap:8px">
         <span style="flex:1">${escHtml(q.control)}</span>
         ${q.explicacionDetallada ? `<button class="btn-q-help" data-qid="${q.id}" title="Ver detalle" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid #94a3b8;background:none;cursor:pointer;font-size:0.75rem;font-weight:900;color:#475569;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px">?</button>` : ''}
-        <button class="btn-q-revisar" data-qid="${q.id}" title="Consultar sobre este control" style="flex-shrink:0;border:1px solid #e5e7eb;background:#fff;color:#6b7280;border-radius:6px;padding:2px 8px;font-size:0.68rem;font-weight:700;cursor:pointer;touch-action:manipulation">REVISAR</button>
+        <button class="btn-q-revisar" data-qid="${q.id}" title="Consultar sobre este control" style="flex-shrink:0;border:none;background:#1d4ed8;color:#fff;border-radius:6px;padding:3px 10px;font-size:0.68rem;font-weight:700;cursor:pointer;touch-action:manipulation">REVISAR</button>
       </div>
       ${q.explicacion ? `<div class="question-explicacion">${escHtml(q.explicacion)}</div>` : ''}
       ${inputHtml}
@@ -4354,9 +4365,10 @@ function attachListeners() {
   // Botón REVISAR en preguntas de auditoría
   document.querySelectorAll('.btn-q-revisar').forEach(btn => {
     btn.addEventListener('click', async () => {
-      setState({ revisarModalQid: btn.dataset.qid, revisarDest: '', revisarComent: '', revisarMsg: '' });
+      const qid = btn.dataset.qid;
+      // Cargar la lista ANTES de abrir, así el modal se dibuja una sola vez
       await cargarUsuariosBasico();
-      render();
+      setState({ revisarModalQid: qid, revisarDest: '', revisarComent: '', revisarMsg: '' });
     });
   });
 
