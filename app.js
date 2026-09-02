@@ -89,6 +89,23 @@ const state = {
   // Modal ayuda pregunta (durante auditoría)
   helpModalQid:           null,
 
+  // Reenvío de informe desde el historial
+  reenvioModal:   null,    // { auditId, local, fecha } o null
+  reenvioEmail:   '',
+  reenviando:     false,
+  reenvioMsg:     '',
+
+  // Fix REPROBADO: umbral de críticos configurable
+  umbralCriticos: 10,
+
+  // Modal "Revisar pregunta" (durante auditoría)
+  revisarModalQid: null,   // id de la pregunta o null
+  revisarDest:     '',
+  revisarComent:   '',
+  revisarEnviando: false,
+  revisarMsg:      '',
+  usuariosBasico:  null,   // [{email, nombre, rol}] o null si no cargado
+
   // Calendario
   calendarioVisitas:      null,   // array de visitas o null si no cargado
   calendarioLoading:      false,
@@ -100,6 +117,7 @@ const state = {
   calendarioDiaSeleccionado: null,  // 'YYYY-MM-DD' o null
   calendarioFallasCargando: {},     // { visitaId: true/false }
   calendarioFallas:       {},       // { local: [{auditId, fecha, fallas}] }
+  calEditandoVisita:      null,     // visitaId o null
 
   // Gastos / Viáticos
   gastosScreen:           'list',
@@ -153,6 +171,15 @@ async function init() {
       state.locales = [{ nombre: '(Sin locales cargados)', isCausa: false, emails: '' }];
     }
 
+    // Umbral de críticos para reprobar — configurable desde el panel de Admin
+    fetch(CONFIG.appsScriptURL + '?action=getUmbral')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var u = parseFloat(d && d.umbral_criticos_pct);
+        if (!isNaN(u) && u > 0) state.umbralCriticos = u;
+      })
+      .catch(function() { /* queda el default */ });
+
     const session = loadSession();
     if (session) {
       state.user         = session;
@@ -161,6 +188,7 @@ async function init() {
       setState({ screen: session.rol === 'Admin' ? 'admin' : 'welcome', adminTab: 'menu' });
       setTimeout(recargarHistorialSilente, 800);
       if (session.rol === 'Auditor') setTimeout(precargarCalendarioAuditor, 1200);
+      cargarUsuariosBasico();
     } else {
       setState({ screen: 'login' });
     }
@@ -168,6 +196,18 @@ async function init() {
     console.error(err);
     setState({ screen: 'error', error: 'No se pudieron cargar los datos. Verificá tu conexión a internet.' });
   }
+}
+
+async function cargarUsuariosBasico() {
+  if (state.usuariosBasico || !state.user) return;
+  try {
+    const res = await callAPI({
+      action: 'getUsuariosBasico',
+      email:  state.user.email,
+      token:  state.user.token,
+    });
+    if (res.success) state.usuariosBasico = res.usuarios || [];
+  } catch (e) { /* silencioso */ }
 }
 
 async function fetchText(url) {
@@ -391,7 +431,8 @@ function calcularPuntaje(questions, answers) {
   const maxPts     = { 'critico': 4, 'crítico': 4, 'alta': 3, 'media': 2, 'baja': 1 };
   const parcialPts = { 'critico': 2, 'crítico': 2, 'alta': 1, 'media': 1, 'baja': 0 };
 
-  let obtenido = 0, posible = 0, reprobado = false;
+  let obtenido = 0, posible = 0;
+  let criticosTotal = 0, criticosFallidos = 0;
 
   questions.forEach(q => {
     const { type } = parseAnswerType(q.pregunta, q.tipoRespuesta);
@@ -416,19 +457,23 @@ function calcularPuntaje(questions, answers) {
       obtenido += max;
     } else if (val.includes('parcial')) {
       obtenido += parcialPts[imp] || 0;
-    } else if (val.includes('no cumple') || val === 'nocumple') {
-      if (imp === 'critico' || imp === 'crítico') reprobado = true;
-      // 0 puntos
+    }
+    // Contar críticos para la regla del umbral (igual que el backend)
+    if (imp === 'critico' || imp === 'crítico') {
+      criticosTotal++;
+      if (val.includes('no cumple') || val === 'nocumple') criticosFallidos++;
     }
   });
 
   const pct = posible > 0 ? Math.round((obtenido / posible) * 100) : 0;
+  const umbral = state.umbralCriticos || 10;
+  const reprobado = criticosTotal > 0 && (criticosFallidos / criticosTotal * 100) >= umbral;
 
   let nivel, nivelClass, nivelEmoji;
   if (reprobado)    { nivel = 'Reprobado';       nivelClass = 'reprobado';    nivelEmoji = '⛔'; }
   else if (pct >= 90) { nivel = 'Excelente';     nivelClass = 'excelente';    nivelEmoji = '🟢'; }
   else if (pct >= 75) { nivel = 'Satisfactorio'; nivelClass = 'satisfactorio';nivelEmoji = '🟡'; }
-  else if (pct >= 60) { nivel = 'Requiere mejora';nivelClass = 'mejora';      nivelEmoji = '🟠'; }
+  else if (pct >= 60) { nivel = 'A mejorar';     nivelClass = 'mejora';       nivelEmoji = '🟠'; }
   else                { nivel = 'Deficiente';    nivelClass = 'deficiente';   nivelEmoji = '🔴'; }
 
   return { obtenido, posible, pct, reprobado, nivel, nivelClass, nivelEmoji };
@@ -520,6 +565,45 @@ function render() {
       state.helpModalQid = null;
     }
   }
+  if (state.revisarModalQid) {
+    const rq = state.categories ? state.categories.flatMap(function(c) { return c.questions; }).find(function(q) { return q.id === state.revisarModalQid; }) : null;
+    if (rq) {
+      const usuarios = (state.usuariosBasico || []).filter(function(u) { return u.email !== (state.user && state.user.email); });
+      const opts = usuarios.map(function(u) {
+        return '<option value="' + escHtml(u.email) + '"' + (state.revisarDest === u.email ? ' selected' : '') + '>' + escHtml(u.nombre) + ' (' + escHtml(u.rol) + ')</option>';
+      }).join('');
+
+      const modal = document.createElement('div');
+      modal.id = 'revisar-modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:flex-end';
+      modal.innerHTML =
+          '<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 36px">'
+        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">'
+        +   '<div style="font-weight:700;font-size:1rem">Consultar sobre este control</div>'
+        +   '<button id="btn-revisar-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;padding:0 4px;line-height:1">&times;</button>'
+        + '</div>'
+        + '<div style="background:#f9fafb;border-left:3px solid #e4001b;padding:10px 12px;margin-bottom:14px">'
+        +   '<div style="font-size:0.88rem;font-weight:700">' + escHtml(rq.control) + '</div>'
+        +   '<div style="font-size:0.75rem;color:#6b7280;margin-top:2px">' + escHtml(rq.categoria) + (rq.subcategoria ? ' · ' + escHtml(rq.subcategoria) : '') + '</div>'
+        + '</div>'
+        + '<label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Enviar a</label>'
+        + (usuarios.length
+            ? '<select id="sel-revisar-dest" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:0.88rem;background:#fff;margin-bottom:12px">'
+              + '<option value="">— Elegí un destinatario —</option>' + opts + '</select>'
+            : '<div style="font-size:0.8rem;color:#9ca3af;margin-bottom:12px">Cargando usuarios...</div>')
+        + '<label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Comentarios</label>'
+        + '<textarea id="inp-revisar-coment" placeholder="Contá tu duda sobre este control..." style="width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:0.88rem;min-height:90px;margin-bottom:12px">' + escHtml(state.revisarComent || '') + '</textarea>'
+        + '<button id="btn-revisar-enviar" style="width:100%;background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:700;cursor:pointer">' + (state.revisarEnviando ? 'Enviando...' : 'Enviar consulta') + '</button>'
+        + (state.revisarMsg ? '<div style="margin-top:12px;font-size:0.82rem;color:' + (state.revisarMsg.indexOf('✓') === 0 ? '#16a34a' : '#e4001b') + '">' + escHtml(state.revisarMsg) + '</div>' : '')
+        + '</div>';
+      document.body.appendChild(modal);
+
+      modal.addEventListener('click', function(ev) {
+        if (ev.target === modal) setState({ revisarModalQid: null, revisarMsg: '' });
+      });
+    }
+  }
+
   attachListeners();
 }
 
@@ -1066,13 +1150,19 @@ function renderCalendario() {
       if (state.calendarioDiaSeleccionado) {
         const dSel = state.calendarioDiaSeleccionado;
         const vsDia = visitasPorDia[dSel] || [];
+        const vEdit = state.calEditandoVisita
+          ? visitas.find(function(v) { return v.visitaId === state.calEditandoVisita; })
+          : null;
+
         const visitasDelDiaHtml = vsDia.length === 0
           ? '<p style="color:#6b7280;font-size:0.85rem;margin:0 0 4px">Sin visitas asignadas.</p>'
           : vsDia.map(function(v) {
               return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">'
                 + motivobadge(v.turno) + '<span style="font-size:0.88rem;font-weight:600;color:#1a1a1a">' + escHtml(v.local) + '</span>'
                 + '<span style="font-size:0.82rem;color:#6b7280">' + escHtml(v.auditorNombre) + '</span>'
-                + '<span style="margin-left:auto">' + estadobadge(v.estado) + '</span></div>';
+                + '<span style="margin-left:auto;display:flex;gap:6px;align-items:center">' + estadobadge(v.estado)
+                + '<button data-cal-editar="' + escHtml(v.visitaId) + '" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.72rem;color:#1d4ed8;touch-action:manipulation">✏️ Editar</button>'
+                + '</span></div>';
             }).join('');
 
         const localesOpts = (state.locales||[]).map(function(l) {
@@ -1092,20 +1182,33 @@ function renderCalendario() {
           + '</div>'
           + '<div style="margin-bottom:14px">' + visitasDelDiaHtml + '</div>'
           + '<div style="border-top:1px solid #e5e7eb;padding-top:14px">'
-          + '<div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">Agregar visita</div>'
+          + '<div style="font-weight:600;font-size:0.85rem;color:#374151;margin-bottom:10px">' + (vEdit ? 'Editar visita' : 'Agregar visita') + '</div>'
           + '<div style="display:flex;flex-direction:column;gap:10px">'
           + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Motivo</label>'
           + '<select id="sel-cal-motivo" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-          + MOTIVOS.map(function(m) { return '<option value="' + m.id + '">' + m.label + '</option>'; }).join('')
+          + MOTIVOS.map(function(m) { return '<option value="' + m.id + '"' + (vEdit && vEdit.turno === m.id ? ' selected' : '') + '>' + m.label + '</option>'; }).join('')
           + '</select></div>'
           + '<div id="cal-local-wrap"><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Local</label>'
           + '<select id="sel-cal-local" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-          + '<option value="">— Seleccioná un local —</option>' + localesOpts + '</select></div>'
+          + '<option value="">— Seleccioná un local —</option>'
+          + (state.locales||[]).map(function(l) { return '<option value="' + escHtml(l.nombre) + '"' + (vEdit && vEdit.local === l.nombre ? ' selected' : '') + '>' + escHtml(l.nombre) + '</option>'; }).join('')
+          + '</select></div>'
           + '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Auditor</label>'
           + '<select id="sel-cal-auditor" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem;color:#1a1a1a;background:#fff">'
-          + '<option value="">— Seleccioná un auditor —</option>' + auditoresOpts + '</select></div>'
+          + '<option value="">— Seleccioná un auditor —</option>'
+          + (state.adminUsers||[]).filter(function(us) { return us.rol === 'Auditor'; }).filter(function(us) { return us.estado === 'Activo'; })
+            .map(function(us) { return '<option value="' + escHtml(us.email) + '"' + (vEdit && vEdit.auditorEmail === us.email ? ' selected' : '') + '>' + escHtml(us.nombre) + '</option>'; }).join('')
+          + '</select></div>'
+          + (vEdit ? '<div><label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Fecha</label>'
+            + '<input id="inp-cal-fecha" type="date" value="' + escHtml(vEdit.fecha) + '" style="width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.85rem">'
+            + '</div>' : '')
           + '<div id="cal-add-error" style="color:#e4001b;font-size:0.82rem;min-height:18px"></div>'
-          + '<button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>'
+          + (vEdit
+              ? '<div style="display:flex;gap:8px">'
+                + '<button id="btn-cal-cancelar-edit" style="flex:1;background:#fff;color:#6b7280;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Cancelar</button>'
+                + '<button id="btn-cal-guardar-edit" style="flex:2;background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Guardar cambios</button>'
+                + '</div>'
+              : '<button id="btn-cal-agregar" style="background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Agregar visita</button>')
           + '</div></div></div></div>';
       }
     }
@@ -1414,6 +1517,11 @@ function renderGastosForm() {
   const g = state.gastosEditing;
   const isEdit = !!g;
   const now = new Date();
+  const hoyISO = (function() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  })();
+  const fechaGasto = (g && g.fecha) ? String(g.fecha).slice(0, 10) : hoyISO;
   const currentMes = now.toISOString().slice(0,7);
   const viewedMes  = state.gastosMes || currentMes;
   const defaultFecha = viewedMes === currentMes
@@ -1466,9 +1574,11 @@ function renderGastosForm() {
           <input id="inp-gasto-foto" type="file" accept="image/*" style="display:none">
         </label>`}
     </div>
-    <div style="margin-bottom:18px;background:#f8fafc;border-radius:8px;padding:10px 12px">
-      <div style="font-size:0.78rem;color:#6b7280">Fecha y hora del gasto</div>
-      <div style="font-size:0.92rem;font-weight:600;color:#1a1a1a;margin-top:2px">${escHtml(fecha)} ${escHtml(hora)}</div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:0.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px">Fecha del gasto</label>
+      <input id="inp-gasto-fecha" type="date" value="${escHtml(fechaGasto)}" max="${hoyISO}"
+        style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:0.92rem;background:#fff">
+      <div style="font-size:0.72rem;color:#9ca3af;margin-top:4px">Si cargás un gasto de otro día, cambiá la fecha.</div>
     </div>
     <div style="display:flex;gap:10px">
       <button id="btn-gastos-form-save" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:600;cursor:pointer">Guardar</button>
@@ -2452,6 +2562,7 @@ function renderHistorial() {
         const accBtns = cargando
           ? `<div style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex-shrink:0"><div class="spinner" style="width:18px;height:18px;border-width:2px"></div></div>`
           : `<div style="display:flex;gap:4px;flex-shrink:0">
+              <button data-hist-mail="${escHtml(a.auditId)}" data-hist-local="${escHtml(a.local)}" data-hist-fecha="${escHtml(a.fecha)}" title="Reenviar informe por mail" style="${btnBase};background:#fefce8;color:#92400e">✉️</button>
               <button class="hist-btn-ver"    data-audit-id="${escHtml(a.auditId)}" title="Ver" style="${btnBase};background:#eff6ff;color:#1d4ed8">👁</button>
               ${showEdit   ? `<button class="hist-btn-editar" data-audit-id="${escHtml(a.auditId)}" title="Editar" style="${btnBase};background:#f0fdf4;color:#15803d">✏️</button>` : ''}
               ${showDelete ? `<button class="hist-btn-borrar" data-audit-id="${escHtml(a.auditId)}" data-local="${escHtml(a.local)}" data-fecha="${escHtml(a.fecha)}" title="Borrar" style="${btnBase};background:#fff1f2;color:#e4001b">🗑</button>` : ''}
@@ -2472,6 +2583,32 @@ function renderHistorial() {
 
   const borradoMsg = state.historialBorradoMsg || '';
   if (borradoMsg) setTimeout(() => { state.historialBorradoMsg = ''; render(); }, 3500);
+
+  const reenvioModalHtml = !state.reenvioModal ? '' : (function() {
+    const m = state.reenvioModal;
+    const loc = (state.locales || []).find(function(l) { return l.nombre === m.local; });
+    const emailsLocal = loc && loc.emails ? loc.emails : '';
+    return '<div id="reenvio-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:400;display:flex;align-items:flex-end">'
+      + '<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+      +   '<div style="font-weight:700;font-size:1rem">✉️ Reenviar informe</div>'
+      +   '<button id="btn-reenvio-close" style="background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;padding:0 4px">&times;</button>'
+      + '</div>'
+      + '<div style="font-size:0.82rem;color:#6b7280;margin-bottom:14px">' + escHtml(m.local) + ' · ' + escHtml(m.fecha) + '</div>'
+      + (emailsLocal
+          ? '<button id="btn-reenvio-local" style="width:100%;background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer;margin-bottom:6px">Enviar al local</button>'
+            + '<div style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;word-break:break-all">' + escHtml(emailsLocal) + '</div>'
+          : '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:0.8rem;color:#92400e;margin-bottom:14px">Este local no tiene emails configurados.</div>')
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:14px">'
+      +   '<label style="display:block;font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">Enviar a otro mail</label>'
+      +   '<input id="inp-reenvio-email" type="email" placeholder="nombre@empresa.com" value="' + escHtml(state.reenvioEmail || '') + '" style="width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:0.88rem;margin-bottom:8px">'
+      +   '<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px">Podés poner varios separados por coma.</div>'
+      +   '<button id="btn-reenvio-otro" style="width:100%;background:#fff;color:#1a1a1a;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer">Enviar a ese mail</button>'
+      + '</div>'
+      + (state.reenvioMsg ? '<div style="margin-top:12px;font-size:0.82rem;color:' + (state.reenvioMsg.indexOf('✓') === 0 ? '#16a34a' : '#e4001b') + '">' + escHtml(state.reenvioMsg) + '</div>' : '')
+      + (state.reenviando ? '<div style="margin-top:12px;font-size:0.82rem;color:#6b7280">Enviando...</div>' : '')
+      + '</div></div>';
+  })();
 
   return `
     <div class="main" style="padding-top:16px;padding-bottom:120px">
@@ -2494,7 +2631,7 @@ function renderHistorial() {
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:1rem;pointer-events:none">🔍</span>
       </div>
       ${cardsHtml}
-    </div>`;
+    </div>` + reenvioModalHtml;
 }
 
 function renderHistorialDetalle() {
@@ -3403,6 +3540,7 @@ function renderQuestionCard(q) {
       <div class="question-control" style="display:flex;align-items:flex-start;gap:8px">
         <span style="flex:1">${escHtml(q.control)}</span>
         ${q.explicacionDetallada ? `<button class="btn-q-help" data-qid="${q.id}" title="Ver detalle" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid #94a3b8;background:none;cursor:pointer;font-size:0.75rem;font-weight:900;color:#475569;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px">?</button>` : ''}
+        <button class="btn-q-revisar" data-qid="${q.id}" title="Consultar sobre este control" style="flex-shrink:0;border:1px solid #e5e7eb;background:#fff;color:#6b7280;border-radius:6px;padding:2px 8px;font-size:0.68rem;font-weight:700;cursor:pointer;touch-action:manipulation">REVISAR</button>
       </div>
       ${q.explicacion ? `<div class="question-explicacion">${escHtml(q.explicacion)}</div>` : ''}
       ${inputHtml}
@@ -4202,13 +4340,70 @@ function attachListeners() {
     });
   });
 
+  // Botón REVISAR en preguntas de auditoría
+  document.querySelectorAll('.btn-q-revisar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      setState({ revisarModalQid: btn.dataset.qid, revisarDest: '', revisarComent: '', revisarMsg: '' });
+      await cargarUsuariosBasico();
+      render();
+    });
+  });
+
+  on('btn-revisar-close', 'click', () => setState({ revisarModalQid: null, revisarMsg: '' }));
+
+  const selDest = document.getElementById('sel-revisar-dest');
+  if (selDest) selDest.addEventListener('change', () => { state.revisarDest = selDest.value; });
+
+  const inpComent = document.getElementById('inp-revisar-coment');
+  if (inpComent) inpComent.addEventListener('input', () => { state.revisarComent = inpComent.value; });
+
+  on('btn-revisar-enviar', 'click', async () => {
+    if (state.revisarEnviando) return;
+    const dest = (document.getElementById('sel-revisar-dest')?.value || '').trim();
+    const coment = (document.getElementById('inp-revisar-coment')?.value || '').trim();
+    if (!dest)   { setState({ revisarMsg: '✕ Elegí a quién enviarle la consulta.' }); return; }
+    if (!coment) { setState({ revisarMsg: '✕ Escribí tu comentario.' }); return; }
+
+    const q = state.categories ? state.categories.flatMap(c => c.questions).find(qq => qq.id === state.revisarModalQid) : null;
+    state.revisarComent = coment;
+    setState({ revisarEnviando: true, revisarMsg: '' });
+
+    try {
+      const raw = await fetch(CONFIG.appsScriptURL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action:       'revisarPregunta',
+          email:        state.user.email,
+          token:        state.user.token,
+          destinatario: dest,
+          control:      q ? q.control : '',
+          categoria:    q ? q.categoria : '',
+          subcategoria: q ? q.subcategoria : '',
+          importancia:  q ? q.importancia : '',
+          pregunta:     q ? q.pregunta : '',
+          explicacion:  q ? q.explicacion : '',
+          local:        state.local ? state.local.nombre : '',
+          comentario:   coment,
+        }),
+        redirect: 'follow',
+      });
+      const res = await raw.json();
+      setState({
+        revisarEnviando: false,
+        revisarMsg: res.success ? '✓ ' + (res.message || 'Consulta enviada.') : '✕ ' + (res.error || 'No se pudo enviar.'),
+      });
+    } catch (e) {
+      setState({ revisarEnviando: false, revisarMsg: '✕ Error de conexión.' });
+    }
+  });
+
   on('nav-admin-ranking', 'click', async () => {
     setState({ screen: 'ranking' });
     if (!state.dashboard) await recargarDashboard();
   });
   on('btn-ranking-refresh', 'click', async () => { state.dashboardTipoLoaded = null; await recargarDashboard(); });
   // Cerrar modal del día
-  on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; render(); });
+  on('btn-cal-modal-close', 'click', () => { state.calendarioDiaSeleccionado = null; state.calEditandoVisita = null; render(); });
 
   // Mostrar/ocultar el local según el motivo
   const selMotivo = document.getElementById('sel-cal-motivo');
@@ -4222,7 +4417,7 @@ function attachListeners() {
   }
 
   const backdrop = document.getElementById('cal-modal-backdrop');
-  if (backdrop) backdrop.addEventListener('click', function(e) { if (e.target === backdrop) { state.calendarioDiaSeleccionado = null; render(); } });
+  if (backdrop) backdrop.addEventListener('click', function(e) { if (e.target === backdrop) { state.calendarioDiaSeleccionado = null; state.calEditandoVisita = null; render(); } });
   on('nav-user-calendario',    'click', goToCalendario);
 
   // Navegación prev/next mes
@@ -4312,6 +4507,57 @@ function attachListeners() {
     } catch(e) {
       if (errEl) errEl.textContent = 'Error de conexión.';
       if (btn) { btn.disabled = false; btn.textContent = 'Agregar visita'; }
+    }
+  });
+
+  // Editar visita existente del calendario
+  document.querySelectorAll('[data-cal-editar]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setState({ calEditandoVisita: btn.dataset.calEditar });
+    });
+  });
+
+  on('btn-cal-cancelar-edit', 'click', () => setState({ calEditandoVisita: null }));
+
+  on('btn-cal-guardar-edit', 'click', async () => {
+    const vid = state.calEditandoVisita;
+    if (!vid) return;
+    const motivo  = document.getElementById('sel-cal-motivo')?.value || 'Auditoria';
+    const esFranco = motivo === 'Franco';
+    const local   = esFranco ? 'Franco' : (document.getElementById('sel-cal-local')?.value || '');
+    const auditor = document.getElementById('sel-cal-auditor')?.value || '';
+    const fecha   = document.getElementById('inp-cal-fecha')?.value || '';
+    const errEl   = document.getElementById('cal-add-error');
+
+    if (!esFranco && !local) { if (errEl) errEl.textContent = 'Seleccioná un local.';   return; }
+    if (!auditor)            { if (errEl) errEl.textContent = 'Seleccioná un auditor.'; return; }
+    if (!fecha)              { if (errEl) errEl.textContent = 'Elegí una fecha.';       return; }
+
+    const btnG = document.getElementById('btn-cal-guardar-edit');
+    if (btnG) { btnG.disabled = true; btnG.textContent = 'Guardando...'; }
+    try {
+      const res = await callAPI({
+        action:       'editarVisita',
+        adminEmail:   state.user.email,
+        adminToken:   state.user.token,
+        visitaId:     vid,
+        fecha:        fecha,
+        turno:        motivo,
+        local:        local,
+        auditorEmail: auditor,
+      });
+      if (res.success) {
+        state.calendarioVisitas = null;
+        state.calEditandoVisita = null;
+        state.calendarioDiaSeleccionado = null;
+        await goToCalendario();
+      } else {
+        if (errEl) errEl.textContent = res.error || 'Error al guardar.';
+        if (btnG) { btnG.disabled = false; btnG.textContent = 'Guardar cambios'; }
+      }
+    } catch (e) {
+      if (errEl) errEl.textContent = 'Error de conexión.';
+      if (btnG) { btnG.disabled = false; btnG.textContent = 'Guardar cambios'; }
     }
   });
 
@@ -5044,6 +5290,59 @@ function attachListeners() {
   if (state.screen === 'historial' || state.screen === 'historial-detalle' || state.screen === 'historial-editar') {
 
   // 👁 Ver detalle
+  document.querySelectorAll('[data-hist-mail]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setState({
+        reenvioModal: {
+          auditId: btn.dataset.histMail,
+          local:   btn.dataset.histLocal,
+          fecha:   btn.dataset.histFecha,
+        },
+        reenvioEmail: '', reenvioMsg: '', reenviando: false,
+      });
+    });
+  });
+
+  on('btn-reenvio-close', 'click', () => setState({ reenvioModal: null, reenvioMsg: '' }));
+  const reenvioBd = document.getElementById('reenvio-backdrop');
+  if (reenvioBd) reenvioBd.addEventListener('click', (ev) => {
+    if (ev.target.id === 'reenvio-backdrop') setState({ reenvioModal: null, reenvioMsg: '' });
+  });
+
+  const inpReenvio = document.getElementById('inp-reenvio-email');
+  if (inpReenvio) inpReenvio.addEventListener('input', () => { state.reenvioEmail = inpReenvio.value; });
+
+  async function ejecutarReenvio(destino) {
+    if (!state.reenvioModal || state.reenviando) return;
+    if (!destino) { setState({ reenvioMsg: '✕ Ingresá un mail.' }); return; }
+    setState({ reenviando: true, reenvioMsg: '' });
+    try {
+      const res = await callAPI({
+        action:  'reenviar',
+        auditId: state.reenvioModal.auditId,
+        email:   destino,
+      });
+      setState({
+        reenviando: false,
+        reenvioMsg: res.success ? '✓ ' + (res.message || 'Informe enviado.') : '✕ ' + (res.error || 'No se pudo enviar.'),
+      });
+    } catch (e) {
+      setState({ reenviando: false, reenvioMsg: '✕ Error de conexión.' });
+    }
+  }
+
+  on('btn-reenvio-local', 'click', () => {
+    const m = state.reenvioModal;
+    const loc = (state.locales || []).find(l => l.nombre === m.local);
+    ejecutarReenvio(loc && loc.emails ? loc.emails : '');
+  });
+
+  on('btn-reenvio-otro', 'click', () => {
+    const inp = document.getElementById('inp-reenvio-email');
+    ejecutarReenvio((inp ? inp.value : state.reenvioEmail || '').trim());
+  });
+
   document.querySelectorAll('.hist-btn-ver').forEach(btn => {
     btn.addEventListener('click', async () => {
       const auditId = btn.dataset.auditId;
@@ -5383,7 +5682,9 @@ function attachListeners() {
     const descripcion = document.getElementById('inp-gasto-desc')?.value || '';
     const mes = state.gastosMes || new Date().toISOString().slice(0,7);
     const now = new Date();
-    const fecha = g ? g.fecha : now.toISOString().slice(0,10);
+    const hoyISO = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+    const fechaSel = document.getElementById('inp-gasto-fecha')?.value || hoyISO;
+    const fecha = fechaSel;
     const hora  = g ? g.hora  : now.toTimeString().slice(0,5);
     const btn = document.getElementById('btn-gastos-form-save');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }

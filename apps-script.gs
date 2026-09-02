@@ -1,5 +1,5 @@
-﻿// ============================================================
-// GOOGLE APPS SCRIPT â€” Sistema de AuditorÃ­as Sushi POP
+// ============================================================
+// GOOGLE APPS SCRIPT — Sistema de Auditorías Sushi POP
 // ============================================================
 
 const SPREADSHEET_ID  = '1zc1HGCNbS40D8c4cbaBcEtXiatg2-5r7JZiv8j5AMnI';
@@ -10,7 +10,7 @@ const USUARIOS_SPREADSHEET_ID = '1TeeKe1eYsKIZ6-8uEPOY0UT-wrtrwl0FW4hAgBoIkzY';
 const CALENDARIO_SHEET = 'Calendario';
 
 // ============================================================
-// CACHÃ‰ â€” CacheService (TTL en segundos)
+// CACHÉ — CacheService (TTL en segundos)
 // ============================================================
 function cacheGetParsed(key) {
   try {
@@ -98,7 +98,61 @@ function doPost(e) {
       } catch(sgErr) { return jsonResponse({ success: false, error: sgErr.message }); }
     }
 
-    // â”€â”€ EdiciÃ³n en el lugar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Edición en el lugar ──────────────────────────────────────
+    // Consulta sobre un control: manda un mail al usuario elegido
+    if (data.action === 'revisarPregunta') {
+      var rpEmail = String(data.email || '').toLowerCase().trim();
+      var rpToken = String(data.token || '');
+      var rpDest  = String(data.destinatario || '').trim();
+      if (!rpEmail || !rpToken || !rpDest)
+        return jsonResponse({ success: false, error: 'Faltan parámetros' });
+
+      var ssRP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shRP = ensureUsuariosSheet(ssRP);
+      var rowRP = encontrarUsuarioRow(shRP, rpEmail);
+      if (rowRP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dRP = shRP.getRange(rowRP, 1, 1, 8).getValues()[0];
+      if (dRP[4] !== rpToken)  return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dRP[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
+      var rpNombre = String(dRP[1] || rpEmail);
+
+      var esc = function(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      };
+
+      var htmlRP =
+          '<div style="font-family:Arial,sans-serif;max-width:600px;color:#1a1a1a">'
+        + '<div style="background:#e4001b;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">'
+        +   '<div style="font-size:18px;font-weight:700">Consulta sobre un control</div>'
+        +   '<div style="font-size:13px;opacity:.9;margin-top:2px">' + esc(rpNombre) + ' necesita una aclaración</div>'
+        + '</div>'
+        + '<div style="border:1px solid #e5e7eb;border-top:none;padding:20px;border-radius:0 0 8px 8px">'
+        + (data.local ? '<p style="margin:0 0 4px;font-size:13px;color:#6b7280">Local: <b>' + esc(data.local) + '</b></p>' : '')
+        + (data.categoria ? '<p style="margin:0 0 12px;font-size:13px;color:#6b7280">' + esc(data.categoria) + (data.subcategoria ? ' · ' + esc(data.subcategoria) : '') + '</p>' : '')
+        + '<div style="background:#f9fafb;border-left:3px solid #e4001b;padding:12px 14px;margin-bottom:14px">'
+        +   '<div style="font-size:15px;font-weight:700;margin-bottom:4px">' + esc(data.control) + '</div>'
+        + (data.importancia ? '<div style="font-size:12px;color:#6b7280">Importancia: ' + esc(data.importancia) + '</div>' : '')
+        + (data.pregunta ? '<div style="font-size:13px;color:#374151;margin-top:8px">' + esc(data.pregunta) + '</div>' : '')
+        + (data.explicacion ? '<div style="font-size:12px;color:#6b7280;margin-top:6px">' + esc(data.explicacion) + '</div>' : '')
+        + '</div>'
+        + '<div style="font-size:13px;font-weight:700;margin-bottom:6px">Comentario de ' + esc(rpNombre) + ':</div>'
+        + '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;font-size:13px;white-space:pre-wrap">'
+        +   esc(data.comentario || '(sin comentario)')
+        + '</div>'
+        + '<p style="font-size:12px;color:#9ca3af;margin-top:18px">Podés responderle directamente a ' + esc(rpEmail) + '</p>'
+        + '</div></div>';
+
+      GmailApp.sendEmail(rpDest, 'Consulta sobre control: ' + String(data.control || '').slice(0, 60), '', {
+        htmlBody: htmlRP,
+        name:     'Auditorías Sushi POP',
+        from:     'franquicias@sushi-pop.com.ar',
+        replyTo:  rpEmail,
+      });
+
+      return jsonResponse({ success: true, message: 'Consulta enviada a ' + rpDest });
+    }
+
     if (data.action === 'editarAuditoria') {
       // Verificar token
       if (data.auditorEmail && data.token) {
@@ -107,7 +161,7 @@ function doPost(e) {
         var rowAuthE = encontrarUsuarioRow(shAuthE, data.auditorEmail);
         if (rowAuthE < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
         var dAuthE = shAuthE.getRange(rowAuthE, 1, 1, 8).getValues()[0];
-        if (dAuthE[4] !== data.token) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+        if (dAuthE[4] !== data.token) return jsonResponse({ success: false, error: 'Sin autorización' });
         if (dAuthE[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       }
       if (!sheet || sheet.getLastRow() < 2) return jsonResponse({ success: false, error: 'Sin datos' });
@@ -119,7 +173,7 @@ function doPost(e) {
       allRows.forEach(function(r, i) {
         if (String(r[0]).trim() === origId) idxMap[String(r[8]).trim().toLowerCase()] = i;
       });
-      if (!Object.keys(idxMap).length) return jsonResponse({ success: false, error: 'AuditorÃƒÂ­a no encontrada: ' + origId });
+      if (!Object.keys(idxMap).length) return jsonResponse({ success: false, error: 'Auditoría no encontrada: ' + origId });
 
       var respMap = {};
       (data.respuestas || []).forEach(function(r) { respMap[String(r.control || '').trim().toLowerCase()] = r; });
@@ -154,7 +208,7 @@ function doPost(e) {
         var rel = idxMap[ctrl] - minIdx;
         rangeRows[rel][15] = res.pct;
         rangeRows[rel][16] = res.nivel;
-        rangeRows[rel][17] = res.reprobado ? 'SÃƒÂ­' : 'No';
+        rangeRows[rel][17] = res.reprobado ? 'Sí' : 'No';
         rangeRows[rel][2]  = data.hora || '';
       });
 
@@ -163,27 +217,27 @@ function doPost(e) {
       sheet.getRange(minShRow, 17, numRows, 1).setValues(rangeRows.map(function(r) { return [r[16]]; }));
       sheet.getRange(minShRow, 18, numRows, 1).setValues(rangeRows.map(function(r) { return [r[17]]; }));
 
-      // Invalidar cachÃ©s
+      // Invalidar cachés
       if (data.auditorEmail) { cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase()); cacheRemoveKey('db_' + data.auditorEmail.toLowerCase()); }
       cacheRemoveKey('aud_all');
       return jsonResponse({ success: true, pct: res.pct, nivel: res.nivel, reprobado: res.reprobado });
     }
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ────────────────────────────────────────────────────────────
 
     // Crear hoja si no existe
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_NAME);
       sheet.appendRow([
         'AuditID','Fecha','Hora','Auditor','Local','Marca',
-        'CategorÃ­a','SubcategorÃ­a','Control','Importancia',
-        'ExplicaciÃ³n','Respuesta','ObservaciÃ³n','URL Foto','Email Auditor',
-        'Puntaje %','Nivel','Reprobado','AcompaÃ±ante','Tipo'
+        'Categoría','Subcategoría','Control','Importancia',
+        'Explicación','Respuesta','Observación','URL Foto','Email Auditor',
+        'Puntaje %','Nivel','Reprobado','Acompañante','Tipo'
       ]);
       sheet.getRange(1,1,1,20).setFontWeight('bold').setBackground('#1a1a1a').setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
 
-    // Carpeta de fotos para esta auditorÃ­a: Auditorias/Fotos Auditorias/[Local]/[fecha]/
+    // Carpeta de fotos para esta auditoría: Auditorias/Fotos Auditorias/[Local]/[fecha]/
     let auditFolder = null;
     if (DRIVE_FOLDER_ID) {
       try {
@@ -200,7 +254,7 @@ function doPost(e) {
     const rows = data.respuestas.map(r => {
       var fotoURL = '';
       if (auditFolder) {
-        // Soporte para mÃºltiples fotos (fotosBase64) y compatibilidad con fotoBase64 Ãºnico
+        // Soporte para múltiples fotos (fotosBase64) y compatibilidad con fotoBase64 único
         var fotoSources = r.fotosBase64 && r.fotosBase64.length
           ? r.fotosBase64
           : (r.fotoBase64 ? [{ base64: r.fotoBase64, nombre: r.fotoNombre || 'foto.jpg' }] : []);
@@ -226,23 +280,23 @@ function doPost(e) {
         r.headcount ? Object.entries(r.headcount).map(function(e){ return e[0].replace(/_/g,' ') + ': ' + e[1]; }).join(' | ') : (r.observacion || ''),
         fotoURL,
         data.auditorEmail || '',
-        data.puntaje?.pct    ?? '',             // col P â€” Puntaje %
-        data.puntaje?.nivel  || '',             // col Q â€” Nivel
-        data.puntaje?.reprobado ? 'SÃ­' : 'No', // col R â€” Reprobado
-        data.acompanante ? (data.acompanante + (data.posicionAcompanante ? '|||' + data.posicionAcompanante : '')) : '', // col S â€” AcompaÃ±ante|||PosiciÃ³n
-        data.tipoAuditoria || 'Oficial',        // col T â€” Tipo
-        (r.rawValor != null && r.rawValor !== '') ? String(r.rawValor) : (r.fechaRaw || ''), // col U â€” valor crudo (nÃºmero o fecha)
+        data.puntaje?.pct    ?? '',             // col P — Puntaje %
+        data.puntaje?.nivel  || '',             // col Q — Nivel
+        data.puntaje?.reprobado ? 'Sí' : 'No', // col R — Reprobado
+        data.acompanante ? (data.acompanante + (data.posicionAcompanante ? '|||' + data.posicionAcompanante : '')) : '', // col S — Acompañante|||Posición
+        data.tipoAuditoria || 'Oficial',        // col T — Tipo
+        (r.rawValor != null && r.rawValor !== '') ? String(r.rawValor) : (r.fechaRaw || ''), // col U — valor crudo (número o fecha)
       ];
     });
 
     if (rows.length > 0) {
       var startRow = sheet.getLastRow() + 1;
       sheet.getRange(startRow, 1, rows.length, 21).setValues(rows);
-      // Force text format on Respuesta (col 12), ObservaciÃ³n (col 13), y RawValor (col 21)
+      // Force text format on Respuesta (col 12), Observación (col 13), y RawValor (col 21)
       sheet.getRange(startRow, 12, rows.length, 2).setNumberFormat('@');
       sheet.getRange(startRow, 21, rows.length, 1).setNumberFormat('@');
       colorearDesvios(sheet, rows);
-      // Invalidar cachÃ© de auditorÃ­as y dashboard del auditor y del admin
+      // Invalidar caché de auditorías y dashboard del auditor y del admin
       if (data.auditorEmail) {
         cacheRemoveKey('aud_' + data.auditorEmail.toLowerCase());
         cacheRemoveKey('db_'  + data.auditorEmail.toLowerCase());
@@ -262,7 +316,7 @@ function doPost(e) {
                   }
                 });
               }
-            } catch(invErr) { console.error('cache invalidation error:', invErr); } // dashboard admin uses db_<adminEmail>, but we don't know it â€” TTL will expire
+            } catch(invErr) { console.error('cache invalidation error:', invErr); } // dashboard admin uses db_<adminEmail>, but we don't know it — TTL will expire
     }
 
     // Marcar visita del calendario como Realizada si existe una Pendiente para este local+fecha+auditor
@@ -283,7 +337,7 @@ function doPost(e) {
       }
     } catch(calErr) { console.error('Error marcando visita realizada:', calErr); }
 
-    // Detectar desvÃ­os repetidos (aparecen en Ãºltimas 2 auditorÃ­as del mismo local)
+    // Detectar desvíos repetidos (aparecen en últimas 2 auditorías del mismo local)
     var sharedAllData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 20).getValues();
     const desviosRepetidos = detectarDesviosRepetidos(sheet, data.local, data.auditId, rows, sharedAllData);
 
@@ -311,7 +365,7 @@ function doPost(e) {
 }
 
 // ============================================================
-// DETECCIÃ“N DE DESVÃOS REPETIDOS
+// DETECCIÓN DE DESVÍOS REPETIDOS
 // ============================================================
 function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales, allDataParam) {
   try {
@@ -320,7 +374,7 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales, all
 
     const allData = allDataParam || sheet.getRange(2, 1, sheet.getLastRow() - 1, 13).getValues();
 
-    // Filtrar filas del mismo local, excluyendo la auditorÃ­a actual
+    // Filtrar filas del mismo local, excluyendo la auditoría actual
     // Col A(0)=AuditID, Col E(4)=Local, Col I(8)=Control, Col G(6)=Categoria, Col H(7)=Subcategoria, Col L(11)=Respuesta
     const rowsLocal = allData.filter(function(r) {
       return r[4] === local && r[0] !== auditIdActual && r[0];
@@ -328,15 +382,15 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales, all
 
     if (!rowsLocal.length) return [];
 
-    // Obtener los Ãºltimos 2 AuditIDs distintos (en orden cronolÃ³gico)
+    // Obtener los últimos 2 AuditIDs distintos (en orden cronológico)
     var auditIds = [];
     rowsLocal.forEach(function(r) {
       if (auditIds.indexOf(r[0]) === -1) auditIds.push(r[0]);
     });
     var last2 = auditIds.slice(-2);
-    if (last2.length < 2) return []; // Necesitamos al menos 2 auditorÃ­as previas
+    if (last2.length < 2) return []; // Necesitamos al menos 2 auditorías previas
 
-    // Recolectar No Cumple por cada auditorÃ­a previa
+    // Recolectar No Cumple por cada auditoría previa
     var noCumplePrevio = {};
     last2.forEach(function(id) { noCumplePrevio[id] = {}; });
 
@@ -349,7 +403,7 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales, all
       }
     });
 
-    // No Cumple en la auditorÃ­a actual
+    // No Cumple en la auditoría actual
     var noCumpleActual = {};
     rowsActuales.forEach(function(r) {
       var res = (r[11]||'').toLowerCase();
@@ -377,11 +431,11 @@ function detectarDesviosRepetidos(sheet, local, auditIdActual, rowsActuales, all
 }
 
 // ============================================================
-// HELPER: FECHA â†’ YYYY-MM-DD (para nombres de archivo)
+// HELPER: FECHA → YYYY-MM-DD (para nombres de archivo)
 // ============================================================
 function formatFechaISO(f) {
   if (!f) return '';
-  // Si es Date (de getValues()), usar mÃ©todos locales directamente
+  // Si es Date (de getValues()), usar métodos locales directamente
   if (f instanceof Date) {
     var dd = ('0' + f.getDate()).slice(-2);
     var mm = ('0' + (f.getMonth() + 1)).slice(-2);
@@ -390,7 +444,7 @@ function formatFechaISO(f) {
   // Si es string, parsear manualmente para evitar desfase UTC
   var s = String(f);
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
-  // Ãšltimo recurso: new Date (puede haber desfase en strings)
+  // Último recurso: new Date (puede haber desfase en strings)
   var d = new Date(f);
   if (!isNaN(d.getTime())) {
     var dd2 = ('0' + d.getDate()).slice(-2);
@@ -401,7 +455,7 @@ function formatFechaISO(f) {
 }
 
 // ============================================================
-// HELPER: FORMATEAR FECHA YYYY-MM-DD â†’ DD/MM/AAAA
+// HELPER: FORMATEAR FECHA YYYY-MM-DD → DD/MM/AAAA
 // ============================================================
 function formatFechaHora(f) {
   if (!f) return '';
@@ -416,7 +470,7 @@ function formatFechaHora(f) {
 
 function formatFecha(f) {
   if (!f) return '';
-  // Si es Date (de getValues()), usar mÃ©todos locales directamente
+  // Si es Date (de getValues()), usar métodos locales directamente
   if (f instanceof Date) {
     var dd = ('0' + f.getDate()).slice(-2);
     var mm = ('0' + (f.getMonth() + 1)).slice(-2);
@@ -426,7 +480,7 @@ function formatFecha(f) {
   var s = String(f);
   var p = s.split('-');
   if (p.length === 3 && p[0].length === 4) return p[2] + '/' + p[1] + '/' + p[0];
-  // Ãšltimo recurso: new Date
+  // Último recurso: new Date
   var d = new Date(f);
   if (!isNaN(d.getTime())) {
     var dd2  = ('0' + d.getDate()).slice(-2);
@@ -449,12 +503,12 @@ function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActu
     }
     if (!allData.length) return null;
 
-    // Filas del mismo local, excluyendo la auditorÃ­a actual
+    // Filas del mismo local, excluyendo la auditoría actual
     var rowsLocal = allData.filter(function(col) {
       return col[4] === local && col[0] !== auditIdActual && col[0];
     });
 
-    // Solo auditorÃ­as Oficiales para historial y promedio
+    // Solo auditorías Oficiales para historial y promedio
     var rowsOficial = rowsLocal.filter(function(col) {
       return !col[19] || col[19] === 'Oficial';
     });
@@ -470,7 +524,7 @@ function calcularHistorial(sheet, local, auditIdActual, fechaActual, puntajeActu
       };
     }
 
-    // Promedio del mes â€” solo Oficial (incluye la auditorÃ­a actual si tambiÃ©n es Oficial)
+    // Promedio del mes — solo Oficial (incluye la auditoría actual si también es Oficial)
     var yearMonth = String(fechaActual).substring(0, 7);
     var rowsMes = rowsOficial.filter(function(col) {
       return String(col[1]).substring(0, 7) === yearMonth;
@@ -525,10 +579,10 @@ function generarPDF(data, rows, desviosRepetidos, historial) {
 }
 
 // ============================================================
-// CONSTRUIR HTML DE AUDITORÃA (usado por email y PDF)
+// CONSTRUIR HTML DE AUDITORÍA (usado por email y PDF)
 // ============================================================
 function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
-  // EstadÃ­sticas
+  // Estadísticas
   var cumple   = rows.filter(function(r){ return (r[11]||'').toLowerCase() === 'cumple'; }).length;
   var noCumple = rows.filter(function(r){ var v=(r[11]||'').toLowerCase(); return v.includes('no cumple')||v==='nocumple'; }).length;
   var parcial  = rows.filter(function(r){ return (r[11]||'').toLowerCase().includes('parcial'); }).length;
@@ -536,7 +590,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   var total    = rows.filter(function(r){ return r[11]; }).length;
   var pct      = total ? Math.round(cumple / total * 100) : 0;
 
-  // GrÃ¡fico torta
+  // Gráfico torta
   var chartTotal = cumple + noCumple + parcial;
   var pCumple   = chartTotal ? Math.round(cumple   / chartTotal * 100) : 0;
   var pNoCumple = chartTotal ? Math.round(noCumple / chartTotal * 100) : 0;
@@ -570,7 +624,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   var puntajeHtml = '';
   if (data.puntaje) {
     var pLabel = data.puntaje.reprobado ? 'REPROBADO' : data.puntaje.pct + '%';
-    var pSub   = data.puntaje.nivel + (!data.puntaje.reprobado ? ' Â· ' + data.puntaje.obtenido + '/' + data.puntaje.posible + ' pts' : '');
+    var pSub   = data.puntaje.nivel + (!data.puntaje.reprobado ? ' · ' + data.puntaje.obtenido + '/' + data.puntaje.posible + ' pts' : '');
     puntajeHtml = '<div style="margin-top:16px;display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:12px 24px">'
       + '<div style="font-size:40px;font-weight:900;color:#fff">' + pLabel + '</div>'
       + '<div style="font-size:14px;color:rgba(255,255,255,0.9);font-weight:600;margin-top:2px">' + pSub + '</div>'
@@ -580,7 +634,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   var headerBg = (data.puntaje && data.puntaje.reprobado) ? '#e4001b' : '#16a34a';
   var headerHtml = '<div style="background:' + headerBg + ';padding:24px 32px;text-align:center">'
     + '<h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">Informe de Auditor&iacute;a</h1>'
-    + '<p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">' + data.local + ' Â· ' + fechaHora + '</p>'
+    + '<p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">' + data.local + ' · ' + fechaHora + '</p>'
     + puntajeHtml + '</div>';
 
   // ---- 2. DATOS ----
@@ -614,7 +668,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       var pa = historial.prevAudit;
       var paLabel = pa.reprobado ? 'REPROBADO' : pa.pct + '% (' + pa.nivel + ')';
       histHtml += '<p style="margin:0 0 8px;font-size:13px;color:#1a1a1a">'
-        + '<strong>Auditor&iacute;a anterior:</strong> ' + formatFecha(pa.fecha) + ' â€” ' + paLabel + '</p>';
+        + '<strong>Auditor&iacute;a anterior:</strong> ' + formatFecha(pa.fecha) + ' — ' + paLabel + '</p>';
     }
     if (historial.promedioMes !== null) {
       histHtml += '<p style="margin:0;font-size:13px;color:#1a1a1a">'
@@ -649,21 +703,21 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
         '<div style="background:#fff1f2;border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid #e4001b">'
         + '<table style="width:100%;border-collapse:collapse"><tr>'
         + '<td style="vertical-align:top;width:' + tdWidth + '">'
-        + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' â€º ' + r[7] + '</div>'
+        + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
         + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:4px">' + r[8] + '</div>'
         + explHtmlCrit
-        + '<div style="font-size:13px;font-weight:700;color:#e4001b;margin-bottom:4px">â— No Cumple (Cr&iacute;tico)</div>'
+        + '<div style="font-size:13px;font-weight:700;color:#e4001b;margin-bottom:4px">● No Cumple (Cr&iacute;tico)</div>'
         + obsHtml
         + '</td>' + fotoTd + '</tr></table></div>';
     });
     seccionReprobado =
       '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fff1f2">'
-      + '<h2 style="margin:0 0 8px;font-size:16px;color:#991b1b">â›” REPROBADO por Nota de Oro</h2>'
+      + '<h2 style="margin:0 0 8px;font-size:16px;color:#991b1b">⛔ REPROBADO por Nota de Oro</h2>'
       + '<p style="margin:0 0 16px;font-size:13px;color:#7f1d1d">La auditor&iacute;a fue reprobada por incumplimiento de puntos cr&iacute;ticos (Nota de Oro):</p>'
       + filasCrit + '</div>';
   }
 
-  // ---- 5+6. GRÃFICO Y % POR CATEGORÃA ----
+  // ---- 5+6. GRÁFICO Y % POR CATEGORÍA ----
   var maxPts     = { 'critico':4,'alta':3,'media':2,'baja':1 };
   var parcialPts = { 'critico':2,'alta':1,'media':1,'baja':0 };
   var catMap = {};
@@ -714,7 +768,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '</div>';
 
   // ---- 7. PUNTOS A CORREGIR ----
-  // Si hay reprobado, excluir los crÃ­ticos que no cumplen (ya mostrados arriba)
+  // Si hay reprobado, excluir los críticos que no cumplen (ya mostrados arriba)
   var noOkRows = rows.filter(function(r){
     var v = (r[11]||'').toLowerCase();
     var esCriticoNC = normImp(r[9]) === 'critico' && (v.includes('no cumple') || v === 'nocumple');
@@ -724,7 +778,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
 
   function buildNoOkFila(r) {
     var res        = (r[11]||'').toLowerCase();
-    var esCritico  = (r[9]||'').toLowerCase().replace(/Ã­/g,'i') === 'critico';
+    var esCritico  = (r[9]||'').toLowerCase().replace(/í/g,'i') === 'critico';
     var esNoCumple = res.includes('no cumple') || res === 'nocumple';
     var bgRow      = (esCritico && esNoCumple) ? '#fff1f2' : esNoCumple ? '#fef9f9' : '#fffbeb';
     var resColor   = esNoCumple ? '#e4001b' : '#d97706';
@@ -738,11 +792,11 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     return '<div style="background:' + bgRow + ';border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid ' + resColor + '">'
       + '<table style="width:100%;border-collapse:collapse"><tr>'
       + '<td style="vertical-align:top;width:' + tdWidth + '">'
-      + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' â€º ' + r[7] + '</div>'
+      + '<div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">' + r[6] + ' › ' + r[7] + '</div>'
       + '<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:4px">' + r[8] + '</div>'
       + explHtml2
       + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(r[9]) + ';color:' + getImpColor(r[9]) + ';margin-bottom:8px">' + r[9] + '</span>'
-      + '<div style="font-size:13px;font-weight:700;color:' + resColor + ';margin-bottom:4px">â— ' + r[11] + '</div>'
+      + '<div style="font-size:13px;font-weight:700;color:' + resColor + ';margin-bottom:4px">● ' + r[11] + '</div>'
       + obsHtml
       + '</td>' + fotoTd + '</tr></table></div>';
   }
@@ -770,11 +824,11 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
   var seccionNoOk = '';
   if (noOkRows.length) {
     seccionNoOk = '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb">'
-      + '<h2 style="margin:0 0 16px;font-size:15px;color:#e4001b">âš  Puntos a Corregir (' + noOkRows.length + ')</h2>'
+      + '<h2 style="margin:0 0 16px;font-size:15px;color:#e4001b">⚠ Puntos a Corregir (' + noOkRows.length + ')</h2>'
       + filasNoOkHtml + '</div>';
   }
 
-  // ---- 8. DESVÃOS REITERADOS ----
+  // ---- 8. DESVÍOS REITERADOS ----
   var seccionRepetidos = '';
   var rep = desviosRepetidos || [];
   if (rep.length) {
@@ -784,11 +838,11 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
       var repBg        = rep2 ? '#fff1f2' : '#fff7ed';
       var repBorder    = rep2 ? '#fca5a5' : '#fed7aa';
       var repBadgeBg   = rep2 ? '#e4001b' : '#ea580c';
-      var repLabel     = rep2 ? 'ðŸ” Repite en las Ãºltimas 3' : 'âš  Repite en auditorÃ­a anterior';
+      var repLabel     = rep2 ? '🔁 Repite en las últimas 3' : '⚠ Repite en auditoría anterior';
       filasRep +=
         '<tr style="background:' + repBg + '">'
         + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-weight:600;font-size:13px">' + d.control + '</td>'
-        + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-size:12px;color:#666">' + d.categoria + ' â€º ' + d.subcategoria + '</td>'
+        + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-size:12px;color:#666">' + d.categoria + ' › ' + d.subcategoria + '</td>'
         + '<td style="padding:10px 12px;border-bottom:1px solid ' + repBorder + ';font-size:12px;text-align:center">'
         + '<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:' + getImpBg(d.importancia) + ';color:' + getImpColor(d.importancia) + '">' + d.importancia + '</span>'
         + '</td>'
@@ -798,7 +852,7 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     });
     seccionRepetidos =
       '<div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#fffbeb">'
-      + '<h2 style="margin:0 0 8px;font-size:15px;color:#c2410c">ðŸ” Desv&iacute;os Reiterados (' + rep.length + ')</h2>'
+      + '<h2 style="margin:0 0 8px;font-size:15px;color:#c2410c">🔁 Desv&iacute;os Reiterados (' + rep.length + ')</h2>'
       + '<p style="margin:0 0 16px;font-size:13px;color:#92400e">Puntos que no cumplieron en auditor&iacute;as anteriores y contin&uacute;an sin corregirse.</p>'
       + '<table style="width:100%;border-collapse:collapse">'
       + '<tr style="background:#c2410c">'
@@ -841,16 +895,16 @@ function buildAuditHtml(data, rows, desviosRepetidos, historial, pdfUrl) {
     + '<p style="margin:12px 0 0;font-size:11px;color:#64748b;font-style:italic">Los puntos Cr&iacute;ticos (Nota de Oro) reprueban la auditor&iacute;a autom&aacute;ticamente si no se cumplen, independientemente del puntaje total.</p>'
     + '</div>';
 
-  // ---- 10. FOOTER ----  (renumbered â€” was 10)
+  // ---- 10. FOOTER ----  (renumbered — was 10)
   var pdfBtnHtml = '';
   if (pdfUrl) {
     pdfBtnHtml = '<a href="' + pdfUrl + '" style="display:inline-block;padding:8px 18px;background:#e4001b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;margin:4px">Descargar PDF</a>';
   }
   var verAuditoriaUrl = 'https://script.google.com/macros/s/AKfycbwtsRNwBylKb_Nis4hUXlhj5epPeF7VGgGWSZzzHNAQ7Py00nzPp6g_7D9DsyelOCLB/exec?action=verAuditoria&auditId=' + data.auditId;
-  var verAuditoriaBtnHtml = '<a href="' + verAuditoriaUrl + '" style="display:inline-block;padding:8px 18px;background:#1e40af;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;margin:4px">Ver auditorÃ­a completa</a>';
+  var verAuditoriaBtnHtml = '<a href="' + verAuditoriaUrl + '" style="display:inline-block;padding:8px 18px;background:#1e40af;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;margin:4px">Ver auditoría completa</a>';
 
   var footerHtml = '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center">'
-    + '<p style="margin:0;font-size:12px;color:#999">Sistema de AuditorÃ­as Â· Sushi POP Â· ' + formatFecha(data.fecha) + '</p>'
+    + '<p style="margin:0;font-size:12px;color:#999">Sistema de Auditorías · Sushi POP · ' + formatFecha(data.fecha) + '</p>'
     + '<p style="margin:8px 0 0">' + pdfBtnHtml + verAuditoriaBtnHtml + '</p>'
     + '</div>';
 
@@ -885,7 +939,7 @@ function driveImgUrls(urlStr) {
   return urlStr.split(',').map(function(u) { return driveImgUrl(u.trim()); }).filter(Boolean);
 }
 
-// Embebe imÃ¡genes de Drive como base64 en el HTML (necesario para PDF)
+// Embebe imágenes de Drive como base64 en el HTML (necesario para PDF)
 function embedDriveImagesAsBase64(html) {
   var regex = /https:\/\/drive\.google\.com\/thumbnail\?id=([a-zA-Z0-9_-]+)&sz=w600/g;
   var match;
@@ -941,13 +995,13 @@ function getImpColor(imp) {
 }
 
 // ============================================================
-// COLOREAR DESVÃOS EN SHEET
+// COLOREAR DESVÍOS EN SHEET
 // ============================================================
 function colorearDesvios(sheet, rows) {
   const firstRow = sheet.getLastRow() - rows.length + 1;
   rows.forEach((row, i) => {
-    const imp = (row[9]||'').toLowerCase();   // importancia = Ã­ndice 9
-    const res = (row[11]||'').toLowerCase();  // respuesta   = Ã­ndice 11
+    const imp = (row[9]||'').toLowerCase();   // importancia = índice 9
+    const res = (row[11]||'').toLowerCase();  // respuesta   = índice 11
     const isCrit = normImp(imp)==='critico';
     const isNC   = res.includes('no cumple')||res==='nocumple';
     if (isCrit && isNC) sheet.getRange(firstRow+i,1,1,15).setBackground('#fff1f2');
@@ -997,18 +1051,18 @@ function recalcularPuntaje(rows, umbralCriticosPct) {
   var pct = posible > 0 ? Math.round(obtenido / posible * 100) : 0;
   var reprobado = criticosTotal > 0 && (criticosFallidos / criticosTotal * 100) >= umbralCriticosPct;
   var nivel, nivelEmoji;
-  if (reprobado)      { nivel = 'Reprobado';     nivelEmoji = 'â›”'; }
-  else if (pct >= 90) { nivel = 'Excelente';     nivelEmoji = 'ðŸŸ¢'; }
-  else if (pct >= 75) { nivel = 'Satisfactorio'; nivelEmoji = 'ðŸŸ¡'; }
-  else if (pct >= 60) { nivel = 'A mejorar';     nivelEmoji = 'ðŸŸ '; }
-  else                { nivel = 'Deficiente';    nivelEmoji = 'ðŸ”´'; }
+  if (reprobado)      { nivel = 'Reprobado';     nivelEmoji = '⛔'; }
+  else if (pct >= 90) { nivel = 'Excelente';     nivelEmoji = '🟢'; }
+  else if (pct >= 75) { nivel = 'Satisfactorio'; nivelEmoji = '🟡'; }
+  else if (pct >= 60) { nivel = 'A mejorar';     nivelEmoji = '🟠'; }
+  else                { nivel = 'Deficiente';    nivelEmoji = '🔴'; }
 
   return { pct: pct, nivel: nivel, obtenido: obtenido, posible: posible, reprobado: reprobado, nivelEmoji: nivelEmoji };
 }
 
 // ============================================================
 // ============================================================
-// AUTH â€” HELPERS
+// AUTH — HELPERS
 // ============================================================
 function hashPassword(pwd) {
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, pwd, Utilities.Charset.UTF_8);
@@ -1103,7 +1157,7 @@ function ensureViaticosSheet(ss) {
 }
 
 // ============================================================
-// REENVÃO DE EMAIL POR AUDIT ID
+// REENVÍO DE EMAIL POR AUDIT ID
 // ============================================================
 function ensureConfigSheet(ss) {
   var sh = ss.getSheetByName('Config');
@@ -1151,7 +1205,7 @@ function doGet(e) {
   if (action === 'login') {
     var emailLog = ((e.parameter.email) || '').toLowerCase().trim();
     var hashLog  = e.parameter.hash || '';
-    if (!emailLog || !hashLog) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!emailLog || !hashLog) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssLog    = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var sheetLog = ensureUsuariosSheet(ssLog);
@@ -1159,7 +1213,7 @@ function doGet(e) {
       if (rowLog < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dLog = sheetLog.getRange(rowLog, 1, 1, 10).getValues()[0];
       if (dLog[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
-      if (dLog[4] !== hashLog)  return jsonResponse({ success: false, error: 'ContraseÃ±a incorrecta' });
+      if (dLog[4] !== hashLog)  return jsonResponse({ success: false, error: 'Contraseña incorrecta' });
       sheetLog.getRange(rowLog, 9).setValue(new Date()); // col 9 = UltimoLogin
       return jsonResponse({ success: true, user: {
         email:      dLog[0],
@@ -1176,14 +1230,14 @@ function doGet(e) {
     var emailCP  = ((e.parameter.email) || '').toLowerCase().trim();
     var oldHash  = e.parameter.oldHash || '';
     var newHash  = e.parameter.newHash || '';
-    if (!emailCP || !oldHash || !newHash) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!emailCP || !oldHash || !newHash) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssCP    = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var sheetCP = ensureUsuariosSheet(ssCP);
       var rowCP   = encontrarUsuarioRow(sheetCP, emailCP);
       if (rowCP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dCP = sheetCP.getRange(rowCP, 1, 1, 8).getValues()[0];
-      if (dCP[4] !== oldHash) return jsonResponse({ success: false, error: 'ContraseÃ±a actual incorrecta' });
+      if (dCP[4] !== oldHash) return jsonResponse({ success: false, error: 'Contraseña actual incorrecta' });
       sheetCP.getRange(rowCP, 5).setValue(newHash);
       sheetCP.getRange(rowCP, 6).setValue('false');
       return jsonResponse({ success: true });
@@ -1198,18 +1252,18 @@ function doGet(e) {
     var rol      = e.parameter.rol || 'Auditor';
     var locales  = e.parameter.locales || 'todos';
     var viaticos = e.parameter.viaticos === 'true' ? 'Sí' : 'No';
-    if (!adminEm || !adminTok || !nombre || !newEmail) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEm || !adminTok || !nombre || !newEmail) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssCU = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssCU, adminEm, adminTok)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
       var sheetCU = ensureUsuariosSheet(ssCU);
-      if (encontrarUsuarioRow(sheetCU, newEmail) > 0) return jsonResponse({ success: false, error: 'El email ya estÃ¡ registrado' });
+      if (encontrarUsuarioRow(sheetCU, newEmail) > 0) return jsonResponse({ success: false, error: 'El email ya está registrado' });
       var tempPwd = generarPasswordTemp();
       var pwdHash = hashPassword(tempPwd);
       sheetCU.appendRow([newEmail, nombre, rol, locales, pwdHash, 'true', 'Activo', new Date(), '', viaticos]);
       cacheRemoveKey('usuarios');
-      var bodyEmail = 'Hola ' + nombre + ',\n\nTu cuenta fue creada en el Sistema de AuditorÃ­as Sushi POP.\n\nUsuario: ' + newEmail + '\nContraseÃ±a temporal: ' + tempPwd + '\n\nAl ingresar por primera vez se te pedirÃ¡ que cambies tu contraseÃ±a.\n\nIngresÃ¡ en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
-      GmailApp.sendEmail(newEmail, 'Acceso al Sistema de AuditorÃ­as Sushi POP', bodyEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP AuditorÃ­as' });
+      var bodyEmail = 'Hola ' + nombre + ',\n\nTu cuenta fue creada en el Sistema de Auditorías Sushi POP.\n\nUsuario: ' + newEmail + '\nContraseña temporal: ' + tempPwd + '\n\nAl ingresar por primera vez se te pedirá que cambies tu contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
+      GmailApp.sendEmail(newEmail, 'Acceso al Sistema de Auditorías Sushi POP', bodyEmail, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
       return jsonResponse({ success: true, message: 'Usuario creado y email enviado a ' + newEmail });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
@@ -1218,7 +1272,7 @@ function doGet(e) {
     var adminEmR  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokR = e.parameter.adminToken || '';
     var targetEmR = ((e.parameter.targetEmail) || '').toLowerCase().trim();
-    if (!adminEmR || !adminTokR || !targetEmR) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmR || !adminTokR || !targetEmR) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssRP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssRP, adminEmR, adminTokR)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1229,9 +1283,9 @@ function doGet(e) {
       var tempPwdR = generarPasswordTemp();
       sheetRP.getRange(rowRP, 5).setValue(hashPassword(tempPwdR));
       sheetRP.getRange(rowRP, 6).setValue('true');
-      var bodyRP = 'Hola ' + nombreRP + ',\n\nTu contraseÃ±a fue restablecida.\n\nNueva contraseÃ±a temporal: ' + tempPwdR + '\n\nAl ingresar se te pedirÃ¡ que elijas una nueva contraseÃ±a.\n\nIngresÃ¡ en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
-      GmailApp.sendEmail(targetEmR, 'Restablecimiento de contraseÃ±a - AuditorÃ­as Sushi POP', bodyRP, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP AuditorÃ­as' });
-      return jsonResponse({ success: true, message: 'ContraseÃ±a restablecida y email enviado' });
+      var bodyRP = 'Hola ' + nombreRP + ',\n\nTu contraseña fue restablecida.\n\nNueva contraseña temporal: ' + tempPwdR + '\n\nAl ingresar se te pedirá que elijas una nueva contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
+      GmailApp.sendEmail(targetEmR, 'Restablecimiento de contraseña - Auditorías Sushi POP', bodyRP, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
+      return jsonResponse({ success: true, message: 'Contraseña restablecida y email enviado' });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
@@ -1239,7 +1293,7 @@ function doGet(e) {
     var adminEmB  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokB = e.parameter.adminToken || '';
     var targetEmB = ((e.parameter.targetEmail) || '').toLowerCase().trim();
-    if (!adminEmB || !adminTokB || !targetEmB) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmB || !adminTokB || !targetEmB) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssBaja = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssBaja, adminEmB, adminTokB)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1256,7 +1310,7 @@ function doGet(e) {
     var adminEmA  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokA = e.parameter.adminToken || '';
     var targetEmA = ((e.parameter.targetEmail) || '').toLowerCase().trim();
-    if (!adminEmA || !adminTokA || !targetEmA) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmA || !adminTokA || !targetEmA) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssReact = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssReact, adminEmA, adminTokA)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1272,7 +1326,7 @@ function doGet(e) {
   if (action === 'getUsuarios') {
     var adminEmG  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokG = e.parameter.adminToken || '';
-    if (!adminEmG || !adminTokG) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmG || !adminTokG) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     var cachedUsuarios = cacheGetParsed('usuarios');
     if (cachedUsuarios) return jsonResponse(cachedUsuarios);
     try {
@@ -1304,7 +1358,7 @@ function doGet(e) {
     var newLocales= e.parameter.locales  || '';
     var newEstado = e.parameter.estado   || '';
     var newViaticos = e.parameter.viaticos || '';
-    if (!adminEmE || !adminTokE || !targetEmE) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmE || !adminTokE || !targetEmE) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssE = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssE, adminEmE, adminTokE)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1324,7 +1378,7 @@ function doGet(e) {
   if (action === 'getLocales') {
     var adminEmL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokL = e.parameter.adminToken || '';
-    if (!adminEmL || !adminTokL) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmL || !adminTokL) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     var cachedLocales = cacheGetParsed('locales');
     if (cachedLocales) return jsonResponse(cachedLocales);
     try {
@@ -1348,7 +1402,7 @@ function doGet(e) {
     var lNombre    = e.parameter.nombre  || '';
     var lCausa     = e.parameter.isCausa === 'true' ? 'TRUE' : 'FALSE';
     var lEmails    = e.parameter.emails  || '';
-    if (!adminEmCL || !adminTokCL || !lNombre) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmCL || !adminTokCL || !lNombre) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssCL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssCL, adminEmCL, adminTokCL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1367,7 +1421,7 @@ function doGet(e) {
     var ulNombre   = e.parameter.nombre  || '';
     var ulCausa    = e.parameter.isCausa === 'true' ? 'TRUE' : 'FALSE';
     var ulEmails   = e.parameter.emails  || '';
-    if (!adminEmUL || !adminTokUL || !ulIdx || !ulNombre) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmUL || !adminTokUL || !ulIdx || !ulNombre) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssUL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssUL, adminEmUL, adminTokUL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1383,7 +1437,7 @@ function doGet(e) {
     var adminEmDL  = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var adminTokDL = e.parameter.adminToken || '';
     var dlIdx      = parseInt(e.parameter.idx) || 0;
-    if (!adminEmDL || !adminTokDL || !dlIdx) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!adminEmDL || !adminTokDL || !dlIdx) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssDL = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssDL, adminEmDL, adminTokDL)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -1422,9 +1476,9 @@ function doGet(e) {
       var tempFP   = generarPasswordTemp();
       sheetFP.getRange(rowFP, 5).setValue(hashPassword(tempFP));
       sheetFP.getRange(rowFP, 6).setValue('true');
-      var bodyFP = 'Hola ' + nombreFP + ',\n\nRecibimos una solicitud para restablecer tu contraseÃ±a.\n\nContraseÃ±a temporal: ' + tempFP + '\n\nAl ingresar se te pedirÃ¡ que elijas una nueva contraseÃ±a.\n\nIngresÃ¡ en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
-      GmailApp.sendEmail(fpEmail, 'RecuperaciÃ³n de contraseÃ±a - AuditorÃ­as Sushi POP', bodyFP, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP AuditorÃ­as' });
-      return jsonResponse({ success: true, message: 'Email enviado con contraseÃ±a temporal' });
+      var bodyFP = 'Hola ' + nombreFP + ',\n\nRecibimos una solicitud para restablecer tu contraseña.\n\nContraseña temporal: ' + tempFP + '\n\nAl ingresar se te pedirá que elijas una nueva contraseña.\n\nIngresá en: https://sushipopaudit.github.io/Auditorias/\n\nSushi POP';
+      GmailApp.sendEmail(fpEmail, 'Recuperación de contraseña - Auditorías Sushi POP', bodyFP, { from: 'franquicias@sushi-pop.com.ar', name: 'Sushi POP Auditorías' });
+      return jsonResponse({ success: true, message: 'Email enviado con contraseña temporal' });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
@@ -1432,13 +1486,13 @@ function doGet(e) {
     var bNombre = e.parameter.nombre || '';
     var bEmail  = ((e.parameter.email) || '').toLowerCase().trim();
     var bPwd    = e.parameter.pwd || '';
-    if (!bNombre || !bEmail || !bPwd) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros: nombre, email, pwd' });
+    if (!bNombre || !bEmail || !bPwd) return jsonResponse({ success: false, error: 'Faltan parámetros: nombre, email, pwd' });
     try {
       var ssBoot  = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shBoot  = ensureUsuariosSheet(ssBoot);
-      if (shBoot.getLastRow() >= 2) return jsonResponse({ success: false, error: 'Ya existen usuarios. Por seguridad este endpoint solo funciona con la hoja vacÃ­a.' });
+      if (shBoot.getLastRow() >= 2) return jsonResponse({ success: false, error: 'Ya existen usuarios. Por seguridad este endpoint solo funciona con la hoja vacía.' });
       shBoot.appendRow([bEmail, bNombre, 'Admin', 'todos', hashPassword(bPwd), 'false', 'Activo', new Date()]);
-      return jsonResponse({ success: true, message: 'Admin creado: ' + bEmail + '. Ya podÃ©s ingresar con esa contraseÃ±a.' });
+      return jsonResponse({ success: true, message: 'Admin creado: ' + bEmail + '. Ya podés ingresar con esa contraseña.' });
     } catch(err) { return jsonResponse({ success: false, error: err.message }); }
   }
 
@@ -1517,7 +1571,7 @@ function doGet(e) {
       var firstVer = rowsVer[0];
       var puntajeVer = recalcularPuntaje(rowsVer);
 
-      // Construir HTML completo con todos los puntos organizados por categorÃ­a
+      // Construir HTML completo con todos los puntos organizados por categoría
       var catMapVer = {};
       var catOrderVer = [];
       rowsVer.forEach(function(r) {
@@ -1580,11 +1634,11 @@ function doGet(e) {
         + '<script>function openLightbox(src){document.getElementById("lb-img").src=src;document.getElementById("lightbox").classList.add("open");}<\/script>'
         + '<div style="max-width:800px;margin:0 auto;background:#fff">'
         + '<div style="background:' + headerColor + ';padding:24px 32px;text-align:center">'
-        + '<h1 style="color:#fff;margin:0 0 4px;font-size:20px">AuditorÃ­a Completa</h1>'
-        + '<p style="color:rgba(255,255,255,0.85);margin:0;font-size:14px">' + firstVer[4] + ' Â· ' + formatFecha(firstVer[1]) + ' Â· ' + firstVer[2] + '</p>'
+        + '<h1 style="color:#fff;margin:0 0 4px;font-size:20px">Auditoría Completa</h1>'
+        + '<p style="color:rgba(255,255,255,0.85);margin:0;font-size:14px">' + firstVer[4] + ' · ' + formatFecha(firstVer[1]) + ' · ' + firstVer[2] + '</p>'
         + '<div style="margin-top:12px;display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:10px 24px">'
         + '<div style="font-size:36px;font-weight:900;color:#fff">' + pLabel + '</div>'
-        + '<div style="font-size:13px;color:rgba(255,255,255,0.9)">' + puntajeVer.nivel + ' Â· ' + puntajeVer.obtenido + '/' + puntajeVer.posible + ' pts</div>'
+        + '<div style="font-size:13px;color:rgba(255,255,255,0.9)">' + puntajeVer.nivel + ' · ' + puntajeVer.obtenido + '/' + puntajeVer.posible + ' pts</div>'
         + '</div></div>'
         + '<div style="padding:16px 32px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#444">'
         + '<strong>Local:</strong> ' + firstVer[4] + ' &nbsp;|&nbsp; <strong>Auditor:</strong> ' + firstVer[3] + ' &nbsp;|&nbsp; <strong>Marca:</strong> ' + firstVer[5]
@@ -1592,7 +1646,7 @@ function doGet(e) {
         + '</div>'
         + '<div style="padding:24px 32px">' + seccionesHtml + '</div>'
         + '<div style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#999">'
-        + 'Sistema de AuditorÃ­as Â· Sushi POP Â· ID: ' + auditIdVer
+        + 'Sistema de Auditorías · Sushi POP · ID: ' + auditIdVer
         + '</div>'
         + '</div></body></html>';
 
@@ -1614,7 +1668,7 @@ function doGet(e) {
       if (lastRow2 < 2) return jsonResponse({ success: false, error: 'Sin datos' });
 
       var allData2 = sheet2.getRange(2, 1, lastRow2 - 1, 19).getValues();
-      // Encontrar filas del auditId y sus nÃºmeros de fila en el sheet (base 1, +2 por encabezado)
+      // Encontrar filas del auditId y sus números de fila en el sheet (base 1, +2 por encabezado)
       var rowIndexes = [];
       var rowsAudit  = [];
       allData2.forEach(function(r, i) {
@@ -1627,11 +1681,11 @@ function doGet(e) {
 
       var puntaje2 = recalcularPuntaje(rowsAudit);
 
-      // Actualizar cols P(16), Q(17), R(18) para cada fila â€” Ã­ndice sheet = columna 16,17,18
+      // Actualizar cols P(16), Q(17), R(18) para cada fila — índice sheet = columna 16,17,18
       rowIndexes.forEach(function(sheetRow) {
         sheet2.getRange(sheetRow, 16).setValue(puntaje2.pct);
         sheet2.getRange(sheetRow, 17).setValue(puntaje2.nivel);
-        sheet2.getRange(sheetRow, 18).setValue(puntaje2.reprobado ? 'SÃ­' : 'No');
+        sheet2.getRange(sheetRow, 18).setValue(puntaje2.reprobado ? 'Sí' : 'No');
       });
 
       return jsonResponse({ success: true, auditId: auditId2, filasActualizadas: rowIndexes.length, puntaje: puntaje2 });
@@ -1717,14 +1771,14 @@ function doGet(e) {
   if (action === 'getAuditorias') {
     var gaEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var gaToken = e.parameter.token || '';
-    if (!gaEmail || !gaToken) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!gaEmail || !gaToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssAuthGA = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shAuthGA = ensureUsuariosSheet(ssAuthGA);
       var rowAuthGA = encontrarUsuarioRow(shAuthGA, gaEmail);
       if (rowAuthGA < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dAuthGA = shAuthGA.getRange(rowAuthGA, 1, 1, 8).getValues()[0];
-      if (dAuthGA[4] !== gaToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dAuthGA[4] !== gaToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dAuthGA[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       var gaRol     = String(dAuthGA[2] || '');
       var gaLocales = String(dAuthGA[3] || '');
@@ -1745,7 +1799,7 @@ function doGet(e) {
       dataGA.forEach(function(r) {
         var id = String(r[0] || '').trim();
         if (!id || seenGA[id]) return;
-        if ((gaRol === 'Auditor' || gaRol === 'Franquiciado') && gaLocales && gaLocales !== 'todos') {
+        if (gaRol === 'Franquiciado' && gaLocales && gaLocales !== 'todos') {
           var gaAllowed = gaLocales.split(',').map(function(l){ return l.trim().toLowerCase(); });
           if (gaAllowed.indexOf((String(r[4] || '')).toLowerCase().trim()) === -1) return;
         }
@@ -1774,14 +1828,14 @@ function doGet(e) {
     var gdEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var gdToken = e.parameter.token || '';
     var gdId    = e.parameter.auditId || '';
-    if (!gdEmail || !gdToken || !gdId) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!gdEmail || !gdToken || !gdId) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssAuthGD = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shAuthGD = ensureUsuariosSheet(ssAuthGD);
       var rowAuthGD = encontrarUsuarioRow(shAuthGD, gdEmail);
       if (rowAuthGD < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dAuthGD = shAuthGD.getRange(rowAuthGD, 1, 1, 8).getValues()[0];
-      if (dAuthGD[4] !== gdToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dAuthGD[4] !== gdToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dAuthGD[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       var gdRol     = String(dAuthGD[2] || '');
       var gdLocales = String(dAuthGD[3] || '');
@@ -1801,11 +1855,11 @@ function doGet(e) {
           return String(v);
         });
       }).filter(function(r){ return r[0].trim() === gdId; });
-      if (!rowsGD.length) return jsonResponse({ success: false, error: 'AuditorÃ­a no encontrada' });
+      if (!rowsGD.length) return jsonResponse({ success: false, error: 'Auditoría no encontrada' });
 
       var fGD = rowsGD[0];
-      if (gdRol === 'Auditor' && (fGD[14]||'').toLowerCase() !== gdEmail)
-        return jsonResponse({ success: false, error: 'Sin acceso' });
+      // Los auditores pueden ver cualquier auditoría: necesitan el historial
+      // del local antes de visitarlo. Los franquiciados siguen limitados a los suyos.
       if (gdRol === 'Franquiciado' && gdLocales !== 'todos') {
         var gdAllow = gdLocales.split(',').map(function(l){ return l.trim().toLowerCase(); });
         if (gdAllow.indexOf((fGD[4]||'').toLowerCase()) === -1) return jsonResponse({ success: false, error: 'Sin acceso' });
@@ -1823,7 +1877,7 @@ function doGet(e) {
         acompanante: fGD[18] ? fGD[18].split('|||')[0] : '',
         posicionAcompanante: fGD[18] && fGD[18].includes('|||') ? fGD[18].split('|||')[1] : '',
         tipo:    fGD[19] || 'Oficial',
-        puntaje: recalcularPuntaje(rowsGD),
+        puntaje: recalcularPuntaje(rowsGD, parseFloat(getConfigValue(ssGD, 'umbral_criticos_pct', 10)) || 10),
         respuestas: rowsGD.map(function(r){
           return {
             categoria:   r[6], subcategoria: r[7], control: r[8],
@@ -1843,7 +1897,7 @@ function doGet(e) {
   if (action === 'getDashboard') {
     var dbEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var dbToken = e.parameter.token || '';
-    if (!dbEmail || !dbToken) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!dbEmail || !dbToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     var dbTipo = (e.parameter.tipo || '').trim();
 
     var cacheKeyDB = 'db_' + dbEmail + '_' + (dbTipo || 'all');
@@ -1857,7 +1911,7 @@ function doGet(e) {
       var rowAuthDB = encontrarUsuarioRow(shAuthDB, dbEmail);
       if (rowAuthDB < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dAuthDB = shAuthDB.getRange(rowAuthDB, 1, 1, 8).getValues()[0];
-      if (dAuthDB[4] !== dbToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dAuthDB[4] !== dbToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dAuthDB[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       var dbRol     = String(dAuthDB[2] || '');
       var dbLocales = String(dAuthDB[3] || '');
@@ -1918,7 +1972,7 @@ function doGet(e) {
         });
       }
 
-      // Helper: ranking of failing controls â€” count = audits where control failed, auditsTotal = audits evaluated
+      // Helper: ranking of failing controls — count = audits where control failed, auditsTotal = audits evaluated
       function rankingControlesLocal(auditList3) {
         var ctrlMap = {};
         auditList3.forEach(function(audit) {
@@ -1936,7 +1990,7 @@ function doGet(e) {
           .sort(function(a,b){ return b.failedAudits - a.failedAudits; }).slice(0, 15);
       }
 
-      // Helper: global ranking â€” localCount = how many locals failed this control in their last audit
+      // Helper: global ranking — localCount = how many locals failed this control in their last audit
       function rankingControlesGlobal(localLastRowsMap) {
         var ctrlMap = {};
         Object.keys(localLastRowsMap).forEach(function(localName) {
@@ -2041,7 +2095,7 @@ function doGet(e) {
         localLastRowsMap[localName] = ultimaRows;
         if (last3[0].pct !== null) globalPcts.push(last3[0].pct);
 
-        // Tendencia: Ãºltima vs anterior
+        // Tendencia: última vs anterior
         var tendencia = 'sin-datos', tendenciaDiff = null;
         if (last3.length >= 2 && last3[0].pct !== null && last3[1].pct !== null) {
           var td = Math.round(last3[0].pct - last3[1].pct);
@@ -2049,7 +2103,7 @@ function doGet(e) {
           tendencia = td > 1 ? 'sube' : td < -1 ? 'baja' : 'estable';
         }
 
-        // DÃ­as desde Ãºltima auditorÃ­a
+        // Días desde última auditoría
         var diasSinAuditoria = null;
         if (last3[0].fechaISO) {
           var partsD = last3[0].fechaISO.split('-');
@@ -2060,7 +2114,7 @@ function doGet(e) {
           }
         }
 
-        // Tasa de reincidencia: % de NC en Ãºltima que tambiÃ©n fallÃ³ en la anterior
+        // Tasa de reincidencia: % de NC en última que también falló en la anterior
         var reincidencia = null;
         if (last3.length >= 2) {
           var ncUltima = ultimaRows.filter(function(r){ return (String(r[11]||'')).trim().toLowerCase() === 'no cumple'; });
@@ -2089,7 +2143,7 @@ function doGet(e) {
       var globalPromedio = globalPcts.length > 0 ? Math.round(globalPcts.reduce(function(s,p){ return s+p; }, 0) / globalPcts.length) : null;
       var totalLocales = sortedLocaleNames.length;
 
-      // â”€â”€ Ranking: ALL locals (tipo-filtered, not role-filtered) â”€â”€
+      // ── Ranking: ALL locals (tipo-filtered, not role-filtered) ──
       var rankingAuditsByLocal = {};
       dataDB.forEach(function(r) {
         if (!r[0]) return;
@@ -2165,14 +2219,14 @@ function doGet(e) {
   if (action === 'getCalendario') {
     var gcEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var gcToken = e.parameter.token || '';
-    if (!gcEmail || !gcToken) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!gcEmail || !gcToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssAuthGC = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shAuthGC = ensureUsuariosSheet(ssAuthGC);
       var rowAuthGC = encontrarUsuarioRow(shAuthGC, gcEmail);
       if (rowAuthGC < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dAuthGC = shAuthGC.getRange(rowAuthGC, 1, 1, 8).getValues()[0];
-      if (dAuthGC[4] !== gcToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dAuthGC[4] !== gcToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dAuthGC[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
       var gcRol = String(dAuthGC[2] || '');
 
@@ -2214,11 +2268,11 @@ function doGet(e) {
     var avAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var avAdminToken = e.parameter.adminToken || '';
     var avFecha      = e.parameter.fecha || '';
-    var avTurno      = e.parameter.turno || 'DÃ­a';
+    var avTurno      = e.parameter.turno || 'Día';
     var avLocal      = e.parameter.local || '';
     var avAuditorEmail = ((e.parameter.auditorEmail) || '').toLowerCase().trim();
     if (!avAdminEmail || !avAdminToken || !avFecha || !avLocal || !avAuditorEmail)
-      return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+      return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssAV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssAV, avAdminEmail, avAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -2244,7 +2298,7 @@ function doGet(e) {
     var bvAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
     var bvAdminToken = e.parameter.adminToken || '';
     var bvVisitaId   = e.parameter.visitaId || '';
-    if (!bvAdminEmail || !bvAdminToken || !bvVisitaId) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!bvAdminEmail || !bvAdminToken || !bvVisitaId) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssBV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       if (!verificarAdmin(ssBV, bvAdminEmail, bvAdminToken)) return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
@@ -2288,20 +2342,20 @@ function doGet(e) {
   }
 
   // ============================================================
-  // getLocalFallas â€” Ãºltimas 2 auditorÃ­as de un local: No Cumple + CrÃ­tico Parcial
+  // getLocalFallas — últimas 2 auditorías de un local: No Cumple + Crítico Parcial
   // ============================================================
   if (action === 'getLocalFallas') {
     var lfEmail = ((e.parameter.email) || '').toLowerCase().trim();
     var lfToken = e.parameter.token || '';
     var lfLocal = e.parameter.local || '';
-    if (!lfEmail || !lfToken || !lfLocal) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!lfEmail || !lfToken || !lfLocal) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssAuthLF = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shAuthLF = ensureUsuariosSheet(ssAuthLF);
       var rowAuthLF = encontrarUsuarioRow(shAuthLF, lfEmail);
       if (rowAuthLF < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dAuthLF = shAuthLF.getRange(rowAuthLF, 1, 1, 8).getValues()[0];
-      if (dAuthLF[4] !== lfToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dAuthLF[4] !== lfToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dAuthLF[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
 
       var ssLF = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -2309,11 +2363,11 @@ function doGet(e) {
       if (!shLF || shLF.getLastRow() < 2) return jsonResponse({ success: true, auditorias: [] });
 
       var allLF = shLF.getRange(2, 1, shLF.getLastRow() - 1, 17).getValues();
-      // Filtrar filas del local (col E = Ã­ndice 4)
+      // Filtrar filas del local (col E = índice 4)
       var rowsLocal = allLF.filter(function(r){ return String(r[4] || '').trim() === lfLocal && r[0]; });
       if (!rowsLocal.length) return jsonResponse({ success: true, auditorias: [] });
 
-      // Obtener los Ãºltimos 2 AuditIDs distintos por orden de apariciÃ³n
+      // Obtener los últimos 2 AuditIDs distintos por orden de aparición
       var auditIds = [];
       rowsLocal.forEach(function(r){
         var id = String(r[0]);
@@ -2351,19 +2405,19 @@ function doGet(e) {
   }
 
   // ============================================================
-  // getPreguntas â€” lee hoja MM completa (solo Admin)
+  // getPreguntas — lee hoja MM completa (solo Admin)
   // ============================================================
   if (action === 'getPreguntas') {
     var gpEmail = ((e.parameter.email)||'').toLowerCase().trim();
     var gpToken = e.parameter.token || '';
-    if (!gpEmail || !gpToken) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!gpEmail || !gpToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssGP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shGP = ensureUsuariosSheet(ssGP);
       var rowGP = encontrarUsuarioRow(shGP, gpEmail);
       if (rowGP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dGP = shGP.getRange(rowGP, 1, 1, 8).getValues()[0];
-      if (dGP[4] !== gpToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dGP[4] !== gpToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dGP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
 
       var ssMM = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
@@ -2393,19 +2447,19 @@ function doGet(e) {
   }
 
   // ============================================================
-  // addPregunta â€” agrega fila a MM (solo Admin)
+  // addPregunta — agrega fila a MM (solo Admin)
   // ============================================================
   if (action === 'addPregunta') {
     var apEmail = ((e.parameter.email)||'').toLowerCase().trim();
     var apToken = e.parameter.token || '';
-    if (!apEmail || !apToken) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!apEmail || !apToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssAP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shAP = ensureUsuariosSheet(ssAP);
       var rowAP = encontrarUsuarioRow(shAP, apEmail);
       if (rowAP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dAP = shAP.getRange(rowAP, 1, 1, 8).getValues()[0];
-      if (dAP[4] !== apToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dAP[4] !== apToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dAP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
 
       var ssMMAP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
@@ -2430,25 +2484,25 @@ function doGet(e) {
   }
 
   // ============================================================
-  // editPregunta â€” edita fila por rowIndex en MM (solo Admin)
+  // editPregunta — edita fila por rowIndex en MM (solo Admin)
   // ============================================================
   if (action === 'editPregunta') {
     var epEmail = ((e.parameter.email)||'').toLowerCase().trim();
     var epToken = e.parameter.token || '';
     var epRow   = parseInt(e.parameter.rowIndex || '0', 10);
-    if (!epEmail || !epToken || !epRow) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!epEmail || !epToken || !epRow) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssEP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shEP = ensureUsuariosSheet(ssEP);
       var rowEP = encontrarUsuarioRow(shEP, epEmail);
       if (rowEP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dEP = shEP.getRange(rowEP, 1, 1, 8).getValues()[0];
-      if (dEP[4] !== epToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dEP[4] !== epToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dEP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
 
       var ssMMEP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shMMEP = ssMMEP.getSheetByName('MM');
-      if (!shMMEP || epRow < 2 || epRow > shMMEP.getLastRow()) return jsonResponse({ success: false, error: 'Fila invÃ¡lida' });
+      if (!shMMEP || epRow < 2 || epRow > shMMEP.getLastRow()) return jsonResponse({ success: false, error: 'Fila inválida' });
       shMMEP.getRange(epRow, 1, 1, 11).setValues([[
         e.parameter.marca        || '',
         e.parameter.categoria    || '',
@@ -2468,25 +2522,25 @@ function doGet(e) {
   }
 
   // ============================================================
-  // deletePregunta â€” borra fila por rowIndex en MM (solo Admin)
+  // deletePregunta — borra fila por rowIndex en MM (solo Admin)
   // ============================================================
   if (action === 'deletePregunta') {
     var dpEmail = ((e.parameter.email)||'').toLowerCase().trim();
     var dpToken = e.parameter.token || '';
     var dpRow   = parseInt(e.parameter.rowIndex || '0', 10);
-    if (!dpEmail || !dpToken || !dpRow) return jsonResponse({ success: false, error: 'Faltan parÃ¡metros' });
+    if (!dpEmail || !dpToken || !dpRow) return jsonResponse({ success: false, error: 'Faltan parámetros' });
     try {
       var ssDP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shDP = ensureUsuariosSheet(ssDP);
       var rowDP = encontrarUsuarioRow(shDP, dpEmail);
       if (rowDP < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
       var dDP = shDP.getRange(rowDP, 1, 1, 8).getValues()[0];
-      if (dDP[4] !== dpToken) return jsonResponse({ success: false, error: 'Sin autorizaciÃ³n' });
+      if (dDP[4] !== dpToken) return jsonResponse({ success: false, error: 'Sin autorización' });
       if (dDP[2] !== 'Admin') return jsonResponse({ success: false, error: 'Solo Admin' });
 
       var ssMMDP = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
       var shMMDP = ssMMDP.getSheetByName('MM');
-      if (!shMMDP || dpRow < 2 || dpRow > shMMDP.getLastRow()) return jsonResponse({ success: false, error: 'Fila invÃ¡lida' });
+      if (!shMMDP || dpRow < 2 || dpRow > shMMDP.getLastRow()) return jsonResponse({ success: false, error: 'Fila inválida' });
       shMMDP.deleteRow(dpRow);
       cacheRemoveKey('preguntas_mm');
       return jsonResponse({ success: true });
@@ -2844,6 +2898,84 @@ function doGet(e) {
     } catch(dgErr) { return jsonResponse({ success: false, error: dgErr.message }); }
   }
 
+  // Lista básica de usuarios activos — la puede pedir cualquier usuario logueado.
+  // Se usa para elegir a quién mandarle una consulta sobre una pregunta.
+  if (action === 'getUsuariosBasico') {
+    var ubEmail = ((e.parameter.email) || '').toLowerCase().trim();
+    var ubToken = e.parameter.token || '';
+    if (!ubEmail || !ubToken) return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssUB = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      var shUB = ensureUsuariosSheet(ssUB);
+      var rowUB = encontrarUsuarioRow(shUB, ubEmail);
+      if (rowUB < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+      var dUB = shUB.getRange(rowUB, 1, 1, 8).getValues()[0];
+      if (dUB[4] !== ubToken)   return jsonResponse({ success: false, error: 'Sin autorización' });
+      if (dUB[6] !== 'Activo')  return jsonResponse({ success: false, error: 'Usuario inactivo' });
+
+      if (shUB.getLastRow() < 2) return jsonResponse({ success: true, usuarios: [] });
+      var allUB = shUB.getRange(2, 1, shUB.getLastRow() - 1, 7).getValues();
+      var listaUB = [];
+      allUB.forEach(function(r) {
+        if (!r[0] || r[6] !== 'Activo') return;
+        listaUB.push({ email: String(r[0]), nombre: String(r[1] || r[0]), rol: String(r[2] || '') });
+      });
+      return jsonResponse({ success: true, usuarios: listaUB });
+    } catch (ubErr) { return jsonResponse({ success: false, error: ubErr.message }); }
+  }
+
+  // Editar una visita ya cargada en el calendario
+  if (action === 'editarVisita') {
+    var evAdminEmail = ((e.parameter.adminEmail) || '').toLowerCase().trim();
+    var evAdminToken = e.parameter.adminToken || '';
+    var evVisitaId   = e.parameter.visitaId || '';
+    if (!evAdminEmail || !evAdminToken || !evVisitaId)
+      return jsonResponse({ success: false, error: 'Faltan parámetros' });
+    try {
+      var ssEV = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+      if (!verificarAdmin(ssEV, evAdminEmail, evAdminToken))
+        return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
+
+      var ssDataEV = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var shCalEV  = ensureCalendarioSheet(ssDataEV);
+      if (shCalEV.getLastRow() < 2) return jsonResponse({ success: false, error: 'Visita no encontrada' });
+
+      var idsEV = shCalEV.getRange(2, 1, shCalEV.getLastRow() - 1, 1).getValues();
+      var rowEV = -1;
+      for (var ei = 0; ei < idsEV.length; ei++) {
+        if (String(idsEV[ei][0]) === evVisitaId) { rowEV = ei + 2; break; }
+      }
+      if (rowEV < 0) return jsonResponse({ success: false, error: 'Visita no encontrada' });
+
+      // Solo se actualizan los campos que llegan
+      if (e.parameter.fecha)  shCalEV.getRange(rowEV, 2).setValue(e.parameter.fecha);
+      if (e.parameter.turno)  shCalEV.getRange(rowEV, 3).setValue(e.parameter.turno);
+      if (e.parameter.local)  shCalEV.getRange(rowEV, 4).setValue(e.parameter.local);
+      if (e.parameter.estado) shCalEV.getRange(rowEV, 7).setValue(e.parameter.estado);
+
+      if (e.parameter.auditorEmail) {
+        var evAudEmail = String(e.parameter.auditorEmail).toLowerCase().trim();
+        var shUsersEV  = ensureUsuariosSheet(ssEV);
+        var rowUsrEV   = encontrarUsuarioRow(shUsersEV, evAudEmail);
+        var evAudNombre = rowUsrEV > 0 ? String(shUsersEV.getRange(rowUsrEV, 2).getValue()) : evAudEmail;
+        shCalEV.getRange(rowEV, 5).setValue(evAudEmail);
+        shCalEV.getRange(rowEV, 6).setValue(evAudNombre);
+      }
+
+      return jsonResponse({ success: true, visitaId: evVisitaId });
+    } catch (evErr) { return jsonResponse({ success: false, error: evErr.message }); }
+  }
+
+  if (action === 'getUmbral') {
+    try {
+      var ssUm = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var umbralPub = parseFloat(getConfigValue(ssUm, 'umbral_criticos_pct', 10)) || 10;
+      return jsonResponse({ success: true, umbral_criticos_pct: umbralPub });
+    } catch (umErr) {
+      return jsonResponse({ success: true, umbral_criticos_pct: 10 });
+    }
+  }
+
   if (action === 'getConfig') {
     var gcAdmin = ((e.parameter.adminEmail)||'').toLowerCase().trim();
     var gcToken = e.parameter.adminToken||'';
@@ -2894,11 +3026,11 @@ function test() {
 }
 
 // ============================================================
-// MIGRACIÃ“N: evaluar respuestas numÃ©ricas viejas con rangos
+// MIGRACIÓN: evaluar respuestas numéricas viejas con rangos
 // Ejecutar UNA VEZ desde el editor de Apps Script
 // ============================================================
 function migrarRespuestasNumericas() {
-  // Reglas: { control (lowercase) -> funciÃ³n evaluadora }
+  // Reglas: { control (lowercase) -> función evaluadora }
   var REGLAS = {
     'temperatura del salmon':    function(n) { return n>=-2&&n<=2?'Cumple':n>2&&n<=6?'Cumple parcialmente':'No Cumple'; },
     'heladera de salmon':        function(n) { return n>=-2&&n<=2?'Cumple':'No Cumple'; },
@@ -2946,20 +3078,20 @@ function migrarRespuestasNumericas() {
     var res     = recalcularPuntaje(rows);
     entries.forEach(function(e) {
       var shRow = e.rowIndex + 2;
-      sh.getRange(shRow, 16).setValue(res.pct);                // col P â€” Puntaje%
-      sh.getRange(shRow, 17).setValue(res.nivel);              // col Q â€” Nivel
-      sh.getRange(shRow, 18).setValue(res.reprobado ? 'SÃ­' : 'No'); // col R â€” Reprobado
+      sh.getRange(shRow, 16).setValue(res.pct);                // col P — Puntaje%
+      sh.getRange(shRow, 17).setValue(res.nivel);              // col Q — Nivel
+      sh.getRange(shRow, 18).setValue(res.reprobado ? 'Sí' : 'No'); // col R — Reprobado
     });
     auditUpdates++;
   });
 
-  Logger.log('MigraciÃ³n completa. Filas de respuesta actualizadas: ' + updates + '. AuditorÃ­as recalculadas: ' + auditUpdates);
+  Logger.log('Migración completa. Filas de respuesta actualizadas: ' + updates + '. Auditorías recalculadas: ' + auditUpdates);
   CacheService.getScriptCache().removeAll(['aud_all']);
 }
 
 // ============================================================
-// Ejecutar UNA VEZ: copia los valores numÃ©ricos originales desde
-// _backup_pre_migracion â†’ col U de Resultados
+// Ejecutar UNA VEZ: copia los valores numéricos originales desde
+// _backup_pre_migracion → col U de Resultados
 // ============================================================
 function restaurarRawValor() {
   var CONTROLES_NUMERICOS = [
@@ -2970,24 +3102,24 @@ function restaurarRawValor() {
   var ss      = SpreadsheetApp.openById(SPREADSHEET_ID);
   var shMain  = ss.getSheetByName(SHEET_NAME);
   var shBack  = ss.getSheetByName('_backup_pre_migracion');
-  if (!shBack) { Logger.log('No se encontrÃ³ la hoja _backup_pre_migracion'); return; }
+  if (!shBack) { Logger.log('No se encontró la hoja _backup_pre_migracion'); return; }
 
-  // Leer backup: col A=auditId, col I=control, col L=respuesta original (el nÃºmero)
+  // Leer backup: col A=auditId, col I=control, col L=respuesta original (el número)
   var backData = shBack.getRange(2, 1, shBack.getLastRow() - 1, 12).getValues();
 
-  // Construir mapa: "auditId|control" â†’ valor numÃ©rico original
+  // Construir mapa: "auditId|control" → valor numérico original
   var mapa = {};
   backData.forEach(function(r) {
     var control = String(r[8] || '').trim().toLowerCase();
     if (CONTROLES_NUMERICOS.indexOf(control) === -1) return;
     var val = String(r[11] || '').trim();
     var num = parseFloat(val.replace(',', '.'));
-    if (isNaN(num)) return; // ya fue migrado en esa versiÃ³n (no deberÃ­a pasar)
+    if (isNaN(num)) return; // ya fue migrado en esa versión (no debería pasar)
     var key = String(r[0] || '').trim() + '|' + control;
     mapa[key] = num;
   });
 
-  // Leer hoja actual y escribir col U donde estÃ© vacÃ­a
+  // Leer hoja actual y escribir col U donde esté vacía
   var mainData = shMain.getRange(2, 1, shMain.getLastRow() - 1, 21).getValues();
   var restored = 0;
   mainData.forEach(function(r, i) {
@@ -3005,7 +3137,7 @@ function restaurarRawValor() {
 }
 
 // ============================================================
-// Ejecutar UNA VEZ: para filas donde col U sigue vacÃ­a y la
+// Ejecutar UNA VEZ: para filas donde col U sigue vacía y la
 // respuesta es Cumple/No Cumple, anota el rango de referencia
 // ============================================================
 // ============================================================
@@ -3053,13 +3185,13 @@ function recalcularTodasLasAuditorias() {
 
 function agregarRangoReferencia() {
   var RANGOS = {
-    'temperatura del salmon': 'rango Cumple: -2Â°C a 2Â°C | Parcial: 2Â°C a 6Â°C',
-    'heladera de salmon':     'rango Cumple: -2Â°C a 2Â°C',
-    'freezer':                'rango Cumple: -18Â°C a -15Â°C',
-    'heladeras cocina':       'rango Cumple: 2Â°C a 7Â°C',
-    'ambiente cocina sushi':  'rango Cumple: â‰¤22Â°C',
-    'temperatura camara':     'rango Cumple: 2Â°C a 7Â°C',
-    'heladera combos':        'rango Cumple: 10Â°C a 14Â°C',
+    'temperatura del salmon': 'rango Cumple: -2°C a 2°C | Parcial: 2°C a 6°C',
+    'heladera de salmon':     'rango Cumple: -2°C a 2°C',
+    'freezer':                'rango Cumple: -18°C a -15°C',
+    'heladeras cocina':       'rango Cumple: 2°C a 7°C',
+    'ambiente cocina sushi':  'rango Cumple: ≤22°C',
+    'temperatura camara':     'rango Cumple: 2°C a 7°C',
+    'heladera combos':        'rango Cumple: 10°C a 14°C',
   };
 
   var ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
