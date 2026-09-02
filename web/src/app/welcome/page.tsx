@@ -122,6 +122,20 @@ function WelcomeContent() {
           ))}
         </div>
 
+        {/* Administración (solo Admin) */}
+        {sesion?.rol === 'Admin' && (
+          <button
+            onClick={() => router.push('/admin')}
+            className="w-full bg-white rounded-2xl p-4 flex items-center gap-4 shadow-sm border border-gray-100 text-left active:bg-gray-50 mt-4"
+          >
+            <span className="text-3xl">⚙️</span>
+            <div>
+              <p className="font-semibold text-gray-900">Administración</p>
+              <p className="text-xs text-gray-400">Usuarios, locales y preguntas</p>
+            </div>
+          </button>
+        )}
+
         {/* Acciones de cuenta */}
         <div className="flex gap-3">
           <Link href="/cambiar-password"
