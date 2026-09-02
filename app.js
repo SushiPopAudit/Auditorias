@@ -1819,6 +1819,11 @@ function renderAdminMenu() {
             <span style="font-size:0.82rem;font-weight:600;color:#1a1a1a">Viáticos</span>
           </button>
         </div>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">
+          <div style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Mantenimiento</div>
+          <button id="btn-admin-recalcular" style="width:100%;background:#fff;color:#1a1a1a;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:0.88rem;font-weight:600;cursor:pointer;touch-action:manipulation">↻ Recalcular puntajes de todas las auditorías</button>
+          <div style="font-size:0.72rem;color:#9ca3af;margin-top:8px;line-height:1.4">Reprocesa Puntaje, Nivel y Reprobado de todas las auditorías del historial. Usalo después de cambiar el umbral de críticos. Puede tardar un rato.</div>
+        </div>
       </div>
     </div>`;
 }
@@ -4028,21 +4033,27 @@ function attachListeners() {
   on('btn-admin-go-calendario',  'click', goToCalendario);
   on('btn-admin-go-preguntas',   'click', goToPreguntas);
   on('btn-admin-recalcular', 'click', async function() {
+    if (!confirm('Se van a recalcular los puntajes de TODAS las auditorías del historial.\n\nPuede tardar varios minutos. ¿Continuar?')) return;
     const btn = document.getElementById('btn-admin-recalcular');
-    if (btn) btn.style.opacity = '0.5';
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Recalculando... no cierres la app'; }
     const u = state.user;
     try {
-      const res = await fetch(CONFIG.appsScriptURL + '?action=recalcularBatch&adminEmail=' + encodeURIComponent(u.email) + '&adminToken=' + encodeURIComponent(u.token));
+      const res = await fetch(CONFIG.appsScriptURL
+        + '?action=recalcularBatch&adminEmail=' + encodeURIComponent(u.email)
+        + '&adminToken=' + encodeURIComponent(u.token));
       const data = await res.json();
       if (data.success) {
-        alert('Recalculado: ' + data.auditoriasActualizadas + ' auditorías actualizadas.');
+        alert('Listo: ' + data.auditoriasActualizadas + ' auditorías actualizadas.');
+        state.historial = null;
+        state.historialDetalleCache = {};
+        state.dashboard = null;
       } else {
         alert('Error: ' + (data.error || 'desconocido'));
       }
-    } catch(err) {
+    } catch (err) {
       alert('Error de conexión: ' + err.message);
     } finally {
-      if (btn) btn.style.opacity = '1';
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '↻ Recalcular puntajes de todas las auditorías'; }
     }
   });
   on('nav-admin-inicio',       'click', () => setState({ screen: 'admin', adminTab: 'menu', adminShowCreateUser: false, adminShowCreateLocal: false }));
