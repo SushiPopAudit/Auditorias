@@ -5,3 +5,4 @@ export * from './envio';
 export * from './config';
 export * from './sheets';
 export * from './dashboard';
+export * from './calendario';
