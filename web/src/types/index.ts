@@ -63,6 +63,7 @@ export interface Sesion {
   token: string;
   savedAt: number;               // timestamp ms
   primerLogin?: boolean;
+  viaticos: boolean;
 }
 
 /** Auditoría lista para enviar al Apps Script */

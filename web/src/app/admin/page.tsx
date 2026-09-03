@@ -7,6 +7,7 @@ import clsx from 'clsx';
 const SECCIONES = [
   { href: '/admin/usuarios',      icon: '👥', titulo: 'Usuarios',      desc: 'Altas, bajas, roles y locales asignados' },
   { href: '/admin/locales',       icon: '🏪', titulo: 'Locales',       desc: 'Nombres, marca y emails de destino' },
+  { href: '/admin/viaticos',      icon: '💰', titulo: 'Viáticos',      desc: 'Asignar montos y revisar gastos' },
   { href: '/admin/preguntas',     icon: '📝', titulo: 'Preguntas',     desc: 'Próximamente' },
   { href: '/admin/configuracion', icon: '⚙️', titulo: 'Configuración', desc: 'Umbral de críticos y recálculo' },
 ];

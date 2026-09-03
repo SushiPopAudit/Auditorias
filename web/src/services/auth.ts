@@ -53,6 +53,7 @@ export async function login(email: string, password: string): Promise<LoginResul
       locales:    String(u.locales ?? ''),
       token:      pwd,
       primerLogin: u.primerLogin === true || u.primerLogin === 'true',
+      viaticos:   u.viaticos === true || u.viaticos === 'true',
     };
 
     saveSession(sesion);
