@@ -6,6 +6,7 @@ import RespuestaRadio from '@/components/auditoria/RespuestaRadio';
 import FotoCapture from '@/components/auditoria/FotoCapture';
 import InputNumerico from '@/components/auditoria/InputNumerico';
 import AyudaSheet from '@/components/auditoria/AyudaSheet';
+import ModalConsulta from '@/components/auditoria/ModalConsulta';
 import { useApp } from '@/contexts/AppContext';
 import type { RespuestaItem, FotoItem } from '@/types';
 import {
@@ -32,6 +33,7 @@ function PreguntaContent() {
   const [headcount,   setHeadcount]   = useState<Record<string, string>>({});
   const [fotos,       setFotos]       = useState<FotoItem[]>([]);
   const [mostrarAyuda, setMostrarAyuda] = useState(false);
+  const [consultaAbierta, setConsultaAbierta] = useState(false);
 
   useEffect(() => {
     if (!auditoria.local) { router.replace('/auditoria/setup'); return; }
@@ -51,6 +53,8 @@ function PreguntaContent() {
     const regla = parseValidacion(pregunta.validacion ?? '');
     if (regla?.tipo === 'headcount' && !ans?.respuesta) setRespuesta('N/A');
   }, [pregunta?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { setConsultaAbierta(false); }, [pregunta?.id]);
 
   if (!cat || !pregunta) return null;
 
@@ -189,6 +193,13 @@ function PreguntaContent() {
               ?
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setConsultaAbierta(true)}
+            className="flex-shrink-0 px-2.5 py-1 rounded-md bg-blue-700 text-white text-xs font-bold"
+          >
+            REVISAR
+          </button>
           {esSaltada && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
               Omitida
@@ -381,6 +392,14 @@ function PreguntaContent() {
           titulo={pregunta.control}
           explicacion={pregunta.explicacionDetallada}
           onClose={() => setMostrarAyuda(false)}
+        />
+      )}
+
+      {consultaAbierta && (
+        <ModalConsulta
+          pregunta={pregunta}
+          local={auditoria.local?.nombre ?? ''}
+          onCerrar={() => setConsultaAbierta(false)}
         />
       )}
     </div>

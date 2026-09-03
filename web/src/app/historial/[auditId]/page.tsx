@@ -2,8 +2,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
-import { useSesion, useCache } from '@/contexts/AppContext';
+import { useSesion, useCache, useApp } from '@/contexts/AppContext';
 import { getAuditoria, borrarAuditoria, toDriveThumb, type AuditoriaDetalle } from '@/services/historial';
+import ModalReenvio from '@/components/historial/ModalReenvio';
 import clsx from 'clsx';
 
 const IMP_STYLE: Record<string, string> = {
@@ -28,6 +29,7 @@ function respStyle(r: string): string {
 function DetalleContent() {
   const { sesion } = useSesion();
   const { limpiar } = useCache();
+  const { state } = useApp();
   const router = useRouter();
   const params = useParams();
   const auditId = decodeURIComponent(String(params.auditId ?? ''));
@@ -37,8 +39,13 @@ function DetalleContent() {
   const [error, setError]       = useState('');
   const [abiertas, setAbiertas] = useState<Record<string, boolean>>({});
   const [borrando, setBorrando] = useState(false);
+  const [reenvio, setReenvio]   = useState(false);
 
   const esAdmin = sesion?.rol === 'Admin';
+
+  const emailsDet = det
+    ? (state.locales.find(l => l.nombre === det.local)?.emails ?? '')
+    : '';
 
   useEffect(() => {
     if (!sesion || !auditId) return;
@@ -161,6 +168,12 @@ function DetalleContent() {
             >
               ✏️ Editar
             </button>
+            <button
+              onClick={() => setReenvio(true)}
+              className="px-4 py-3 rounded-xl border border-gray-200 text-gray-700 text-sm font-semibold"
+            >
+              ✉️ Reenviar
+            </button>
             {esAdmin && (
               <button
                 onClick={handleBorrar}
@@ -273,6 +286,16 @@ function DetalleContent() {
             );
           })}
         </div>
+      )}
+
+      {reenvio && det && (
+        <ModalReenvio
+          auditId={det.auditId}
+          local={det.local}
+          fecha={det.fecha}
+          emailsLocal={emailsDet}
+          onCerrar={() => setReenvio(false)}
+        />
       )}
     </div>
   );

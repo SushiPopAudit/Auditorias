@@ -196,6 +196,28 @@ export async function editarAuditoria(
  * Borra una auditoría: elimina las filas del Sheet y la carpeta de fotos de Drive.
  * OJO: el backend no valida credenciales — restringir a Admin en la UI.
  */
+/**
+ * Reenvía el informe de una auditoría por mail.
+ * `destinatarios` admite varios separados por coma.
+ * El backend regenera el PDF y lo adjunta.
+ */
+export async function reenviarInforme(
+  auditId: string, destinatarios: string,
+): Promise<{ ok: boolean; mensaje?: string; error?: string }> {
+  try {
+    const res = await fetch(
+      `${URL}?action=reenviar&auditId=${encodeURIComponent(auditId)}&email=${encodeURIComponent(destinatarios)}`,
+      { redirect: 'follow' },
+    );
+    const d = await res.json();
+    return d.success
+      ? { ok: true, mensaje: String(d.message ?? 'Informe enviado.') }
+      : { ok: false, error: String(d.error ?? 'No se pudo enviar') };
+  } catch {
+    return { ok: false, error: 'Error de conexión' };
+  }
+}
+
 export async function borrarAuditoria(auditId: string): Promise<{ ok: boolean; filas?: number; error?: string }> {
   try {
     const res = await fetch(

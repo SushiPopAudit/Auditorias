@@ -3,8 +3,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import BottomNav from '@/components/BottomNav';
-import { useSesion, useCache } from '@/contexts/AppContext';
+import { useSesion, useCache, useApp } from '@/contexts/AppContext';
 import { getAuditorias, borrarAuditoria, type AuditoriaResumen } from '@/services/historial';
+import ModalReenvio from '@/components/historial/ModalReenvio';
 import clsx from 'clsx';
 
 function scoreStyle(pct: number, reprobado: boolean): string {
@@ -20,6 +21,7 @@ const FILTROS = ['Todos', 'Oficial', 'Informal'] as const;
 function HistorialContent() {
   const { sesion } = useSesion();
   const { leer, guardar, limpiar } = useCache();
+  const { state } = useApp();
   const router = useRouter();
 
   const cacheado = leer<AuditoriaResumen[]>('historial');
@@ -33,6 +35,11 @@ function HistorialContent() {
   const [mensaje, setMensaje]         = useState('');
 
   const esAdmin = sesion?.rol === 'Admin';
+
+  const [reenvio, setReenvio] = useState<AuditoriaResumen | null>(null);
+
+  const emailsDe = (nombreLocal: string) =>
+    state.locales.find(l => l.nombre === nombreLocal)?.emails ?? '';
 
   const cargar = useCallback(async (forzado = false) => {
     if (!sesion) return;
@@ -173,6 +180,13 @@ function HistorialContent() {
 
               <div className="flex border-t border-gray-100 divide-x divide-gray-100">
                 <button
+                  onClick={e => { e.stopPropagation(); setReenvio(a); }}
+                  title="Reenviar informe por mail"
+                  className="flex-1 py-2.5 text-xs font-medium text-gray-600"
+                >
+                  ✉️ Reenviar
+                </button>
+                <button
                   onClick={() => router.push(`/historial/${encodeURIComponent(a.auditId)}`)}
                   className="flex-1 py-2.5 text-xs font-medium text-gray-600"
                 >
@@ -202,6 +216,16 @@ function HistorialContent() {
         <p className="text-center text-gray-400 text-sm mt-8 px-6">
           Sin resultados para los filtros aplicados.
         </p>
+      )}
+
+      {reenvio && (
+        <ModalReenvio
+          auditId={reenvio.auditId}
+          local={reenvio.local}
+          fecha={reenvio.fecha}
+          emailsLocal={emailsDe(reenvio.local)}
+          onCerrar={() => setReenvio(null)}
+        />
       )}
 
       <BottomNav />
