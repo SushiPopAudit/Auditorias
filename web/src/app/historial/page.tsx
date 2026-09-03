@@ -68,7 +68,7 @@ function HistorialContent() {
       `Se eliminarán todas las respuestas y las fotos de Drive. No se puede deshacer.`
     );
     if (!ok) return;
-    const res = await borrarAuditoria(a.auditId);
+    const res = await borrarAuditoria(sesion!, a.auditId);
     if (!res.ok) { alert(`No se pudo borrar: ${res.error}`); return; }
     limpiar(['historial', 'dashboard']);
     setLista(prev => prev.filter(x => x.auditId !== a.auditId));

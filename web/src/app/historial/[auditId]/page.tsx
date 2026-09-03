@@ -72,7 +72,7 @@ function DetalleContent() {
     );
     if (!ok) return;
     setBorrando(true);
-    const res = await borrarAuditoria(det.auditId);
+    const res = await borrarAuditoria(sesion!, det.auditId);
     setBorrando(false);
     if (!res.ok) { alert(`No se pudo borrar: ${res.error}`); return; }
     limpiar(['historial', 'dashboard']);

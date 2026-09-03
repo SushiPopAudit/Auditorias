@@ -202,13 +202,17 @@ export async function editarAuditoria(
  * El backend regenera el PDF y lo adjunta.
  */
 export async function reenviarInforme(
-  auditId: string, destinatarios: string,
+  sesion: Sesion, auditId: string, destinatarios: string,
 ): Promise<{ ok: boolean; mensaje?: string; error?: string }> {
   try {
-    const res = await fetch(
-      `${URL}?action=reenviar&auditId=${encodeURIComponent(auditId)}&email=${encodeURIComponent(destinatarios)}`,
-      { redirect: 'follow' },
-    );
+    const qs = new URLSearchParams({
+      action:    'reenviar',
+      auditId,
+      email:     destinatarios,
+      userEmail: sesion.email,
+      token:     sesion.token,
+    });
+    const res = await fetch(`${URL}?${qs}`, { redirect: 'follow' });
     const d = await res.json();
     return d.success
       ? { ok: true, mensaje: String(d.message ?? 'Informe enviado.') }
@@ -218,15 +222,20 @@ export async function reenviarInforme(
   }
 }
 
-export async function borrarAuditoria(auditId: string): Promise<{ ok: boolean; filas?: number; error?: string }> {
+export async function borrarAuditoria(
+  sesion: Sesion, auditId: string,
+): Promise<{ ok: boolean; filas?: number; error?: string }> {
   try {
-    const res = await fetch(
-      `${URL}?action=borrarAuditoria&auditId=${encodeURIComponent(auditId)}`,
-      { redirect: 'follow' },
-    );
-    const data = await res.json();
-    if (!data.success) return { ok: false, error: String(data.error ?? 'No se pudo borrar') };
-    return { ok: true, filas: Number(data.filasEliminadas ?? 0) };
+    const qs = new URLSearchParams({
+      action:     'borrarAuditoria',
+      auditId,
+      adminEmail: sesion.email,
+      adminToken: sesion.token,
+    });
+    const res = await fetch(`${URL}?${qs}`, { redirect: 'follow' });
+    const d = await res.json();
+    if (!d.success) return { ok: false, error: String(d.error ?? 'No se pudo borrar') };
+    return { ok: true, filas: Number(d.filasEliminadas ?? 0) };
   } catch (e) {
     return { ok: false, error: `Error de conexión: ${String(e)}` };
   }

@@ -250,6 +250,18 @@ function doPost(e) {
       } catch(e) { console.error('Drive folder error:', e); }
     }
 
+    // Guardar auditoría: exige usuario activo. Las dos apps mandan `token`.
+    var gaEmail2 = String(data.auditorEmail || '').toLowerCase().trim();
+    var gaToken2 = String(data.token || '');
+    if (!gaEmail2 || !gaToken2) return jsonResponse({ success: false, error: 'Faltan credenciales' });
+    var ssGa2 = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+    var shGa2 = ensureUsuariosSheet(ssGa2);
+    var rowGa2 = encontrarUsuarioRow(shGa2, gaEmail2);
+    if (rowGa2 < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+    var dGa2 = shGa2.getRange(rowGa2, 1, 1, 8).getValues()[0];
+    if (dGa2[4] !== gaToken2)  return jsonResponse({ success: false, error: 'Sin autorización' });
+    if (dGa2[6] !== 'Activo')  return jsonResponse({ success: false, error: 'Usuario inactivo' });
+
     // Construir filas
     const rows = data.respuestas.map(r => {
       var fotoURL = '';
@@ -1499,6 +1511,17 @@ function doGet(e) {
   if (action === 'reenviar') {
     const auditId = e.parameter.auditId;
     if (!auditId) return jsonResponse({ success: false, error: 'Falta auditId' });
+    // Manda el informe completo con el PDF: exige usuario activo
+    var reEmail = String(e.parameter.userEmail || '').toLowerCase().trim();
+    var reToken = String(e.parameter.token || '');
+    if (!reEmail || !reToken) return jsonResponse({ success: false, error: 'Faltan credenciales' });
+    var ssRe = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+    var shRe = ensureUsuariosSheet(ssRe);
+    var rowRe = encontrarUsuarioRow(shRe, reEmail);
+    if (rowRe < 0) return jsonResponse({ success: false, error: 'Usuario no encontrado' });
+    var dRe = shRe.getRange(rowRe, 1, 1, 8).getValues()[0];
+    if (dRe[4] !== reToken)  return jsonResponse({ success: false, error: 'Sin autorización' });
+    if (dRe[6] !== 'Activo') return jsonResponse({ success: false, error: 'Usuario inactivo' });
     try {
       const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
       const sheet = ss.getSheetByName(SHEET_NAME);
@@ -1657,6 +1680,12 @@ function doGet(e) {
   }
 
   if (action === 'actualizarPuntaje') {
+    var apAdmin = String(e.parameter.adminEmail || '').toLowerCase().trim();
+    var apTok   = String(e.parameter.adminToken || '');
+    if (!apAdmin || !apTok) return jsonResponse({ success: false, error: 'Faltan credenciales' });
+    var ssAp = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+    if (!verificarAdmin(ssAp, apAdmin, apTok))
+      return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
     var auditId2 = e.parameter.auditId;
     if (!auditId2) return jsonResponse({ success: false, error: 'Falta auditId' });
     try {
@@ -1695,6 +1724,12 @@ function doGet(e) {
   }
 
   if (action === 'borrarAuditoria') {
+    var baAdmin = String(e.parameter.adminEmail || '').toLowerCase().trim();
+    var baToken = String(e.parameter.adminToken || '');
+    if (!baAdmin || !baToken) return jsonResponse({ success: false, error: 'Faltan credenciales' });
+    var ssBa = SpreadsheetApp.openById(USUARIOS_SPREADSHEET_ID);
+    if (!verificarAdmin(ssBa, baAdmin, baToken))
+      return jsonResponse({ success: false, error: 'Sin permisos de administrador' });
     var auditIdB = e.parameter.auditId;
     if (!auditIdB) return jsonResponse({ success: false, error: 'Falta auditId' });
     try {

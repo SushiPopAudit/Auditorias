@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import { reenviarInforme } from '@/services/historial';
+import { useSesion } from '@/contexts/AppContext';
 
 interface Props {
   auditId:      string;
@@ -13,14 +14,16 @@ interface Props {
 }
 
 export default function ModalReenvio({ auditId, local, fecha, emailsLocal, onCerrar }: Props) {
+  const { sesion } = useSesion();
   const [otro, setOtro]         = useState('');
   const [enviando, setEnviando] = useState(false);
   const [mensaje, setMensaje]   = useState('');
 
   async function enviar(destino: string) {
+    if (!sesion) return;
     if (!destino.trim()) { setMensaje('✕ Ingresá al menos un mail.'); return; }
     setEnviando(true); setMensaje('');
-    const res = await reenviarInforme(auditId, destino.trim());
+    const res = await reenviarInforme(sesion, auditId, destino.trim());
     setEnviando(false);
     setMensaje(res.ok ? `✓ ${res.mensaje}` : `✕ ${res.error}`);
   }

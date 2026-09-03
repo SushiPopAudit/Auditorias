@@ -33,6 +33,7 @@ export interface EnvioParams {
   fecha:               string;
   auditor:             string;
   auditorEmail:        string;
+  token:               string;
   local:               string;
   emailsLocal:         string;
   marca:               string;
@@ -93,6 +94,7 @@ export async function enviarAuditoria(p: EnvioParams): Promise<EnvioResult> {
       hora,
       auditor:             p.auditor,
       auditorEmail:        p.auditorEmail,
+      token:               p.token,
       local:               p.local,
       emailsLocal:         p.emailsLocal,
       marca:               p.marca,

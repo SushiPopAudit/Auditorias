@@ -111,6 +111,7 @@ function ResumenContent() {
       fecha:               auditoria.fecha,
       auditor:             sesion.nombre,
       auditorEmail:        sesion.email,
+      token:               sesion.token,
       local:               auditoria.local.nombre,
       emailsLocal:         auditoria.local.emails ?? '',
       marca:               auditoria.local.isCausa ? 'Causa' : 'Multimarca',

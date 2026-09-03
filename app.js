@@ -5364,6 +5364,8 @@ function attachListeners() {
         action:  'reenviar',
         auditId: state.reenvioModal.auditId,
         email:   destino,
+        userEmail: state.user.email,
+        token:     state.user.token,
       });
       setState({
         reenviando: false,
@@ -5433,7 +5435,7 @@ function attachListeners() {
       if (!confirm(`¿Borrar la auditoría de "${local}" del ${fecha}?\nEsta acción no se puede deshacer.`)) return;
       setState({ historialAccionando: auditId });
       try {
-        await callAPI({ action: 'borrarAuditoria', auditId });
+        await callAPI({ action: 'borrarAuditoria', auditId, adminEmail: state.user.email, adminToken: state.user.token });
         setState({ historialAccionando: '', historial: null, historialBorradoMsg: `✓ Auditoría de ${local} borrada correctamente` });
         await recargarHistorial();
       } catch(e) {
@@ -5464,7 +5466,7 @@ function attachListeners() {
     if (!confirm(`¿Borrar la auditoría de "${d.local}" del ${d.fecha}?\nEsta acción no se puede deshacer.`)) return;
     setState({ historialBorrando: true });
     try {
-      await callAPI({ action: 'borrarAuditoria', auditId: d.auditId });
+      await callAPI({ action: 'borrarAuditoria', auditId: d.auditId, adminEmail: state.user.email, adminToken: state.user.token });
       setState({ historialBorrando: false, screen: 'historial', historialDetalle: null, historial: null, historialBorradoMsg: `✓ Auditoría de ${d.local} borrada correctamente` });
       await recargarHistorial();
     } catch(e) {
@@ -6270,6 +6272,7 @@ async function submitAudit() {
     hora:         new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     auditor:      state.auditor,
     auditorEmail: state.auditorEmail,
+    token:        state.user.token,
     acompanante:         state.acompanante         || '',
     posicionAcompanante: state.posicionAcompanante || '',
     local:               state.local.nombre,
