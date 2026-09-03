@@ -8,3 +8,4 @@ export * from './dashboard';
 export * from './calendario';
 export * from './admin';
 export * from './gastos';
+export * from './preguntas';

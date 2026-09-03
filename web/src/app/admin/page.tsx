@@ -8,7 +8,7 @@ const SECCIONES = [
   { href: '/admin/usuarios',      icon: '👥', titulo: 'Usuarios',      desc: 'Altas, bajas, roles y locales asignados' },
   { href: '/admin/locales',       icon: '🏪', titulo: 'Locales',       desc: 'Nombres, marca y emails de destino' },
   { href: '/admin/viaticos',      icon: '💰', titulo: 'Viáticos',      desc: 'Asignar montos y revisar gastos' },
-  { href: '/admin/preguntas',     icon: '📝', titulo: 'Preguntas',     desc: 'Próximamente' },
+  { href: '/admin/preguntas',     icon: '📝', titulo: 'Preguntas',     desc: 'Controles, importancia y evaluación automática' },
   { href: '/admin/configuracion', icon: '⚙️', titulo: 'Configuración', desc: 'Umbral de críticos y recálculo' },
 ];
 
@@ -27,7 +27,7 @@ function AdminContent() {
 
       <div className="px-4 py-4 space-y-3">
         {SECCIONES.map(s => {
-          const disabled = s.href === '/admin/preguntas';
+          const disabled = false;
           return (
             <button
               key={s.href}

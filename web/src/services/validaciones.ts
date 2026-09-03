@@ -142,3 +142,94 @@ export function extraerUnidad(pregunta: string): string {
   const m = (pregunta || '').match(/\(([^)]{1,8})\)/);
   return m ? m[1] : '';
 }
+
+// ─────────────────────────────────────────────────────────
+// Editor de validación: pasar del texto a la interfaz y viceversa
+// ─────────────────────────────────────────────────────────
+
+export type TipoValidacion = 'ninguna' | 'numero' | 'fecha' | 'headcount';
+
+export interface RangoEditor { min: string; max: string }
+
+export interface ValidacionEditor {
+  tipo:      TipoValidacion;
+  cumples:   RangoEditor[];   // vacío o '*' = sin límite
+  parciales: RangoEditor[];   // los dos extremos son obligatorios
+  allowNA:   boolean;
+}
+
+export const VALIDACION_VACIA: ValidacionEditor = {
+  tipo: 'ninguna', cumples: [], parciales: [], allowNA: false,
+};
+
+/** Del texto guardado en la planilla al estado del editor */
+export function aEditor(validacion: string): ValidacionEditor {
+  const regla = parseValidacion(validacion || '');
+  if (!regla) return { ...VALIDACION_VACIA };
+
+  if (regla.tipo === 'headcount') {
+    return { tipo: 'headcount', cumples: [], parciales: [], allowNA: false };
+  }
+  if (regla.tipo === 'fecha') {
+    return { tipo: 'fecha', cumples: [], parciales: [], allowNA: regla.allowNA };
+  }
+
+  const txt = (n: number | null) => (n === null ? '' : String(n));
+  return {
+    tipo:      'numero',
+    cumples:   regla.cumples.map(c => ({ min: txt(c.min), max: txt(c.max) })),
+    parciales: regla.parciales.map(p => ({ min: txt(p.min), max: txt(p.max) })),
+    allowNA:   regla.allowNA,
+  };
+}
+
+/** Del estado del editor al texto que se guarda en la planilla */
+export function aTexto(v: ValidacionEditor): string {
+  if (v.tipo === 'ninguna')   return '';
+  if (v.tipo === 'headcount') return 'headcount';
+  if (v.tipo === 'fecha')     return v.allowNA ? 'fecha|NA' : 'fecha';
+
+  const partes = ['numero'];
+  // Un extremo vacío se guarda como '*' (sin límite)
+  v.cumples.forEach(c => {
+    const min = c.min.trim() || '*';
+    const max = c.max.trim() || '*';
+    if (min !== '*' || max !== '*') partes.push(`C:${min}:${max}`);
+  });
+  v.parciales.forEach(p => {
+    const min = p.min.trim(), max = p.max.trim();
+    if (min && max) partes.push(`P:${min}:${max}`);
+  });
+  if (v.allowNA) partes.push('NA');
+  return partes.join('|');
+}
+
+/** Errores que impiden guardar. Devuelve [] si está todo bien. */
+export function validarEditor(v: ValidacionEditor): string[] {
+  if (v.tipo !== 'numero') return [];
+  const errores: string[] = [];
+
+  if (!v.cumples.length) {
+    errores.push('Definí al menos un rango de "Cumple".');
+  }
+
+  const numOk = (s: string) => s.trim() === '' || !isNaN(parseFloat(s.replace(',', '.')));
+
+  v.cumples.forEach((c, i) => {
+    if (!numOk(c.min) || !numOk(c.max)) errores.push(`El rango de Cumple ${i + 1} tiene un valor que no es un número.`);
+    const a = parseFloat(c.min.replace(',', '.')), b = parseFloat(c.max.replace(',', '.'));
+    if (!isNaN(a) && !isNaN(b) && a > b) errores.push(`En el rango de Cumple ${i + 1}, el mínimo es mayor que el máximo.`);
+  });
+
+  v.parciales.forEach((p, i) => {
+    if (!p.min.trim() || !p.max.trim()) {
+      errores.push(`El rango parcial ${i + 1} necesita mínimo y máximo — los parciales no admiten "sin límite".`);
+      return;
+    }
+    if (!numOk(p.min) || !numOk(p.max)) errores.push(`El rango parcial ${i + 1} tiene un valor que no es un número.`);
+    const a = parseFloat(p.min.replace(',', '.')), b = parseFloat(p.max.replace(',', '.'));
+    if (!isNaN(a) && !isNaN(b) && a > b) errores.push(`En el rango parcial ${i + 1}, el mínimo es mayor que el máximo.`);
+  });
+
+  return errores;
+}
